@@ -93,14 +93,20 @@ def get_leaf_elements(tree: chex.Array):
 
 def xtructure_data(cls: Type[T]) -> Type[Xtructurable[T]]:
     """
-    Decorator that creates a dataclass for HeapValue with additional functionality.
-    Adds shape, dtype, getitem, and len properties to the class.
+    Decorator that creates a chex.dataclass and augments it with additional
+    functionality related to its structure, type, and operations like
+    indexing, default instance creation, random instance generation, and string representation.
+
+    It adds properties like `shape`, `dtype`, `default_shape`, `structured_type`,
+    `batch_shape`, and methods like `__getitem__`, `__len__`, `reshape`,
+    `flatten`, `random`, and `__str__`.
 
     Args:
-        cls: The class to be decorated
+        cls: The class to be decorated. It is expected to have a `default`
+             classmethod for some functionalities.
 
     Returns:
-        The decorated class with additional heap value functionality
+        The decorated class with the aforementioned additional functionalities.
     """
     cls = chex.dataclass(cls)
 
@@ -177,9 +183,7 @@ def add_default_parser(cls: Type[T]) -> Type[T]:
         default_dim = len(default_shape[0])
     except IndexError:
         default_dim = None
-        """
-        if default_dim is None, it means that the default shape is not a batch.
-        """
+        # if default_dim is None, it means that the default shape is not a batch.
         # If there's no default_dim, the concept of batched vs single might not apply in the same way.
         # The original code returned cls here. If random is still desired,
         # it would operate on non-batchable default shapes.
@@ -287,19 +291,11 @@ def add_default_parser(cls: Type[T]) -> Type[T]:
 
             target_shape = shape + current_default_shape
 
-
-            if cfg['type'] == 'int': # This will be replaced by bits_int
-                val = jax.random.randint(
-                    field_key, 
-                    target_shape, 
-                    cfg['min_val'], 
-                    cfg['max_val_exclusive'], 
-                    dtype=cfg['gen_dtype']
-                )
-                if cfg['needs_cast']:
-                    val = val.astype(cfg['actual_dtype'])
-                data[field_name] = val
-            elif cfg['type'] == 'bits_int':
+            # The 'int' type condition (now removed) was effectively superseded by 'bits_int'
+            # for all jax integer types. jax.random.randint also has limitations
+            # with full range for uint64. Using jax.random.bits is generally more robust
+            # for generating integers across their full range.
+            if cfg['type'] == 'bits_int':
                 generated_bits = jax.random.bits(
                     field_key,
                     shape=target_shape,
