@@ -11,8 +11,7 @@ A Python package providing JAX-optimized data structures, including a batched pr
 ## Installation
 
 ```bash
-# Coming soon - after uploading to PyPI
-# pip install Xtructure
+pip install Xtructure
 ```
 
 ## Usage
