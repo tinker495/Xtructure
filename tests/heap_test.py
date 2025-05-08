@@ -28,30 +28,6 @@ class XtructureValue:
             c=jnp.full(shape + (1, 2, 3), jnp.inf, dtype=jnp.float32),
         )
 
-    @classmethod
-    def random(cls, shape=(), key=None):
-        if key is None:
-            key = jax.random.PRNGKey(0)
-        key1, key2, key3 = jax.random.split(key, 3)
-        return cls(
-            a=jax.random.randint(
-                key1,
-                shape=shape,
-                minval=0,
-                maxval=10,
-            ).astype(jnp.uint8),
-            b=jax.random.randint(
-                key2,
-                shape=shape + (1, 2),
-                minval=0,
-                maxval=10,
-            ).astype(jnp.uint32),
-            c=jax.random.uniform(
-                key3,
-                shape=shape + (1, 2, 3),
-            ).astype(jnp.float32),
-        )
-
 
 def rotl(x, n):
     """Rotate left operation for 32-bit integers."""

@@ -17,15 +17,7 @@ class XtructureValue:
         a = jnp.full(shape, -1, dtype=jnp.uint8)
         b = jnp.full(shape + (1, 2), -1, dtype=jnp.uint32)
         return cls(a=a, b=b)
-    
-    @classmethod
-    def random(cls, shape=(), key=None):
-        if key is None:
-            key = jax.random.PRNGKey(0)
-        key1, key2 = jax.random.split(key, 2)
-        a = jax.random.randint(key1, shape, 0, 10, dtype=jnp.uint8)
-        b = jax.random.randint(key2, shape + (1, 2), 0, 10, dtype=jnp.uint32)
-        return cls(a=a, b=b)
+
 
 @jax.jit
 def is_equal(a, b):
