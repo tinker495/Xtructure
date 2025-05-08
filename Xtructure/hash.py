@@ -17,9 +17,10 @@ from .annotate import (
     HASH_TABLE_IDX_DTYPE,
     SIZE_DTYPE,
 )
+from .data import Xtructurable
 from .util import set_tree_as_condition
 
-PyTree = TypeVar("PyTree")
+PyTree = Xtructurable
 
 T = TypeVar("T")
 HASH_FUNC_TYPE = Callable[[PyTree, int], Tuple[jnp.uint32, jnp.ndarray]]

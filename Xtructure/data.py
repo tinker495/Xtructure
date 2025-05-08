@@ -39,7 +39,7 @@ class Xtructurable(Protocol[T]):
     # Methods and properties added by add_default_parser
     # Assumes the class T has a 'default' classmethod as per the decorator's assertion
     @classmethod
-    def default(cls: Type[T]) -> T:
+    def default(cls: Type[T], shape: Any = ...) -> T:
         ...
     @property
     def default_shape(self) -> Any: # Derived from self.default().shape

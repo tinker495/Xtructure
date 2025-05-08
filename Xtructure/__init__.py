@@ -18,6 +18,7 @@ from .hash import (
     HashTable
 )
 from .data import (
+    Xtructurable,
     xtructure_data,
     StructuredType
 )
@@ -41,6 +42,7 @@ __all__ = [
     "hash_func_builder",
     "HashTable",
     # data.py
+    "Xtructurable",
     "xtructure_data",
     "StructuredType",
 ] 
