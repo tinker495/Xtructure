@@ -8,7 +8,6 @@ from .annotate import (
     CUCKOO_TABLE_N
 )
 from .bgpq import (
-    bgpq_value_dataclass,
     HeapValue,
     BGPQ
 )
@@ -17,6 +16,10 @@ from .hash import (
     xxhash,
     hash_func_builder,
     HashTable
+)
+from .data import (
+    xtructure_data,
+    StructuredType
 )
 
 __all__ = [
@@ -37,4 +40,7 @@ __all__ = [
     "xxhash",
     "hash_func_builder",
     "HashTable",
+    # data.py
+    "xtructure_data",
+    "StructuredType",
 ] 

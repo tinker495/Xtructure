@@ -168,7 +168,7 @@ class HashTable:
         )  # Convert to concrete integer
         size = SIZE_DTYPE(0)
         # Initialize table with default states
-        table = jax.vmap(jax.vmap(dataclass.default))(jnp.zeros((_capacity + 1, CUCKOO_TABLE_N)))
+        table = dataclass.default((_capacity + 1, CUCKOO_TABLE_N))
         table_idx = jnp.zeros((_capacity + 1), dtype=HASH_TABLE_IDX_DTYPE)
         # hash_func = hash_func_builder(statecls)
         return HashTable(
@@ -340,7 +340,7 @@ class HashTable:
         batched = jax.tree_util.tree_map(
             lambda x, y: jnp.concatenate([x, y]),
             inputs,
-            jax.vmap(statecls.default)(jnp.arange(batch_size - count)),
+            statecls.default((batch_size - count,)),
         )
         filled = jnp.concatenate([jnp.ones(count), jnp.zeros(batch_size - count)], dtype=jnp.bool_)
         return batched, filled

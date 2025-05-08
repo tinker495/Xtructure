@@ -4,11 +4,11 @@ import jax.numpy as jnp
 import pytest
 
 from Xtructure import KEY_DTYPE
-from Xtructure import BGPQ, bgpq_value_dataclass
+from Xtructure import BGPQ, xtructure_data
 
 
-@bgpq_value_dataclass
-class HeapValue:
+@xtructure_data
+class XtructureValue:
     """
     This class is a dataclass that represents a hash table heap value.
     It has two fields:
@@ -20,19 +20,20 @@ class HeapValue:
     b: chex.Array
     c: chex.Array
 
-    @staticmethod
-    def default(shape=()) -> "HeapValue":
-        return HeapValue(
+    @classmethod
+    def default(cls, shape=()) -> "XtructureValue":
+        return cls(
             a=jnp.full(shape, jnp.inf, dtype=jnp.uint8),
             b=jnp.full(shape + (1, 2), jnp.inf, dtype=jnp.uint32),
             c=jnp.full(shape + (1, 2, 3), jnp.inf, dtype=jnp.float32),
         )
 
-    def random(shape=(), key=None):
+    @classmethod
+    def random(cls, shape=(), key=None):
         if key is None:
             key = jax.random.PRNGKey(0)
         key1, key2, key3 = jax.random.split(key, 3)
-        return HeapValue(
+        return cls(
             a=jax.random.randint(
                 key1,
                 shape=shape,
@@ -85,7 +86,7 @@ def xxhash(x, seed):
     return acc
 
 
-def heap_key_builder(x: HeapValue):
+def heap_key_builder(x: XtructureValue):
     @jax.jit
     def _to_bytes(x):
         """Convert input to byte array."""
@@ -141,9 +142,9 @@ def heap_key_builder(x: HeapValue):
 def heap_setup():
     batch_size = 128
     max_size = 100000
-    heap = BGPQ.build(max_size, batch_size, HeapValue)
+    heap = BGPQ.build(max_size, batch_size, XtructureValue)
 
-    _key_gen = heap_key_builder(HeapValue)
+    _key_gen = heap_key_builder(XtructureValue)
     _key_gen = jax.jit(jax.vmap(_key_gen))
 
     return heap, batch_size, max_size, _key_gen
@@ -162,7 +163,7 @@ def test_heap_insert_and_delete_batch_size(heap_setup):
     # Test batch insertion
     for i in range(0, 512, 1):
 
-        value = HeapValue.random(shape=(batch_size,), key=jax.random.PRNGKey(i))
+        value = XtructureValue.random(shape=(batch_size,), key=jax.random.PRNGKey(i))
         key = _key_gen(value)
         heap = BGPQ.insert(heap, key, value)
 
@@ -231,7 +232,7 @@ def test_heap_insert_and_delete_random_size(heap_setup):
         size = jax.random.randint(
             jax.random.PRNGKey(i), minval=batch_size - 10, maxval=batch_size, shape=()
         )
-        value = HeapValue.random(shape=(size,), key=jax.random.PRNGKey(i))
+        value = XtructureValue.random(shape=(size,), key=jax.random.PRNGKey(i))
         key = _key_gen(value)
         key, value = BGPQ.make_batched(key, value, batch_size)
         heap = BGPQ.insert(heap, key, value)

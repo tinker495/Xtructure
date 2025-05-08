@@ -8,92 +8,17 @@ Key features:
 - Maintains sorted order for efficient min/max operations
 """
 
-from collections import namedtuple
 from functools import partial
 
 import chex
 import jax
 import jax.numpy as jnp
+from typing import Any
 
 from .annotate import KEY_DTYPE, SIZE_DTYPE
 from .util import set_array, set_tree
-
 SORT_STABLE = True  # Use stable sorting to maintain insertion order for equal keys
-
-
-def bgpq_value_dataclass(cls):
-    """
-    Decorator that creates a dataclass for HeapValue with additional functionality.
-    Adds shape, dtype, getitem, and len properties to the class.
-
-    Args:
-        cls: The class to be decorated
-
-    Returns:
-        The decorated class with additional heap value functionality
-    """
-    cls = chex.dataclass(cls)
-
-    shape_tuple = namedtuple("shape", cls.__annotations__.keys())
-
-    def get_shape(self) -> shape_tuple:
-        """Get shapes of all fields in the dataclass"""
-        return shape_tuple(
-            *[getattr(self, field_name).shape for field_name in cls.__annotations__.keys()]
-        )
-
-    setattr(cls, "shape", property(get_shape))
-
-    type_tuple = namedtuple("dtype", cls.__annotations__.keys())
-
-    def get_type(self) -> type_tuple:
-        """Get dtypes of all fields in the dataclass"""
-        return type_tuple(
-            *[
-                jnp.dtype(getattr(self, field_name).dtype)
-                for field_name in cls.__annotations__.keys()
-            ]
-        )
-
-    setattr(cls, "dtype", property(get_type))
-
-    def getitem(self, index):
-        """Support indexing operations on the dataclass"""
-        new_values = {}
-        for field_name, field_value in self.__dict__.items():
-            if hasattr(field_value, "__getitem__"):
-                new_values[field_name] = field_value[index]
-            else:
-                new_values[field_name] = field_value
-        return cls(**new_values)
-
-    setattr(cls, "__getitem__", getitem)
-
-    def len(self):
-        """Get length of the first field's first dimension"""
-        return self.shape[0][0]
-
-    setattr(cls, "__len__", len)
-
-    # Ensure class has a default method for initialization
-    assert hasattr(cls, "default"), "HeapValue class must have a default method."
-
-    return cls
-
-
-@bgpq_value_dataclass
-class HeapValue:
-    """
-    Base class for heap values stored in the priority queue.
-    This is a dummy implementation that should be subclassed with actual fields.
-    Must implement the default() method to create default instances.
-    """
-
-    @staticmethod
-    def default(_=None) -> "HeapValue":
-        """Create a default instance of HeapValue"""
-        pass
-
+HeapValue = Any
 
 @chex.dataclass
 class BGPQ:

@@ -6,17 +6,17 @@ with open("README.md", "r", encoding="utf-8") as fh:
 setuptools.setup(
     name="Xtructure",
     version="0.0.1",
-    author="Your Name",  # Please change this
-    author_email="your.email@example.com",  # Please change this
+    author="tinker495",
+    author_email="wjdrbtjr495@gmail.com",
     description="JAX-optimized data structures",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/Xtructure",  # Please change this
+    url="https://github.com/tinker495/Xtructure",
     packages=setuptools.find_packages(),
     install_requires=[
-        "jax>=0.4.0",
-        "jaxlib>=0.4.0", # jaxlib is often a direct dependency of jax but good to specify
+        "jax[cuda]>=0.4.0",
         "chex>=0.1.0",
+        "tabulate>=0.9.0",
     ],
     extras_require={
         'dev': [
@@ -25,7 +25,7 @@ setuptools.setup(
     },
     classifiers=[
         "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: MIT License",  # Choose an appropriate license
+        "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
         "Framework :: JAX",

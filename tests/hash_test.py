@@ -4,18 +4,43 @@ import pytest
 
 from Xtructure.hash import HashTable, hash_func_builder
 from Xtructure.util import set_tree
+from Xtructure.data import xtructure_data
 
+import chex
+@xtructure_data
+class XtructureValue:
+    a: chex.Array
+    b: chex.Array
 
+    @classmethod
+    def default(cls, shape=()) -> "XtructureValue":
+        a = jnp.full(shape, -1, dtype=jnp.uint8)
+        b = jnp.full(shape + (1, 2), -1, dtype=jnp.uint32)
+        return cls(a=a, b=b)
+    
+    @classmethod
+    def random(cls, shape=(), key=None):
+        if key is None:
+            key = jax.random.PRNGKey(0)
+        key1, key2 = jax.random.split(key, 2)
+        a = jax.random.randint(key1, shape, 0, 10, dtype=jnp.uint8)
+        b = jax.random.randint(key2, shape + (1, 2), 0, 10, dtype=jnp.uint32)
+        return cls(a=a, b=b)
+
+@jax.jit
+def is_equal(a, b):
+    tree_equal = jax.tree_util.tree_map(lambda x, y: jnp.all(x == y), a, b)
+    return jax.tree_util.tree_reduce(jnp.logical_and, tree_equal)
 
 @pytest.fixture
-def hash_func(puzzle):
-    return hash_func_builder(puzzle.State)
+def hash_func():
+    return hash_func_builder(XtructureValue)
 
 
-def test_hash_table_lookup(puzzle, hash_func):
+def test_hash_table_lookup(hash_func):
     count = 1000
-    _, sample = jax.vmap(puzzle.get_inits)(key=jax.random.split(jax.random.PRNGKey(2), count))
-    table = HashTable.build(puzzle.State, 1, int(1e4))
+    sample = XtructureValue.random((count,))
+    table = HashTable.build(XtructureValue, 1, int(1e4))
 
     lookup = jax.jit(lambda table, sample: HashTable.lookup(table, hash_func, sample))
     idx, table_idx, found = jax.vmap(lookup, in_axes=(None, 0))(table, sample)
@@ -26,12 +51,12 @@ def test_hash_table_lookup(puzzle, hash_func):
     assert not jnp.any(found)  # Initially all should be not found
 
 
-def test_hash_table_insert(puzzle, hash_func):
+def test_hash_table_insert(hash_func):
     count = 1000
     batch = 4000
-    table = HashTable.build(puzzle.State, 1, int(1e4))
+    table = HashTable.build(XtructureValue, 1, int(1e4))
 
-    _, sample = jax.vmap(puzzle.get_inits)(key=jax.random.split(jax.random.PRNGKey(256), count))
+    sample = XtructureValue.random((count,))
 
     lookup = jax.jit(lambda table, sample: HashTable.lookup(table, hash_func, sample))
     parallel_insert = jax.jit(
@@ -43,7 +68,7 @@ def test_hash_table_insert(puzzle, hash_func):
     assert not jnp.any(old_found)
 
     # Insert states
-    batched_sample, filled = HashTable.make_batched(puzzle.State, sample, batch)
+    batched_sample, filled = HashTable.make_batched(XtructureValue, sample, batch)
     table, inserted, _, _, _ = parallel_insert(table, batched_sample, filled)
 
     # Verify insertion
@@ -52,9 +77,9 @@ def test_hash_table_insert(puzzle, hash_func):
     assert jnp.mean(inserted) > 0  # Some states should have been inserted
 
 
-def test_same_state_insert_at_batch(puzzle, hash_func):
+def test_same_state_insert_at_batch(hash_func):
     batch = 5000
-    table = HashTable.build(puzzle.State, 1, int(1e5))
+    table = HashTable.build(XtructureValue, 1, int(1e5))
     parallel_insert = jax.jit(
         lambda table, sample, filled: HashTable.parallel_insert(table, hash_func, sample, filled)
     )
@@ -65,7 +90,7 @@ def test_same_state_insert_at_batch(puzzle, hash_func):
     all_samples = []
     for i in range(num):
         key = jax.random.PRNGKey(i)
-        _, samples = jax.vmap(puzzle.get_inits)(key=jax.random.split(key, batch))
+        samples = XtructureValue.random((batch,))
         cloned_sample_num = jax.random.randint(key, (), 1, batch // 2)
         cloned_sample_idx = jax.random.randint(key, (cloned_sample_num,), 0, batch)
         cloned_sample_idx = jnp.sort(cloned_sample_idx)
@@ -78,7 +103,7 @@ def test_same_state_insert_at_batch(puzzle, hash_func):
         # after this, some states are duplicated
         all_samples.append(samples)
 
-        batched_sample, filled = HashTable.make_batched(puzzle.State, samples, batch)
+        batched_sample, filled = HashTable.make_batched(XtructureValue, samples, batch)
         table, updatable, unique, idxs, table_idxs = parallel_insert(table, batched_sample, filled)
         counts += jnp.sum(updatable)
 
@@ -112,16 +137,16 @@ def test_same_state_insert_at_batch(puzzle, hash_func):
         assert jnp.all(found), "Cross-batch state missing"
         contents = table.table[idx, table_idx]
         assert jnp.all(
-            jax.vmap(puzzle.is_equal)(contents, samples)
+            jax.vmap(is_equal)(contents, samples)
         ), "Inserted states not found in table"
 
 
-def test_large_hash_table(puzzle, hash_func):
+def test_large_hash_table(hash_func):
     count = int(1e7)
     batch = int(1e4)
-    table = HashTable.build(puzzle.State, 1, count)
+    table = HashTable.build(XtructureValue, 1, count)
 
-    _, sample = jax.vmap(puzzle.get_inits)(key=jax.random.split(jax.random.PRNGKey(2), count))
+    sample = XtructureValue.random((count,))
     hash, bytes = jax.vmap(hash_func, in_axes=(0, None))(sample, 0)
     unique_bytes = jnp.unique(bytes, axis=0, return_index=True)[1]
     unique_bytes_len = unique_bytes.shape[0]
