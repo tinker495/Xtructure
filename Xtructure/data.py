@@ -143,7 +143,7 @@ def add_shape_dtype_getitem_len(cls: Type[T]) -> Type[T]:
         """Get dtypes of all fields in the dataclass"""
         return type_tuple(
             *[
-                jnp.dtype(getattr(self, field_name).dtype)
+                getattr(self, field_name).dtype
                 for field_name in cls.__annotations__.keys()
             ]
         )
@@ -201,31 +201,39 @@ def add_default_parser(cls: Type[T]) -> Type[T]:
     for field_name_cfg in _field_names_for_random:
         cfg = {}
         cfg['name'] = field_name_cfg
+        # Retrieve the dtype or nested dtype tuple for the current field
+        actual_dtype_or_nested_dtype_tuple = getattr(default_dtype, field_name_cfg)
         cfg['default_field_shape'] = getattr(default_shape, field_name_cfg, ()) # Default to empty tuple if not found
-        actual_dtype = getattr(default_dtype, field_name_cfg)
-        cfg['actual_dtype'] = actual_dtype
-
-        if jnp.issubdtype(actual_dtype, jnp.integer):
-            cfg['type'] = 'bits_int' # Unified type for all full-range integers via bits
-            # cfg['actual_dtype'] is already set above
-
-            if jnp.issubdtype(actual_dtype, jnp.unsignedinteger):
-                cfg['bits_gen_dtype'] = actual_dtype # Generate bits of this same unsigned type
-                cfg['view_as_signed'] = False
-            else: # It's a signed integer
-                unsigned_equivalent_str = f'uint{actual_dtype.itemsize * 8}'
-                cfg['bits_gen_dtype'] = jnp.dtype(unsigned_equivalent_str) # Generate bits of corresponding unsigned type
-                cfg['view_as_signed'] = True # And then view them as the actual signed type
-
-        elif jnp.issubdtype(actual_dtype, jnp.floating):
-            cfg['type'] = 'float'
-            cfg['gen_dtype'] = actual_dtype
-        elif actual_dtype == jnp.bool_:
-            cfg['type'] = 'bool'
-            # bernoulli does not take dtype, it's always bool
+        
+        if isnamedtupleinstance(actual_dtype_or_nested_dtype_tuple):
+            # This field is a nested xtructure_data instance
+            cfg['type'] = 'xtructure'
+            # Store the actual nested class type (e.g., Parent, Current)
+            cfg['nested_class_type'] = cls.__annotations__[field_name_cfg]
+            # Store the namedtuple of dtypes for the nested structure
+            cfg['actual_dtype'] = actual_dtype_or_nested_dtype_tuple 
         else:
-            cfg['type'] = 'other' # Fallback
-            cfg['gen_dtype'] = actual_dtype
+            # This field is a regular JAX array
+            actual_dtype = actual_dtype_or_nested_dtype_tuple # It's a single JAX dtype here
+            cfg['actual_dtype'] = actual_dtype # Store the single JAX dtype
+
+            if jnp.issubdtype(actual_dtype, jnp.integer):
+                cfg['type'] = 'bits_int' # Unified type for all full-range integers via bits
+                if jnp.issubdtype(actual_dtype, jnp.unsignedinteger):
+                    cfg['bits_gen_dtype'] = actual_dtype # Generate bits of this same unsigned type
+                    cfg['view_as_signed'] = False
+                else: # It's a signed integer
+                    unsigned_equivalent_str = f'uint{actual_dtype.itemsize * 8}'
+                    cfg['bits_gen_dtype'] = jnp.dtype(unsigned_equivalent_str) # Generate bits of corresponding unsigned type
+                    cfg['view_as_signed'] = True # And then view them as the actual signed type
+            elif jnp.issubdtype(actual_dtype, jnp.floating):
+                cfg['type'] = 'float'
+                cfg['gen_dtype'] = actual_dtype 
+            elif actual_dtype == jnp.bool_:
+                cfg['type'] = 'bool'
+            else:
+                cfg['type'] = 'other' # Fallback
+                cfg['gen_dtype'] = actual_dtype
         _field_generation_configs.append(cfg)
 
 
@@ -283,44 +291,45 @@ def add_default_parser(cls: Type[T]) -> Type[T]:
             field_key = keys[i]
             field_name = cfg['name']
             
-            # Combine user-provided shape with field's default_shape component
-            # Ensure cfg['default_field_shape'] is a tuple
-            current_default_shape = cfg['default_field_shape']
-            if not isinstance(current_default_shape, tuple):
-                current_default_shape = (current_default_shape,) # Ensure it's a tuple for concatenation
+            if cfg['type'] == 'xtructure':
+                nested_class = cfg['nested_class_type']
+                # Recursively call random for the nested xtructure_data class.
+                # Pass the batch 'shape' and field_key.
+                # The nested random method will manage its own internal field shapes.
+                data[field_name] = nested_class.random(shape=shape, key=field_key)
+            else:
+                # This branch handles primitive JAX array fields.
+                current_default_shape = cfg['default_field_shape']
+                if not isinstance(current_default_shape, tuple):
+                    current_default_shape = (current_default_shape,) # Ensure it's a tuple for concatenation
+                
+                target_shape = shape + current_default_shape
 
-            target_shape = shape + current_default_shape
-
-            # The 'int' type condition (now removed) was effectively superseded by 'bits_int'
-            # for all jax integer types. jax.random.randint also has limitations
-            # with full range for uint64. Using jax.random.bits is generally more robust
-            # for generating integers across their full range.
-            if cfg['type'] == 'bits_int':
-                generated_bits = jax.random.bits(
-                    field_key,
-                    shape=target_shape,
-                    dtype=cfg['bits_gen_dtype']
-                )
-                if cfg['view_as_signed']:
-                    data[field_name] = generated_bits.view(cfg['actual_dtype'])
-                else:
-                    data[field_name] = generated_bits
-            elif cfg['type'] == 'float':
-                data[field_name] = jax.random.uniform(
-                    field_key, target_shape, dtype=cfg['gen_dtype']
-                )
-            elif cfg['type'] == 'bool':
-                data[field_name] = jax.random.bernoulli(
-                    field_key, shape=target_shape # p=0.5 by default
-                )
-            else: # Fallback for 'other' dtypes
-                try:
-                    # Attempt to create zeros, or let it fail if not sensible
-                    data[field_name] = jnp.zeros(target_shape, dtype=cfg['gen_dtype'])
-                except TypeError:
-                    raise NotImplementedError(
-                        f"Random generation for dtype {cfg['gen_dtype']} (field: {field_name}) is not implemented robustly."
+                if cfg['type'] == 'bits_int':
+                    generated_bits = jax.random.bits(
+                        field_key,
+                        shape=target_shape,
+                        dtype=cfg['bits_gen_dtype']
                     )
+                    if cfg['view_as_signed']:
+                        data[field_name] = generated_bits.view(cfg['actual_dtype'])
+                    else:
+                        data[field_name] = generated_bits
+                elif cfg['type'] == 'float':
+                    data[field_name] = jax.random.uniform(
+                        field_key, target_shape, dtype=cfg['gen_dtype']
+                    )
+                elif cfg['type'] == 'bool':
+                    data[field_name] = jax.random.bernoulli(
+                        field_key, shape=target_shape # p=0.5 by default
+                    )
+                else: # Fallback for 'other' dtypes (cfg['type'] == 'other')
+                    try:
+                        data[field_name] = jnp.zeros(target_shape, dtype=cfg['gen_dtype'])
+                    except TypeError:
+                        raise NotImplementedError(
+                            f"Random generation for dtype {cfg['gen_dtype']} (field: {field_name}) is not implemented robustly."
+                        )
         return cls(**data)
 
     # add method based on default state
