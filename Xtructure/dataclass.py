@@ -466,7 +466,7 @@ def add_string_representation_methods(cls: Type[T]) -> Type[T]:
                     else:
                         results.append(_single_item_formatter(current_state_slice))
                 
-                results.append("...\\n(batch : " + f"{batch_shape})")
+                results.append("...\n(batch : " + f"{batch_shape})")
                 
                 for i in range(py_batch_len - SHOW_BATCH_SIZE, py_batch_len):
                     index = jnp.unravel_index(i, batch_shape)
