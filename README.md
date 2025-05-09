@@ -19,23 +19,14 @@ pip install Xtructure
 ```python
 import jax
 import jax.numpy as jnp
-import chex
 
-from Xtructure.hash import HashTable, hash_func_builder
-from Xtructure.data import xtructure_data
-from Xtructure import BGPQ, KEY_DTYPE
+from Xtructure import HashTable, hash_func_builder, BGPQ, KEY_DTYPE, xtructure_dataclass, FieldDescriptor
 
 # Define a custom data structure using xtructure_data
-@xtructure_data
+@xtructure_dataclass
 class MyDataValue:
-    a: chex.Array
-    b: chex.Array
-
-    @classmethod
-    def default(cls, shape=()) -> "MyDataValue":
-        a = jnp.full(shape, -1, dtype=jnp.uint8)
-        b = jnp.full(shape + (1, 2), -1, dtype=jnp.uint32)
-        return cls(a=a, b=b)
+    a: FieldDescriptor(jnp.uint8) # type: ignore
+    b: FieldDescriptor(jnp.uint32, (1, 2)) # type: ignore
 
 # --- HashTable Example ---
 print("--- HashTable Example ---")
@@ -81,10 +72,10 @@ else:
 print("\n--- BGPQ Example ---")
 
 # Define another custom data structure for the BGPQ values (can be the same or different)
-@xtructure_data
+@xtructure_dataclass
 class MyHeapValue:
-    id: chex.Array # Example field
-    data: chex.Array
+    id: FieldDescriptor(jnp.int32) # type: ignore
+    data: FieldDescriptor(jnp.float32, (2,)) # type: ignore
 
     @classmethod
     def default(cls, shape=()) -> "MyHeapValue":
