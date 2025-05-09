@@ -77,14 +77,6 @@ class MyHeapValue:
     id: FieldDescriptor(jnp.int32) # type: ignore
     data: FieldDescriptor(jnp.float32, (2,)) # type: ignore
 
-    @classmethod
-    def default(cls, shape=()) -> "MyHeapValue":
-        return cls(
-            id=jnp.full(shape, -1, dtype=jnp.int32),
-            data=jnp.full(shape + (2,), -1.0, dtype=jnp.float32)
-        )
-
-
 # 1. Build a BGPQ
 # BGPQ.build(max_size, batch_size, pytree_def_type_for_values)
 pq_max_size = 2000
