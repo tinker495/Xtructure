@@ -1,3 +1,4 @@
+from functools import partial
 import chex
 import jax
 import jax.numpy as jnp
@@ -408,13 +409,13 @@ def add_string_representation_methods(cls: Type[T]) -> Type[T]:
     else:
         # Use the captured original __str__ method.
         # We need to ensure it's called as a method of the item.
-        _single_item_formatter = lambda item, **k: _original_str_method(item)
+        _single_item_formatter = lambda item, **k: _original_str_method(item, **k)
         # Note: Original __str__ methods typically don't take **kwargs.
         # If kwargs support is needed for the single item formatter,
         # the user would need to define a specific method and the decorator would look for that.
         # For now, we assume the original __str__ doesn't use kwargs from get_str.
 
-    def get_str(self, **kwargs) -> str:
+    def get_str(self, use_kwargs: bool = False, **kwargs) -> str:
         # This 'self' is an instance of the decorated class 'cls'
         # 'kwargs' are passed from the print(instance) or str(instance) call.
 
@@ -424,13 +425,19 @@ def add_string_representation_methods(cls: Type[T]) -> Type[T]:
             # For a single item, call the chosen formatter.
             # Pass kwargs only if the formatter is not the built-in repr.
             if _single_item_formatter is repr:
-                return repr(self)
+                if use_kwargs:
+                    return repr(self, **kwargs)
+                else:
+                    return repr(self)
             else:
                 # Our lambda wrapper for _original_str_method doesn't currently pass kwargs.
                 # If _original_str_method was, e.g., a user's custom __str__ that took kwargs,
                 # this would need adjustment or a different convention.
                 # For now, assuming _original_str_method (like a dataclass __str__) doesn't expect these kwargs.
-                return _single_item_formatter(self) # Invokes the lambda: _original_str_method(self)
+                if use_kwargs:
+                    return _single_item_formatter(self, **kwargs)
+                else:
+                    return _single_item_formatter(self) # Invokes the lambda: _original_str_method(self)
         
         elif structured_type == StructuredType.BATCHED:
             batch_shape = self.batch_shape
@@ -446,19 +453,28 @@ def add_string_representation_methods(cls: Type[T]) -> Type[T]:
                     current_state_slice = self[index]
                     # kwargs_idx = {k: v[index] for k, v in kwargs.items()} # Index kwargs if they are batched
                     # For now, assume single_item_formatter doesn't use these indexed kwargs
-                    results.append(_single_item_formatter(current_state_slice))
+                    if use_kwargs:
+                        results.append(_single_item_formatter(current_state_slice, **kwargs))
+                    else:
+                        results.append(_single_item_formatter(current_state_slice))
             else:
                 for i in range(SHOW_BATCH_SIZE):
                     index = jnp.unravel_index(i, batch_shape)
                     current_state_slice = self[index]
-                    results.append(_single_item_formatter(current_state_slice))
+                    if use_kwargs:
+                        results.append(_single_item_formatter(current_state_slice, **kwargs))
+                    else:
+                        results.append(_single_item_formatter(current_state_slice))
                 
                 results.append("...\\n(batch : " + f"{batch_shape})")
                 
                 for i in range(py_batch_len - SHOW_BATCH_SIZE, py_batch_len):
                     index = jnp.unravel_index(i, batch_shape)
                     current_state_slice = self[index]
-                    results.append(_single_item_formatter(current_state_slice))
+                    if use_kwargs:
+                        results.append(_single_item_formatter(current_state_slice, **kwargs))
+                    else:
+                        results.append(_single_item_formatter(current_state_slice))
             return tabulate([results], tablefmt="plain")
         else: # UNSTRUCTURED or any other case
             # Fallback for unstructured or unexpected types to avoid errors,
@@ -468,8 +484,8 @@ def add_string_representation_methods(cls: Type[T]) -> Type[T]:
             return f"<Unstructured {cls.__name__} data, shape: {self.shape}, default_shape: {self.default_shape}>"
 
 
-    setattr(cls, "__str__", get_str)
-    setattr(cls, "str", get_str) # Alias .str to the new __str__
+    setattr(cls, "__str__", lambda self, **kwargs: get_str(self, use_kwargs=False, **kwargs))
+    setattr(cls, "str", lambda self, **kwargs: get_str(self, use_kwargs=True, **kwargs)) # Alias .str to the new __str__
     return cls
 
 # Helper function to check if an annotation object is a class (potential nested xtructure)
