@@ -17,7 +17,7 @@ from .annotate import (
     HASH_TABLE_IDX_DTYPE,
     SIZE_DTYPE,
 )
-from .data import Xtructurable
+from .dataclass import Xtructurable
 from .util import set_tree_as_condition
 
 PyTree = Xtructurable

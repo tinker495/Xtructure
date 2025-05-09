@@ -4,10 +4,11 @@ import jax.numpy as jnp
 import pytest
 
 from Xtructure import KEY_DTYPE
-from Xtructure import BGPQ, xtructure_data
+from Xtructure import BGPQ, xtructure_dataclass
+from Xtructure.field_descriptors import FieldDescriptor
 
 
-@xtructure_data
+@xtructure_dataclass
 class XtructureValue:
     """
     This class is a dataclass that represents a hash table heap value.
@@ -16,17 +17,9 @@ class XtructureValue:
     2. table_index: cuckoo table index
     """
 
-    a: chex.Array
-    b: chex.Array
-    c: chex.Array
-
-    @classmethod
-    def default(cls, shape=()) -> "XtructureValue":
-        return cls(
-            a=jnp.full(shape, jnp.inf, dtype=jnp.uint8),
-            b=jnp.full(shape + (1, 2), jnp.inf, dtype=jnp.uint32),
-            c=jnp.full(shape + (1, 2, 3), jnp.inf, dtype=jnp.float32),
-        )
+    a: FieldDescriptor(jnp.uint8) # type: ignore
+    b: FieldDescriptor(jnp.uint32, (1, 2)) # type: ignore
+    c: FieldDescriptor(jnp.float32, (1, 2, 3)) # type: ignore
 
 
 def rotl(x, n):

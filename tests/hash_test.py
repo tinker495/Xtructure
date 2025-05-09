@@ -4,19 +4,14 @@ import pytest
 
 from Xtructure.hash import HashTable, hash_func_builder
 from Xtructure.util import set_tree
-from Xtructure.data import xtructure_data
+from Xtructure.dataclass import xtructure_dataclass
+from Xtructure.field_descriptors import FieldDescriptor
 
-import chex
-@xtructure_data
+
+@xtructure_dataclass
 class XtructureValue:
-    a: chex.Array
-    b: chex.Array
-
-    @classmethod
-    def default(cls, shape=()) -> "XtructureValue":
-        a = jnp.full(shape, -1, dtype=jnp.uint8)
-        b = jnp.full(shape + (1, 2), -1, dtype=jnp.uint32)
-        return cls(a=a, b=b)
+    a: FieldDescriptor(jnp.uint8) # type: ignore
+    b: FieldDescriptor(jnp.uint32, (1, 2)) # type: ignore
 
 
 @jax.jit

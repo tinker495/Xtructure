@@ -17,10 +17,13 @@ from .hash import (
     hash_func_builder,
     HashTable
 )
-from .data import (
+from .dataclass import (
     Xtructurable,
-    xtructure_data,
+    xtructure_dataclass,
     StructuredType
+)
+from .field_descriptors import (
+    FieldDescriptor
 )
 
 __all__ = [
@@ -43,6 +46,8 @@ __all__ = [
     "HashTable",
     # data.py
     "Xtructurable",
-    "xtructure_data",
+    "xtructure_dataclass",
     "StructuredType",
+    # field_descriptors.py
+    "FieldDescriptor",
 ] 

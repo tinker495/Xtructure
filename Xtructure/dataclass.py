@@ -4,9 +4,13 @@ import jax.numpy as jnp
 import typing # Added for Protocol and TYPE_CHECKING
 
 from collections import namedtuple
-from typing import TypeVar, Type, Dict, Any, Tuple as TypingTuple, Protocol # Added Protocol, TypingTuple
+from typing import TypeVar, Type, Dict, Any, Tuple as TypingTuple, Protocol, Callable # Added Protocol, TypingTuple, Callable
 from enum import Enum
 from tabulate import tabulate
+
+# Import FieldDescriptor and inspect
+from .field_descriptors import FieldDescriptor
+import inspect
 
 MAX_PRINT_BATCH_SIZE = 4
 SHOW_BATCH_SIZE = 2
@@ -36,7 +40,7 @@ class Xtructurable(Protocol[T]):
     def __len__(self) -> int:
         ...
 
-    # Methods and properties added by add_default_parser
+    # Methods and properties added by add_structure_utilities_and_random
     # Assumes the class T has a 'default' classmethod as per the decorator's assertion
     @classmethod
     def default(cls: Type[T], shape: Any = ...) -> T:
@@ -58,7 +62,7 @@ class Xtructurable(Protocol[T]):
     def random(cls: Type[T], shape: TypingTuple[int, ...] = ..., key: Any = ...) -> T: # Ellipsis for default value
         ...
 
-    # Methods and properties added by add_string_parser
+    # Methods and properties added by add_string_representation_methods
     def __str__(self) -> str: # The actual implementation takes **kwargs, but signature can be simpler for Protocol
         ...
     def str(self) -> str: # Alias for __str__
@@ -77,13 +81,15 @@ def isnamedtupleinstance(x):
 
 def get_leaf_elements(tree: chex.Array):
     """
-    Extracts leaf elements from a nested tuple structure.
+    Extracts leaf elements from a nested structure, typically composed of
+    namedtuples and JAX arrays at the leaves.
 
     Args:
-        data: The nested tuple (or a single element).
+        tree: The nested structure (e.g., a namedtuple containing other
+              namedtuples or JAX arrays, or a single JAX array).
 
     Yields:
-        Leaf elements (non-tuple elements) within the nested structure.
+        Leaf elements (non-namedtuple elements) within the nested structure.
     """
     if isnamedtupleinstance(tree):
         for item in tree:
@@ -91,11 +97,12 @@ def get_leaf_elements(tree: chex.Array):
     else:
         yield tree  # Yield the leaf element
 
-def xtructure_data(cls: Type[T]) -> Type[Xtructurable[T]]:
+def xtructure_dataclass(cls: Type[T]) -> Type[Xtructurable[T]]:
     """
-    Decorator that creates a chex.dataclass and augments it with additional
-    functionality related to its structure, type, and operations like
-    indexing, default instance creation, random instance generation, and string representation.
+    Decorator that ensures the input class is a `chex.dataclass` (or converts
+    it to one) and then augments it with additional functionality related to its
+    structure, type, and operations like indexing, default instance creation,
+    random instance generation, and string representation.
 
     It adds properties like `shape`, `dtype`, `default_shape`, `structured_type`,
     `batch_shape`, and methods like `__getitem__`, `__len__`, `reshape`,
@@ -110,10 +117,13 @@ def xtructure_data(cls: Type[T]) -> Type[Xtructurable[T]]:
     """
     cls = chex.dataclass(cls)
 
+    # Ensure class has a default method for initialization
+    cls = _add_auto_default_method_if_needed(cls)
+
     # add shape and dtype and getitem and len
     cls = add_shape_dtype_getitem_len(cls)
-    cls = add_default_parser(cls)
-    cls = add_string_parser(cls)
+    cls = add_structure_utilities_and_random(cls) # Renamed from add_default_parser
+    cls = add_string_representation_methods(cls) # Renamed from add_string_parser
 
     # Ensure class has a default method for initialization
     assert hasattr(cls, "default"), "HeapValue class must have a default method."
@@ -127,6 +137,19 @@ class StructuredType(Enum):
     UNSTRUCTURED = 2
 
 def add_shape_dtype_getitem_len(cls: Type[T]) -> Type[T]:
+    """
+    Augments the class with properties to inspect the shape and dtype of its
+    fields, an `__getitem__` method for indexing/slicing, and a `__len__`
+    method.
+
+    The `shape` and `dtype` properties return namedtuples reflecting the
+    structure of the dataclass fields.
+    The `__getitem__` method allows instances to be indexed, applying the
+    index to each field.
+    The `__len__` method conventionally returns the size of the first
+    dimension of the first field of the instance, which is often useful
+    for determining batch sizes.
+    """
     shape_tuple = namedtuple("shape", cls.__annotations__.keys())
 
     def get_shape(self) -> shape_tuple:
@@ -170,28 +193,45 @@ def add_shape_dtype_getitem_len(cls: Type[T]) -> Type[T]:
     return cls
 
 
-def add_default_parser(cls: Type[T]) -> Type[T]:
+def add_structure_utilities_and_random(cls: Type[T]) -> Type[T]:
     """
-    This function is a decorator that adds a default dataclass to the class.
-    this function for making a default dataclass with the given shape, for example, hash table of the puzzle.
+    Augments the class with utility methods and properties related to its
+    structural representation (based on a 'default' instance), batch operations,
+    and random instance generation.
+
+    Requires the class to have a `default` classmethod, which is used to
+    determine default shapes, dtypes, and behaviors.
+
+    Adds:
+        - Properties:
+            - `default_shape`: Shape of the instance returned by `cls.default()`.
+            - `structured_type`: An enum (`StructuredType`) indicating if the
+              instance is SINGLE, BATCHED, or UNSTRUCTURED relative to its
+              default shape.
+            - `batch_shape`: The shape of the batch dimensions if `structured_type`
+              is BATCHED.
+        - Instance Methods:
+            - `reshape(new_shape)`: Reshapes the batch dimensions of a BATCHED instance.
+            - `flatten()`: Flattens the batch dimensions of a BATCHED instance.
+        - Classmethod:
+            - `random(shape=(), key=None)`: Generates an instance with random data.
+              The `shape` argument specifies the desired batch shape, which is
+              prepended to the default field shapes.
     """
     assert hasattr(cls, "default"), "There is no default method."
 
     default_shape = cls.default().shape
     default_dtype = cls.default().dtype
     try:
-        default_dim = len(default_shape[0])
-    except IndexError:
-        default_dim = None
-        # if default_dim is None, it means that the default shape is not a batch.
-        # If there's no default_dim, the concept of batched vs single might not apply in the same way.
-        # The original code returned cls here. If random is still desired,
-        # it would operate on non-batchable default shapes.
-        # For now, let's assume if default_dim is None, random might not be well-defined
-        # or needs special handling. The original code returned early.
-        # However, to allow random generation even for non-batchable defaults,
-        # we can proceed. The `target_shape` logic in random will just use the user-provided `shape`.
-        pass # Allow proceeding to define random even if default_dim is None
+        # Get the shape of the first leaf element in the default instance
+        first_leaf_shape = next(get_leaf_elements(default_shape))
+        default_dim = len(first_leaf_shape)
+    except StopIteration: # No leaf elements (e.g., class with no fields)
+        default_dim = 0
+    except IndexError: # Should ideally be caught by StopIteration if get_leaf_elements is robust
+        # This case was for when default_shape[0] was accessed on an empty default_shape.
+        # With get_leaf_elements, StopIteration is more likely for truly empty structures.
+        default_dim = 0 # Defaulting to 0 for safety, implies scalar-like leaves.
 
     # Pre-calculate generation configurations for the random method
     _field_generation_configs = []
@@ -341,11 +381,18 @@ def add_default_parser(cls: Type[T]) -> Type[T]:
     setattr(cls, "random", classmethod(random))
     return cls
 
-def add_string_parser(cls: Type[T]) -> Type[T]:
+def add_string_representation_methods(cls: Type[T]) -> Type[T]:
     """
-    This function is a decorator that adds a __str__ method to
-    the class that returns a string representation of the class.
-    It handles single instances and batched instances differently.
+    Adds custom `__str__` and `str` methods to the class for generating
+    a more informative string representation.
+
+    It handles instances categorized by `structured_type` differently:
+    - `SINGLE`: Uses the original `__str__` (or `repr` if basic) of the instance.
+    - `BATCHED`: Provides a summarized view if the batch is large, showing
+      the first few and last few elements, along with the batch shape.
+      Uses `tabulate` for formatting.
+    - `UNSTRUCTURED`: Indicates that the data is unstructured relative to its
+      default shape.
     """
 
     # Capture the class's __str__ method as it exists *before* this decorator replaces it.
@@ -423,4 +470,131 @@ def add_string_parser(cls: Type[T]) -> Type[T]:
 
     setattr(cls, "__str__", get_str)
     setattr(cls, "str", get_str) # Alias .str to the new __str__
+    return cls
+
+# Helper function to check if an annotation object is a class (potential nested xtructure)
+# For the purpose of _create_default_method, we check hasattr(default) at runtime.
+def _is_potentially_xtructure_class(annotation_obj: Any) -> bool:
+    return inspect.isclass(annotation_obj)
+
+def _create_default_method(cls_to_modify: Type[T]) -> Callable[..., T]:
+    @classmethod
+    def auto_default(cls: Type[T], shape: TypingTuple[int, ...] = ()) -> T:
+        default_values: Dict[str, Any] = {}
+        annotations = getattr(cls, '__annotations__', {})
+
+        for field_name, annotation_obj in annotations.items():
+            if isinstance(annotation_obj, FieldDescriptor):
+                descriptor = annotation_obj
+                dtype_of_field_descriptor = descriptor.dtype
+
+                if _is_potentially_xtructure_class(dtype_of_field_descriptor):
+                    # dtype_of_field_descriptor is a CLASS (e.g. <class 'numpy.int32'> or <class '__main__.Parent'>)
+                    # Differentiate: is it a JAX primitive *class* or a user-defined xtructure *class*?
+                    is_jax_primitive_type_class = False
+                    try:
+                        if jnp.issubdtype(dtype_of_field_descriptor, jnp.number) or \
+                           jnp.issubdtype(dtype_of_field_descriptor, jnp.bool_):
+                            is_jax_primitive_type_class = True
+                    except TypeError: # Not a type that jnp.issubdtype recognizes as a primitive base
+                        is_jax_primitive_type_class = False
+                    
+                    if is_jax_primitive_type_class:
+                        # It's like jnp.int32, jnp.float32. Use jnp.full.
+                        intrinsic_shape = descriptor.intrinsic_shape if isinstance(descriptor.intrinsic_shape, tuple) else (descriptor.intrinsic_shape,)
+                        field_shape = shape + intrinsic_shape
+                        default_values[field_name] = jnp.full(
+                            field_shape,
+                            descriptor.fill_value,
+                            dtype=dtype_of_field_descriptor # Use the primitive class directly
+                        )
+                    else:
+                        # It's a user-defined class like Parent. Use its .default() method.
+                        nested_class_type = dtype_of_field_descriptor
+                        if not hasattr(nested_class_type, 'default'):
+                            raise TypeError(
+                                f"Runtime error in auto-generated .default() for '{cls.__name__}': "
+                                f"Nested field '{field_name}' (type '{nested_class_type.__name__}' via FieldDescriptor.dtype) "
+                                f"does not have a .default() method. Ensure it's an @xtructure_data class."
+                            )
+                        default_values[field_name] = nested_class_type.default(shape=shape)
+                elif isinstance(dtype_of_field_descriptor, jnp.dtype):
+                    # dtype_of_field_descriptor is a JAX dtype INSTANCE (e.g., jnp.dtype('int32')). Use jnp.full.
+                    intrinsic_shape = descriptor.intrinsic_shape if isinstance(descriptor.intrinsic_shape, tuple) else (descriptor.intrinsic_shape,)
+                    field_shape = shape + intrinsic_shape
+                    default_values[field_name] = jnp.full(
+                        field_shape,
+                        descriptor.fill_value,
+                        dtype=dtype_of_field_descriptor
+                    )
+                else:
+                    # FieldDescriptor.dtype is neither a recognized class nor a jnp.dtype instance.
+                    raise TypeError(
+                        f"Runtime error in auto-generated .default() for '{cls.__name__}': "
+                        f"Field '{field_name}' uses FieldDescriptor with an unsupported .dtype attribute: '{dtype_of_field_descriptor}' "
+                        f"(type: {type(dtype_of_field_descriptor).__name__}). Expected a JAX primitive type/class "
+                        f"(like jnp.int32 or jnp.dtype('int32')), or an @xtructure_data class type (like Parent)."
+                    )
+            elif _is_potentially_xtructure_class(annotation_obj):
+                # annotation_obj is the type of the nested class directly (e.g., parent: Parent)
+                nested_class_type = annotation_obj
+                if not hasattr(nested_class_type, 'default'):
+                    raise TypeError(
+                        f"Runtime error in auto-generated .default() for '{cls.__name__}': "
+                        f"Nested field '{field_name}' of type '{nested_class_type.__name__}' "
+                        f"does not have a .default() method. Ensure it's an @xtructure_data class."
+                    )
+                default_values[field_name] = nested_class_type.default(shape=shape)
+            else:
+                # This case should ideally be caught by the pre-flight check in _add_auto_default_method_if_needed
+                # However, this runtime check is a safeguard.
+                raise TypeError(
+                    f"Runtime error in auto-generated .default() for '{cls.__name__}': "
+                    f"Field '{field_name}' with annotation '{annotation_obj}' (type: {type(annotation_obj).__name__}) "
+                    f"is not a FieldDescriptor or a compatible nested xtructure_data class."
+                )
+        
+        # Handle fields that are part of the dataclass but not in annotations (e.g. field_name: type = default_value)
+        # These fields should pick up their class-defined defaults automatically when cls(**default_values) is called,
+        # as long as they are not required in the __init__ generated by dataclass.
+        # If they are required (no default value provided in class def), and not in annotations,
+        # cls(**default_values) will fail, which is correct behavior.
+        return cls(**default_values)
+    return auto_default
+
+def _add_auto_default_method_if_needed(cls: Type[T]) -> Type[T]:
+    if hasattr(cls, "default"):
+        # User has provided a custom default method, so we don't overwrite it.
+        return cls
+
+    annotations = getattr(cls, '__annotations__', {})
+    
+    # Case 1: No annotations and no actual fields (e.g. `class A: pass`)
+    # __dataclass_fields__ is populated by chex.dataclass() which is called *before* this function.
+    dataclass_fields = getattr(cls, '__dataclass_fields__', {})
+    if not annotations and not dataclass_fields:
+        # Safe to generate a simple default() that calls cls()
+        setattr(cls, "default", _create_default_method(cls))
+        return cls
+
+    # Case 2: Has annotations. Check if all are suitable.
+    if annotations: # Only proceed if there are annotations to check
+        for field_name, ann_obj in annotations.items():
+            is_fd = isinstance(ann_obj, FieldDescriptor)
+            is_potential_nested = _is_potentially_xtructure_class(ann_obj)
+
+            if not is_fd and not is_potential_nested:
+                # Found an annotation that is not a FieldDescriptor and not a class.
+                # Auto-generation cannot handle this. Do not attach auto_default.
+                # The assertion in xtructure_data will provide a detailed error.
+                return cls
+        
+        # All annotations are suitable (FieldDescriptor or a class type).
+        setattr(cls, "default", _create_default_method(cls))
+        return cls
+    
+    # Case 3: No annotations, but has dataclass fields (e.g. `my_field = 1` or `my_field: int` if not in __annotations__ somehow)
+    # In this scenario, we can't auto-generate based on FieldDescriptors.
+    # The class must provide its own default method.
+    # So, we don't attach anything, and the main assertion in xtructure_data will trigger.
     return cls

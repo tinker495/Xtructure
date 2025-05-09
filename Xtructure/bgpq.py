@@ -14,7 +14,7 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from .data import Xtructurable
+from .dataclass import Xtructurable
 from .annotate import KEY_DTYPE, SIZE_DTYPE
 from .util import set_array, set_tree
 SORT_STABLE = True  # Use stable sorting to maintain insertion order for equal keys
