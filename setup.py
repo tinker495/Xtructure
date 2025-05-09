@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name="Xtructure",
-    version="0.0.1",
+    version="0.0.2",
     author="tinker495",
     author_email="wjdrbtjr495@gmail.com",
     description="JAX-optimized data structures",
