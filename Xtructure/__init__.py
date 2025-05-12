@@ -1,10 +1,7 @@
 from .bgpq import (
-    HeapValue,
     BGPQ
 )
 from .hash import (
-    rotl,
-    xxhash,
     hash_func_builder,
     HashTable
 )
@@ -27,7 +24,6 @@ __all__ = [
     "HeapValue",
     "BGPQ",
     # hash.py
-    "rotl",
     "xxhash",
     "hash_func_builder",
     "HashTable",

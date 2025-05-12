@@ -14,10 +14,8 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from .core import Xtructurable
-from .util import set_array, set_tree
-
-HeapValue = Xtructurable
+from ..core import Xtructurable
+from ..util import set_array, set_tree
 
 SORT_STABLE = True  # Use stable sorting to maintain insertion order for equal keys
 SIZE_DTYPE = jnp.uint32
@@ -44,13 +42,13 @@ class BGPQ:
     branch_size: int
     batch_size: int
     key_store: chex.Array  # shape = (total_size, batch_size)
-    val_store: HeapValue  # shape = (total_size, batch_size, ...)
+    val_store: Xtructurable  # shape = (total_size, batch_size, ...)
     key_buffer: chex.Array  # shape = (batch_size - 1,)
-    val_buffer: HeapValue  # shape = (batch_size - 1, ...)
+    val_buffer: Xtructurable  # shape = (batch_size - 1, ...)
 
     @staticmethod
     @partial(jax.jit, static_argnums=(0, 1, 2, 3))
-    def build(total_size, batch_size, value_class=HeapValue, key_dtype=jnp.float16):
+    def build(total_size, batch_size, value_class=Xtructurable, key_dtype=jnp.float16):
         """
         Create a new BGPQ instance with specified capacity.
 
@@ -92,8 +90,8 @@ class BGPQ:
     @staticmethod
     @jax.jit
     def merge_sort_split(
-        ak: chex.Array, av: HeapValue, bk: chex.Array, bv: HeapValue
-    ) -> tuple[chex.Array, HeapValue, chex.Array, HeapValue]:
+        ak: chex.Array, av: Xtructurable, bk: chex.Array, bv: Xtructurable
+    ) -> tuple[chex.Array, Xtructurable, chex.Array, Xtructurable]:
         """
         Merge and split two sorted arrays while maintaining their relative order.
         This is a key operation for maintaining heap property in batched operations.
@@ -123,7 +121,7 @@ class BGPQ:
     @staticmethod
     @jax.jit
     def merge_buffer(
-        blockk: chex.Array, blockv: HeapValue, bufferk: chex.Array, bufferv: HeapValue
+        blockk: chex.Array, blockv: Xtructurable, bufferk: chex.Array, bufferv: Xtructurable
     ):
         """
         Merge buffer contents with block contents, handling overflow conditions.
@@ -179,13 +177,13 @@ class BGPQ:
 
     @staticmethod
     @partial(jax.jit, static_argnums=(2))
-    def make_batched(key: chex.Array, val: HeapValue, batch_size: int):
+    def make_batched(key: chex.Array, val: Xtructurable, batch_size: int):
         """
         Convert unbatched arrays into batched format suitable for the queue.
 
         Args:
             key: Array of keys to batch
-            val: HeapValue of values to batch
+            val: Xtructurable of values to batch
             batch_size: Desired batch size
 
         Returns:
@@ -224,7 +222,7 @@ class BGPQ:
         return next_index
 
     @staticmethod
-    def _insert_heapify(heap: "BGPQ", block_key: chex.Array, block_val: HeapValue):
+    def _insert_heapify(heap: "BGPQ", block_key: chex.Array, block_val: Xtructurable):
         """
         Internal method to maintain heap property after insertion.
         Performs heapification by traversing up the tree and merging nodes.
@@ -273,7 +271,7 @@ class BGPQ:
         return heap, added
 
     @jax.jit
-    def insert(heap: "BGPQ", block_key: chex.Array, block_val: HeapValue, added_size: int = None):
+    def insert(heap: "BGPQ", block_key: chex.Array, block_val: Xtructurable, added_size: int = None):
         """
         Insert new elements into the priority queue.
         Maintains heap property through merge operations and heapification.
@@ -408,7 +406,7 @@ class BGPQ:
             tuple containing:
                 - Updated heap instance
                 - Array of minimum keys removed
-                - HeapValue of corresponding values
+                - Xtructurable of corresponding values
         """
         min_keys = heap.key_store[0]
         min_values = heap.val_store[0]
