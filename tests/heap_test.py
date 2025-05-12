@@ -3,9 +3,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from Xtructure import KEY_DTYPE
-from Xtructure import BGPQ, xtructure_dataclass
-from Xtructure.field_descriptors import FieldDescriptor
+from Xtructure import BGPQ, xtructure_dataclass, FieldDescriptor
 
 
 @xtructure_dataclass
@@ -102,7 +100,7 @@ def heap_key_builder(x: XtructureValue):
 
         hash_value, _ = jax.lax.scan(scan_body, 1, uint32ed)
         hash_value = (hash_value % (2**12)) / (2**8)
-        return hash_value.astype(KEY_DTYPE)
+        return hash_value.astype(jnp.float16)
 
     return jax.jit(_keys)
 

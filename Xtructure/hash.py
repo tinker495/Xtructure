@@ -10,17 +10,13 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from .annotate import (
-    CUCKOO_TABLE_N,
-    HASH_POINT_DTYPE,
-    HASH_SIZE_MULTIPLIER,
-    HASH_TABLE_IDX_DTYPE,
-    SIZE_DTYPE,
-)
-from .dataclass import Xtructurable
+from .core import Xtructurable
 from .util import set_tree_as_condition
 
 PyTree = Xtructurable
+
+SIZE_DTYPE = jnp.uint32
+HASH_TABLE_IDX_DTYPE = jnp.uint8
 
 T = TypeVar("T")
 HASH_FUNC_TYPE = Callable[[PyTree, int], Tuple[jnp.uint32, jnp.ndarray]]
@@ -145,14 +141,14 @@ class HashTable:
     seed: int
     capacity: int
     _capacity: int
+    cuckoo_table_n: int
     size: int
     table: PyTree  # shape = State("args" = (capacity, cuckoo_len, ...), ...)
     table_idx: chex.Array  # shape = (capacity, ) is the index of the table in the cuckoo table.
-    # hash_func: HASH_FUNC_TYPE
 
     @staticmethod
-    @partial(jax.jit, static_argnums=(0, 1, 2))
-    def build(dataclass: PyTree, seed: int, capacity: int):
+    @partial(jax.jit, static_argnums=(0, 1, 2, 3, 4))
+    def build(dataclass: PyTree, seed: int, capacity: int, cuckoo_table_n: int = 2, hash_size_multiplier: int = 2):
         """
         Initialize a new hash table with specified parameters.
 
@@ -165,21 +161,20 @@ class HashTable:
             Initialized HashTable instance
         """
         _capacity = int(
-            HASH_SIZE_MULTIPLIER * capacity / CUCKOO_TABLE_N
+            hash_size_multiplier * capacity / cuckoo_table_n
         )  # Convert to concrete integer
         size = SIZE_DTYPE(0)
         # Initialize table with default states
-        table = dataclass.default((_capacity + 1, CUCKOO_TABLE_N))
+        table = dataclass.default((_capacity + 1, cuckoo_table_n))
         table_idx = jnp.zeros((_capacity + 1), dtype=HASH_TABLE_IDX_DTYPE)
-        # hash_func = hash_func_builder(statecls)
         return HashTable(
             seed=seed,
             capacity=capacity,
             _capacity=_capacity,
+            cuckoo_table_n=cuckoo_table_n,
             size=size,
             table=table,
             table_idx=table_idx,
-            # hash_func=hash_func,
         )
 
     @staticmethod
@@ -262,7 +257,7 @@ class HashTable:
             seed, idx, table_idx, found = val
 
             def get_new_idx_and_table_idx(seed, idx, table_idx):
-                next_table = table_idx >= (CUCKOO_TABLE_N - 1)
+                next_table = table_idx >= (table.cuckoo_table_n - 1)
                 seed, idx, table_idx = jax.lax.cond(
                     next_table,
                     lambda _: (
@@ -358,7 +353,7 @@ class HashTable:
     ):
         def _next_idx(seeds, _idxs, unupdateds):
             def get_new_idx_and_table_idx(seed, idx, table_idx, state):
-                next_table = table_idx >= (CUCKOO_TABLE_N - 1)
+                next_table = table_idx >= (table.cuckoo_table_n - 1)
 
                 def next_table_fn(seed, table):
                     next_idx = HashTable.get_new_idx(hash_func, table, state, seed)
@@ -396,7 +391,7 @@ class HashTable:
             seeds, _idxs = _next_idx(seeds, _idxs, unupdated)
 
             overflowed = jnp.logical_and(
-                _idxs[:, 1] >= CUCKOO_TABLE_N, unupdated
+                _idxs[:, 1] >= table.cuckoo_table_n, unupdated
             )  # Overflowed index must be updated
             _idxs = jnp.where(updatable[:, jnp.newaxis], _idxs, jnp.full_like(_idxs, -1))
             unique_idxs = jnp.unique(_idxs, axis=0, size=batch_len, return_index=True)[
@@ -468,7 +463,7 @@ class HashTable:
             partial(HashTable._lookup, hash_func), in_axes=(None, 0, 0, None, None, 0)
         )(table, inputs, initial_idx, HASH_TABLE_IDX_DTYPE(0), table.seed, ~unique_filled)
 
-        idxs = jnp.stack([idx, table_idx], axis=1, dtype=HASH_POINT_DTYPE)
+        idxs = jnp.stack([idx, table_idx], axis=1, dtype=SIZE_DTYPE)
         updatable = jnp.logical_and(~found, unique_filled)
 
         # Perform parallel insertion

@@ -14,11 +14,13 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from .dataclass import Xtructurable
-from .annotate import KEY_DTYPE, SIZE_DTYPE
+from .core import Xtructurable
 from .util import set_array, set_tree
-SORT_STABLE = True  # Use stable sorting to maintain insertion order for equal keys
+
 HeapValue = Xtructurable
+
+SORT_STABLE = True  # Use stable sorting to maintain insertion order for equal keys
+SIZE_DTYPE = jnp.uint32
 
 @chex.dataclass
 class BGPQ:
@@ -37,18 +39,18 @@ class BGPQ:
         val_buffer: Buffer for values waiting to be inserted
     """
 
-    max_size: SIZE_DTYPE
-    size: SIZE_DTYPE
-    branch_size: SIZE_DTYPE
-    batch_size: SIZE_DTYPE
+    max_size: int
+    size: int
+    branch_size: int
+    batch_size: int
     key_store: chex.Array  # shape = (total_size, batch_size)
     val_store: HeapValue  # shape = (total_size, batch_size, ...)
     key_buffer: chex.Array  # shape = (batch_size - 1,)
     val_buffer: HeapValue  # shape = (batch_size - 1, ...)
 
     @staticmethod
-    @partial(jax.jit, static_argnums=(0, 1, 2))
-    def build(total_size, batch_size, value_class=HeapValue):
+    @partial(jax.jit, static_argnums=(0, 1, 2, 3))
+    def build(total_size, batch_size, value_class=HeapValue, key_dtype=jnp.float16):
         """
         Create a new BGPQ instance with specified capacity.
 
@@ -71,9 +73,9 @@ class BGPQ:
         size = SIZE_DTYPE(0)
 
         # Initialize storage arrays with infinity for unused slots
-        key_store = jnp.full((branch_size, batch_size), jnp.inf, dtype=KEY_DTYPE)
+        key_store = jnp.full((branch_size, batch_size), jnp.inf, dtype=key_dtype)
         val_store = value_class.default((branch_size, batch_size))
-        key_buffer = jnp.full((batch_size - 1,), jnp.inf, dtype=KEY_DTYPE)
+        key_buffer = jnp.full((batch_size - 1,), jnp.inf, dtype=key_dtype)
         val_buffer = value_class.default((batch_size - 1,))
 
         return BGPQ(
@@ -193,7 +195,8 @@ class BGPQ:
         """
         n = key.shape[0]
         # Pad arrays to match batch size
-        key = jnp.concatenate([key, jnp.full((batch_size - n,), jnp.inf, dtype=KEY_DTYPE)])
+        key_class = key.dtype
+        key = jnp.concatenate([key, jnp.full((batch_size - n,), jnp.inf, dtype=key_class)])
         val = jax.tree_util.tree_map(
             lambda x, y: jnp.concatenate([x, y]),
             val,
