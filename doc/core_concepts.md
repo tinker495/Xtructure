@@ -30,10 +30,20 @@ This decorator transforms a Python class into a JAX-compatible structure (specif
 *   **`__getitem__(self, index)`**: Allows indexing or slicing an instance (e.g., `my_data_instance[0]`). The operation is applied to each field.
 *   **`__len__(self)`**: Returns the size of the first dimension of the *first* field, typically used for batch size.
 *   **`default(cls, shape=())`** (classmethod): Creates an instance with default values for all fields.
-    *   The optional `shape` argument (e.g., `(10,)`) creates a batched instance where each field is batched according to this shape, prepended to its intrinsic shape.
+    *   The optional `shape` argument (e.g., `(10,)` or `(5, 2)`) creates a "batched" instance. This means the provided `shape` tuple is prepended to the `intrinsic_shape` of each field defined in the dataclass.
+        *   For example, if a field is `data: FieldDescriptor[jnp.float32, (3,)]` (intrinsic shape `(3,)`):
+            *   Calling `YourClass.default()` or `YourClass.default(shape=())` results in `instance.data.shape` being `(3,)`.
+            *   Calling `YourClass.default(shape=(10,))` results in `instance.data.shape` being `(10, 3)`.
+            *   Calling `YourClass.default(shape=(5, 2))` results in `instance.data.shape` being `(5, 2, 3)`.
+        *   Each field in the instance will be filled with its default value, tiled or broadcasted to this new batched shape.
     *   This method is auto-generated based on `FieldDescriptor` definitions if not explicitly provided.
 *   **`random(cls, shape=(), key: jax.random.PRNGKey = ...)`** (classmethod): Creates an instance with random data.
-    *   `shape`: Specifies batch dimensions, prepended to intrinsic field shapes.
+    *   `shape`: Specifies batch dimensions (e.g., `(10,)` or `(5, 2)`), which are prepended to the `intrinsic_shape` of each field. 
+        *   For example, if a field is `data: FieldDescriptor[jnp.float32, (3,)]` (intrinsic shape `(3,)`):
+            *   Calling `YourClass.random(key=k)` or `YourClass.random(shape=(), key=k)` results in `instance.data.shape` being `(3,)`.
+            *   Calling `YourClass.random(shape=(10,), key=k)` results in `instance.data.shape` being `(10, 3)`.
+            *   Calling `YourClass.random(shape=(5, 2), key=k)` results in `instance.data.shape` being `(5, 2, 3)`.
+        *   Each field will be filled with random values according to its JAX dtype, and the field arrays will have these new batched shapes.
     *   `key`: A JAX PRNG key is required for random number generation.
 *   `structured_type` (property): An enum (`StructuredType.SINGLE`, `StructuredType.BATCHED`, `StructuredType.UNSTRUCTURED`) indicating instance structure relative to its default.
 *   `batch_shape` (property): Shape of batch dimensions if `structured_type` is `BATCHED`.
