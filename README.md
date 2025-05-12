@@ -129,10 +129,15 @@ else:
     print("BGPQ: Heap is empty, cannot delete.")
 ```
 
-## Contributing
+## Citation
 
-Contributions are welcome! Please open an issue or submit a pull request.
+If you use this code in your research, please cite:
 
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details (you'll need to create this file).
+```
+@software{kyuseokjung2025xtructure,
+    title={Xtructure: JAX-optimized Data Structures},
+    author={Kyuseok Jung},
+    url = {https://github.com/tinker495/Xtructure},
+    year={2025},
+}
+```
