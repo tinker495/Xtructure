@@ -285,16 +285,21 @@ def add_structure_utilities_and_random(cls: Type[T]) -> Type[T]:
         shape = self.shape
         if shape == default_shape:
             return StructuredType.SINGLE
-        elif all(
-            ds == s[-max(len(ds), 1) :] or (ds == () and len(s) == 1)
-            for ds, s in zip(get_leaf_elements(default_shape), get_leaf_elements(shape))
-        ):
-            return StructuredType.BATCHED
         else:
-            return StructuredType.UNSTRUCTURED
+            batched_shapes = [
+                s[: -len(ds)] if ds != () else s
+                for ds, s in zip(get_leaf_elements(default_shape), get_leaf_elements(shape))
+            ]
+            first_shape = batched_shapes[0]
+            if all(shape == first_shape for shape in batched_shapes):
+                return StructuredType.BATCHED
+            else:
+                return StructuredType.UNSTRUCTURED
 
     def batch_shape(self) -> tuple[int, ...]:
-        if self.structured_type == StructuredType.BATCHED:
+        if self.structured_type == StructuredType.SINGLE:
+            return ()
+        elif self.structured_type == StructuredType.BATCHED:
             shape = list(get_leaf_elements(self.shape))
             return shape[0][:(len(shape[0])-default_dim)]
         else:
@@ -316,9 +321,22 @@ def add_structure_utilities_and_random(cls: Type[T]) -> Type[T]:
             raise ValueError(f"State is not structured: {self.shape} != {self.default_shape}")
 
     def flatten(self):
-        total_length = jnp.prod(jnp.array(self.batch_shape))
+        if self.structured_type != StructuredType.BATCHED:
+            raise ValueError(
+                f"Flatten operation is only supported for BATCHED structured types. "
+                f"Current type: {self.structured_type}"
+            )
+
+        current_batch_shape = self.batch_shape
+        # jnp.prod of an empty tuple array is 1, which is correct for total_length
+        # if current_batch_shape is ().
+        total_length = jnp.prod(jnp.array(current_batch_shape))
+        len_current_batch_shape = len(current_batch_shape)
+
         return jax.tree_util.tree_map(
-            lambda x: jnp.reshape(x, (total_length, *x.shape[-default_dim:])), self
+            # Reshape each leaf: flatten batch dims, keep core dims.
+            # core_dims are obtained by stripping batch_dims from the start of x.shape.
+            lambda x: jnp.reshape(x, (total_length,) + x.shape[len_current_batch_shape:]), self
         )
     
     def random(cls, shape=(), key=None):
