@@ -220,3 +220,33 @@ def test_indexing():
     assert sliced.batch_shape == (2,)
     assert sliced.id.shape == (2,)
     assert sliced.value.shape == (2,) 
+
+def test_unstructured_generation():
+
+    unstructured = SimpleData(
+        id=jnp.array(1),
+        value=jnp.array([2.0, 3.0, 4.0])
+    )
+    assert unstructured.structured_type == StructuredType.UNSTRUCTURED
+    assert unstructured.id.shape == ()
+    assert unstructured.value.shape == (3,)
+    
+    batched_unstructured = SimpleData(
+        id=jnp.array([1, 2]),
+        value=jnp.array([[2.0, 3.0, 4.0], [5.0, 6.0, 7.0]])
+    )
+    assert batched_unstructured.structured_type == StructuredType.UNSTRUCTURED
+    assert batched_unstructured.id.shape == (2,)
+    assert batched_unstructured.value.shape == (2, 3)
+
+    try:
+        batched_unstructured.reshape((2, 3))
+        assert False, "unstructured data should not be reshaped"
+    except ValueError:
+        pass
+
+    try:
+        batched_unstructured.flatten()
+        assert False, "flatten operation is only supported for BATCHED structured types"
+    except ValueError:
+        pass
