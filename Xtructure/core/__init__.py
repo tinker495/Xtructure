@@ -1,8 +1,13 @@
+from .protocol import (
+    Xtructurable
+)
 
-from .dataclass import (
-    Xtructurable,
-    xtructure_dataclass,
+from .structuredtype import (
     StructuredType
+)
+
+from .dataclass_decorator import (
+    xtructure_dataclass,
 )
 
 from .field_descriptors import (
@@ -11,7 +16,7 @@ from .field_descriptors import (
 
 __all__ = [
     "Xtructurable",
-    "xtructure_dataclass",
     "StructuredType",
+    "xtructure_dataclass",
     "FieldDescriptor"
 ]

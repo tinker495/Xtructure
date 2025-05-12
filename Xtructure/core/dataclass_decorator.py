@@ -1,103 +1,23 @@
-from functools import partial
 import chex
 import jax
 import jax.numpy as jnp
-import typing # Added for Protocol and TYPE_CHECKING
 
 from collections import namedtuple
-from typing import TypeVar, Type, Dict, Any, Tuple as TypingTuple, Protocol, Callable # Added Protocol, TypingTuple, Callable
-from enum import Enum
+from typing import Type, Dict, Any, Tuple as TypingTuple, Callable, TypeVar
 from tabulate import tabulate
 
 # Import FieldDescriptor and inspect
 from .field_descriptors import FieldDescriptor
 import inspect
 
+from .protocol import Xtructurable
+from .structuredtype import StructuredType
+from .utils import isnamedtupleinstance, get_leaf_elements, is_potentially_xtructure_class
+
 MAX_PRINT_BATCH_SIZE = 4
 SHOW_BATCH_SIZE = 2
 
 T = TypeVar("T")
-
-
-# Protocol defining the interface added by @xtructure_data
-class Xtructurable(Protocol[T]):
-    # Fields from the original class that chex.dataclass would process
-    # These are implicitly part of T. For the protocol to be complete,
-    # it assumes T will have __annotations__.
-    __annotations__: Dict[str, Any]
-    # __dict__ is used by the __getitem__ implementation
-    __dict__: Dict[str, Any]
-
-
-    # Methods and properties added by add_shape_dtype_getitem_len
-    @property
-    def shape(self) -> Any: # Actual type is a dynamically generated namedtuple
-        ...
-    @property
-    def dtype(self) -> Any: # Actual type is a dynamically generated namedtuple
-        ...
-    def __getitem__(self: T, index: Any) -> T:
-        ...
-    def __len__(self) -> int:
-        ...
-
-    # Methods and properties added by add_structure_utilities_and_random
-    # Assumes the class T has a 'default' classmethod as per the decorator's assertion
-    @classmethod
-    def default(cls: Type[T], shape: Any = ...) -> T:
-        ...
-    @property
-    def default_shape(self) -> Any: # Derived from self.default().shape
-        ...
-    @property
-    def structured_type(self) -> 'StructuredType': # Forward reference for StructuredType
-        ...
-    @property
-    def batch_shape(self) -> TypingTuple[int, ...]:
-        ...
-    def reshape(self: T, new_shape: TypingTuple[int, ...]) -> T:
-        ...
-    def flatten(self: T) -> T:
-        ...
-    @classmethod
-    def random(cls: Type[T], shape: TypingTuple[int, ...] = ..., key: Any = ...) -> T: # Ellipsis for default value
-        ...
-
-    # Methods and properties added by add_string_representation_methods
-    def __str__(self) -> str: # The actual implementation takes **kwargs, but signature can be simpler for Protocol
-        ...
-    def str(self) -> str: # Alias for __str__
-        ...
-
-
-def isnamedtupleinstance(x):
-    t = type(x)
-    b = t.__bases__
-    if len(b) != 1 or b[0] != tuple:
-        return False
-    f = getattr(t, "_fields", None)
-    if not isinstance(f, tuple):
-        return False
-    return all(type(n) == str for n in f)
-
-def get_leaf_elements(tree: chex.Array):
-    """
-    Extracts leaf elements from a nested structure, typically composed of
-    namedtuples and JAX arrays at the leaves.
-
-    Args:
-        tree: The nested structure (e.g., a namedtuple containing other
-              namedtuples or JAX arrays, or a single JAX array).
-
-    Yields:
-        Leaf elements (non-namedtuple elements) within the nested structure.
-    """
-    if isnamedtupleinstance(tree):
-        for item in tree:
-            yield from get_leaf_elements(item)  # Recursively process sub-tuples
-    else:
-        yield tree  # Yield the leaf element
-
 def xtructure_dataclass(cls: Type[T]) -> Type[Xtructurable[T]]:
     """
     Decorator that ensures the input class is a `chex.dataclass` (or converts
@@ -130,12 +50,6 @@ def xtructure_dataclass(cls: Type[T]) -> Type[Xtructurable[T]]:
     assert hasattr(cls, "default"), "HeapValue class must have a default method."
 
     return cls
-
-# enum for state type
-class StructuredType(Enum):
-    SINGLE = 0
-    BATCHED = 1
-    UNSTRUCTURED = 2
 
 def add_shape_dtype_getitem_len(cls: Type[T]) -> Type[T]:
     """
@@ -506,11 +420,6 @@ def add_string_representation_methods(cls: Type[T]) -> Type[T]:
     setattr(cls, "str", lambda self, **kwargs: get_str(self, use_kwargs=True, **kwargs)) # Alias .str to the new __str__
     return cls
 
-# Helper function to check if an annotation object is a class (potential nested xtructure)
-# For the purpose of _create_default_method, we check hasattr(default) at runtime.
-def _is_potentially_xtructure_class(annotation_obj: Any) -> bool:
-    return inspect.isclass(annotation_obj)
-
 def _create_default_method(cls_to_modify: Type[T]) -> Callable[..., T]:
     @classmethod
     def auto_default(cls: Type[T], shape: TypingTuple[int, ...] = ()) -> T:
@@ -522,7 +431,7 @@ def _create_default_method(cls_to_modify: Type[T]) -> Callable[..., T]:
                 descriptor = annotation_obj
                 dtype_of_field_descriptor = descriptor.dtype
 
-                if _is_potentially_xtructure_class(dtype_of_field_descriptor):
+                if is_potentially_xtructure_class(dtype_of_field_descriptor):
                     # dtype_of_field_descriptor is a CLASS (e.g. <class 'numpy.int32'> or <class '__main__.Parent'>)
                     # Differentiate: is it a JAX primitive *class* or a user-defined xtructure *class*?
                     is_jax_primitive_type_class = False
@@ -569,7 +478,7 @@ def _create_default_method(cls_to_modify: Type[T]) -> Callable[..., T]:
                         f"(type: {type(dtype_of_field_descriptor).__name__}). Expected a JAX primitive type/class "
                         f"(like jnp.int32 or jnp.dtype('int32')), or an @xtructure_data class type (like Parent)."
                     )
-            elif _is_potentially_xtructure_class(annotation_obj):
+            elif is_potentially_xtructure_class(annotation_obj):
                 # annotation_obj is the type of the nested class directly (e.g., parent: Parent)
                 nested_class_type = annotation_obj
                 if not hasattr(nested_class_type, 'default'):
@@ -615,7 +524,7 @@ def _add_auto_default_method_if_needed(cls: Type[T]) -> Type[T]:
     if annotations: # Only proceed if there are annotations to check
         for field_name, ann_obj in annotations.items():
             is_fd = isinstance(ann_obj, FieldDescriptor)
-            is_potential_nested = _is_potentially_xtructure_class(ann_obj)
+            is_potential_nested = is_potentially_xtructure_class(ann_obj)
 
             if not is_fd and not is_potential_nested:
                 # Found an annotation that is not a FieldDescriptor and not a class.
