@@ -21,7 +21,7 @@ my_hash_func = hash_func_builder(MyDataValue.default())
 # 2. Build the HashTable
 #    HashTable.build(pytree_def_type, initial_hash_seed, capacity)
 table_capacity = 1000
-hash_table = HashTable.build(MyDataValue, seed=123, capacity=table_capacity)
+hash_table = HashTable.build(MyDataValue, 123, table_capacity)
 # Note: MyDataValue (the class itself) is passed, not an instance, for build.
 
 # 3. Prepare data to insert

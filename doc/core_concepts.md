@@ -5,7 +5,7 @@ Before using `HashTable` or `BGPQ` in Xtructure, you often need to define the st
 ```python
 import jax
 import jax.numpy as jnp
-from Xtructure import xtructure_dataclass, FieldDescriptor, KEY_DTYPE
+from Xtructure import xtructure_dataclass, FieldDescriptor
 
 # Example: Defining a data structure for HashTable values
 @xtructure_dataclass

@@ -5,7 +5,7 @@ A priority queue optimized for batched operations on GPUs. It maintains items so
 ```python
 import jax
 import jax.numpy as jnp
-from Xtructure import BGPQ, KEY_DTYPE, xtructure_dataclass, FieldDescriptor
+from Xtructure import BGPQ, xtructure_dataclass, FieldDescriptor
 
 # Define a data structure for BGPQ values (as an example from core_concepts.md)
 @xtructure_dataclass
@@ -25,7 +25,7 @@ print(f"BGPQ: Built with max_size={priority_queue.max_size}, batch_size={priorit
 # 2. Prepare keys and values to insert
 num_items_to_insert_pq = 150
 prng_key = jax.random.PRNGKey(10)
-keys_for_pq = jax.random.uniform(prng_key, (num_items_to_insert_pq,)).astype(KEY_DTYPE)
+keys_for_pq = jax.random.uniform(prng_key, (num_items_to_insert_pq,)).astype(jnp.float16)
 prng_key, subkey = jax.random.split(prng_key)
 values_for_pq = MyHeapItem.random(shape=(num_items_to_insert_pq,), key=subkey)
 
@@ -90,5 +90,4 @@ else:
 *   **`BGPQ.delete_mins(heap)`**:
     *   Returns the modified queue, a batch of `batch_size` smallest keys, and their corresponding values.
     *   **Important**: If the queue contains fewer than `batch_size` items, the returned `min_keys` and `min_values` arrays will be padded (keys with `jnp.inf`, values with their defaults). You **must** use a filter like `valid_mask = jnp.isfinite(min_keys)` to identify and use only the actual (non-padded) items returned.
-*   **`KEY_DTYPE`**: Keys in BGPQ use this dtype, which is typically a float (e.g., `jnp.float32` or `jnp.float64`) as `jnp.inf` is used for padding.
 *   **Internal Structure**: The BGPQ maintains a min-heap structure. This heap is composed of multiple sorted blocks, each of size `batch_size`, allowing for efficient batched heap operations. 
