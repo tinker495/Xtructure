@@ -35,7 +35,7 @@ print("--- HashTable Example ---")
 my_hash_func = hash_func_builder(MyDataValue)
 
 # 2. Build the HashTable
-# HashTable.build(pytree_def_type, num_hash_funcs, capacity)
+# HashTable.build(pytree_def_type, inital hash seed, capacity)
 table_capacity = 1000
 hash_table = HashTable.build(MyDataValue, 1, table_capacity)
 
