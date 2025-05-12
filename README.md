@@ -21,7 +21,6 @@ Detailed documentation on how to use Xtructure is available in the `doc/` direct
 *   **[Core Concepts](./doc/core_concepts.md)**: Learn how to define custom data structures using `@xtructure_dataclass` and `FieldDescriptor`.
 *   **[HashTable Usage](./doc/hashtable.md)**: Guide to using the Cuckoo hash table.
 *   **[BGPQ Usage](./doc/bgpq.md)**: Guide to using the Batched GPU Priority Queue.
-*   **[API Reference](./doc/api_reference.md)**: Information on other exposed types and constants.
 
 Quick examples can still be found below for a brief overview.
 
