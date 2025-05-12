@@ -25,8 +25,8 @@ from Xtructure import HashTable, hash_func_builder, BGPQ, KEY_DTYPE, xtructure_d
 # Define a custom data structure using xtructure_data
 @xtructure_dataclass
 class MyDataValue:
-    a: FieldDescriptor(jnp.uint8) # type: ignore
-    b: FieldDescriptor(jnp.uint32, (1, 2)) # type: ignore
+    a: FieldDescriptor[jnp.uint8]
+    b: FieldDescriptor[jnp.uint32, (1, 2)]
 
 # --- HashTable Example ---
 print("--- HashTable Example ---")
@@ -74,8 +74,8 @@ print("\n--- BGPQ Example ---")
 # Define another custom data structure for the BGPQ values (can be the same or different)
 @xtructure_dataclass
 class MyHeapValue:
-    id: FieldDescriptor(jnp.int32) # type: ignore
-    data: FieldDescriptor(jnp.float32, (2,)) # type: ignore
+    id: FieldDescriptor[jnp.int32]
+    data: FieldDescriptor[jnp.float32, (2,)]
 
 # 1. Build a BGPQ
 # BGPQ.build(max_size, batch_size, pytree_def_type_for_values)
