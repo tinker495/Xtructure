@@ -6,6 +6,31 @@ DType = Any
 
 class FieldDescriptor:
     """
+    A descriptor for fields in an xtructure_dataclass.
+    
+    This class is used to define the properties of fields in a dataclass decorated with
+    @xtructure_dataclass. It specifies the JAX dtype, shape, and default fill value
+    for each field.
+    
+    Example usage:
+        ```python
+        @xtructure_dataclass
+        class MyData:
+            # A scalar uint8 field
+            a: FieldDescriptor[jnp.uint8]
+            
+            # A field with shape (1, 2) of uint32 values
+            b: FieldDescriptor[jnp.uint32, (1, 2)]
+            
+            # A float field with custom fill value
+            c: FieldDescriptor(dtype=jnp.float32, fill_value=0.0)
+            
+            # A nested xtructure_dataclass field
+            d: FieldDescriptor[AnotherDataClass]
+        ```
+    
+    The FieldDescriptor can be used with type annotation syntax using square brackets
+    or instantiated directly with the constructor for more explicit parameter naming.
     Describes a field in an xtructure_data class, specifying its JAX dtype,
     a default fill value, and its intrinsic (non-batched) shape.
     This allows for auto-generation of the .default() classmethod.
