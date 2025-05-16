@@ -149,12 +149,13 @@ class BGPQ:
         val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), blockv, bufferv)
 
         # Sort concatenated arrays
-        idx = jnp.argsort(key, stable=SORT_STABLE)
-        key = key[idx]
-        val = jax.tree_util.tree_map(lambda x: x[idx], val)
+        sorted_key, sorted_idx = jax.lax.sort_key_val(
+            key, jnp.arange(key.shape[0]), is_stable=SORT_STABLE
+        )
+        val = jax.tree_util.tree_map(lambda x: x[sorted_idx], val)
 
         # Check for active elements (non-infinity)
-        filled = jnp.isfinite(key)
+        filled = jnp.isfinite(sorted_key)
         n_filled = jnp.sum(filled)
         buffer_overflow = n_filled >= n
 
@@ -170,7 +171,7 @@ class BGPQ:
             buffer_overflow,
             overflowed,
             not_overflowed,
-            key,
+            sorted_key,
             val,
         )
         return blockk, blockv, bufferk, bufferv, buffer_overflow
