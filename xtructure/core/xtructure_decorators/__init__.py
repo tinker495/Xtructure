@@ -8,7 +8,7 @@ from .default import _add_auto_default_method_if_needed
 from .indexing import add_indexing_methods
 from .shape import add_shape_dtype_len
 from .string_format import add_string_representation_methods
-from .structur_util import add_structure_utilities
+from .structure_util import add_structure_utilities
 
 T = TypeVar("T")
 
