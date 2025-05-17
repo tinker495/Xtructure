@@ -1,0 +1,48 @@
+import chex
+
+from Xtructure.core.protocol import Xtructurable
+from typing import Type, TypeVar
+
+from .default import _add_auto_default_method_if_needed
+from .string_format import add_string_representation_methods
+from .shape import add_shape_dtype_getitem_len
+from .structur_util import add_structure_utilities
+
+T = TypeVar("T")
+
+def xtructure_dataclass(cls: Type[T]) -> Type[Xtructurable[T]]:
+    """
+    Decorator that ensures the input class is a `chex.dataclass` (or converts
+    it to one) and then augments it with additional functionality related to its
+    structure, type, and operations like indexing, default instance creation,
+    random instance generation, and string representation.
+
+    It adds properties like `shape`, `dtype`, `default_shape`, `structured_type`,
+    `batch_shape`, and methods like `__getitem__`, `__len__`, `reshape`,
+    `flatten`, `random`, and `__str__`.
+
+    Args:
+        cls: The class to be decorated. It is expected to have a `default`
+             classmethod for some functionalities.
+
+    Returns:
+        The decorated class with the aforementioned additional functionalities.
+    """
+    cls = chex.dataclass(cls)
+
+    # Ensure class has a default method for initialization
+    cls = _add_auto_default_method_if_needed(cls)
+
+    # add shape and dtype and getitem and len
+    cls = add_shape_dtype_getitem_len(cls)
+
+    # add structure utilities and random
+    cls = add_structure_utilities(cls)
+
+    # add string representation methods
+    cls = add_string_representation_methods(cls)
+
+    # Ensure class has a default method for initialization
+    assert hasattr(cls, "default"), "HeapValue class must have a default method."
+
+    return cls

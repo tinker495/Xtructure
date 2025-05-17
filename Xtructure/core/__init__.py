@@ -6,7 +6,7 @@ from .structuredtype import (
     StructuredType
 )
 
-from .dataclass_decorator import (
+from .xtructure_decorators import (
     xtructure_dataclass,
 )
 
