@@ -3,8 +3,8 @@ from typing import Any, Dict, Type, TypeVar
 import jax
 import jax.numpy as jnp
 
-from Xtructure.core.structuredtype import StructuredType
-from Xtructure.core.utils import get_leaf_elements, isnamedtupleinstance
+from xtructure.core.structuredtype import StructuredType
+from xtructure.core.utils import get_leaf_elements, isnamedtupleinstance
 
 T = TypeVar("T")
 

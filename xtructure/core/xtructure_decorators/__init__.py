@@ -2,7 +2,7 @@ from typing import Type, TypeVar
 
 import chex
 
-from Xtructure.core.protocol import Xtructurable
+from xtructure.core.protocol import Xtructurable
 
 from .default import _add_auto_default_method_if_needed
 from .indexing import add_indexing_methods

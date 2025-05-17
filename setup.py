@@ -4,8 +4,8 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name="Xtructure",
-    version="0.0.4",
+    name="xtructure",
+    version="0.0.6",
     author="tinker495",
     author_email="wjdrbtjr495@gmail.com",
     description="JAX-optimized data structures",

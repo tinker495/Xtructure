@@ -3,7 +3,7 @@ from typing import Type, TypeVar
 import jax.numpy as jnp
 from tabulate import tabulate
 
-from Xtructure.core.structuredtype import StructuredType
+from xtructure.core.structuredtype import StructuredType
 
 from .annotate import MAX_PRINT_BATCH_SIZE, SHOW_BATCH_SIZE
 

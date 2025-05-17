@@ -5,7 +5,7 @@ from typing import Type, TypeVar
 
 import jax.numpy as jnp
 
-from Xtructure.core.field_descriptors import FieldDescriptor
+from xtructure.core.field_descriptors import FieldDescriptor
 
 T = TypeVar("T")
 
