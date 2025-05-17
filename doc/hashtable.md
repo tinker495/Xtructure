@@ -7,12 +7,14 @@ import jax
 import jax.numpy as jnp
 from Xtructure import HashTable, hash_func_builder, xtructure_dataclass, FieldDescriptor
 
+
 # Define a data structure (as an example from core_concepts.md)
 @xtructure_dataclass
 class MyDataValue:
     id: FieldDescriptor[jnp.uint32]
     position: FieldDescriptor[jnp.float32, (3,)]
     flags: FieldDescriptor[jnp.bool_, (4,)]
+
 
 # 1. Build a hash function specific to your data structure
 #    The hash function needs an example instance to understand the structure.
@@ -39,7 +41,7 @@ hash_table, inserted_mask, unique_mask, idxs, table_idxs = HashTable.parallel_in
 )
 
 print(f"HashTable: Inserted {jnp.sum(inserted_mask)} items.")
-print(f"HashTable: Unique items inserted: {jnp.sum(unique_mask)}") # Number of items that were not already present
+print(f"HashTable: Unique items inserted: {jnp.sum(unique_mask)}")  # Number of items that were not already present
 print(f"HashTable size: {hash_table.size}")
 
 # inserted_mask: boolean array, true if the item at the corresponding input index was successfully inserted.
@@ -49,11 +51,11 @@ print(f"HashTable size: {hash_table.size}")
 
 # 5. Lookup data
 #    HashTable.lookup(table, hash_func, item_to_lookup)
-item_to_check = sample_data[0] # Let's check the first item we inserted
+item_to_check = sample_data[0]  # Let's check the first item we inserted
 idx, table_idx, found = HashTable.lookup(hash_table, my_hash_func, item_to_check)
 
 if found:
-    retrieved_item = hash_table.table[idx, table_idx] # Accessing the item from the internal table
+    retrieved_item = hash_table.table[idx, table_idx]  # Accessing the item from the internal table
     print(f"HashTable: Item found at primary index {idx}, cuckoo_index {table_idx}.")
     # You can then compare retrieved_item with item_to_check
 else:
@@ -92,4 +94,4 @@ else:
 *   **`HashTable.make_batched(dataclass, inputs, batch_size)`**: (Static method)
     *   A helper to reshape and pad input data into fixed-size batches if needed for specific batch processing workflows, though `parallel_insert` itself can handle variable-sized inputs with a `filled_mask`.
     *   `dataclass`: The class of your custom data structure.
-    *   Returns `batched_pytree, filled_mask_for_batched`. 
+    *   Returns `batched_pytree, filled_mask_for_batched`.

@@ -1,16 +1,6 @@
-from .bgpq import (
-    BGPQ
-)
-from .hash import (
-    hash_func_builder,
-    HashTable
-)
-from .core import (
-    Xtructurable,
-    xtructure_dataclass,
-    StructuredType,
-    FieldDescriptor
-)
+from .bgpq import BGPQ
+from .core import FieldDescriptor, StructuredType, Xtructurable, xtructure_dataclass
+from .hash import HashTable, hash_func_builder
 
 __all__ = [
     # bgpq.py
@@ -27,4 +17,4 @@ __all__ = [
     "StructuredType",
     # core.field_descriptors.py
     "FieldDescriptor",
-] 
+]

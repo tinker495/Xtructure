@@ -7,16 +7,18 @@ import jax
 import jax.numpy as jnp
 from Xtructure import BGPQ, xtructure_dataclass, FieldDescriptor
 
+
 # Define a data structure for BGPQ values (as an example from core_concepts.md)
 @xtructure_dataclass
 class MyHeapItem:
     task_id: FieldDescriptor[jnp.int32]
     payload: FieldDescriptor[jnp.float64, (2, 2)]
 
+
 # 1. Build a BGPQ
 #    BGPQ.build(total_size, batch_size, value_pytree_def_type)
-pq_total_size = 2000 # Max number of items
-pq_batch_size = 64   # Items to insert/delete per operation
+pq_total_size = 2000  # Max number of items
+pq_batch_size = 64  # Items to insert/delete per operation
 priority_queue = BGPQ.build(pq_total_size, pq_batch_size, MyHeapItem)
 # Note: MyHeapItem (the class itself) is passed.
 
@@ -42,12 +44,8 @@ for i in range(0, num_items_to_insert_pq, pq_batch_size):
     current_values_chunk = jax.tree_util.tree_map(lambda arr: arr[start_idx:end_idx], values_for_pq)
 
     # Pad the chunk if it's smaller than pq_batch_size
-    keys_to_insert, values_to_insert = BGPQ.make_batched(
-        current_keys_chunk,
-        current_values_chunk,
-        pq_batch_size
-    )
-    
+    keys_to_insert, values_to_insert = BGPQ.make_batched(current_keys_chunk, current_values_chunk, pq_batch_size)
+
     priority_queue = BGPQ.insert(priority_queue, keys_to_insert, values_to_insert)
 
 print(f"BGPQ: Inserted items. Current size: {priority_queue.size}")
@@ -57,7 +55,7 @@ print(f"BGPQ: Inserted items. Current size: {priority_queue.size}")
 if priority_queue.size > 0:
     priority_queue, min_keys, min_values = BGPQ.delete_mins(priority_queue)
     # min_keys and min_values will have shape (pq_batch_size, ...)
-    
+
     # Filter out padded items (keys will be jnp.inf for padding)
     valid_mask = jnp.isfinite(min_keys)
     actual_min_keys = min_keys[valid_mask]
@@ -90,4 +88,4 @@ else:
 *   **`BGPQ.delete_mins(heap)`**:
     *   Returns the modified queue, a batch of `batch_size` smallest keys, and their corresponding values.
     *   **Important**: If the queue contains fewer than `batch_size` items, the returned `min_keys` and `min_values` arrays will be padded (keys with `jnp.inf`, values with their defaults). You **must** use a filter like `valid_mask = jnp.isfinite(min_keys)` to identify and use only the actual (non-padded) items returned.
-*   **Internal Structure**: The BGPQ maintains a min-heap structure. This heap is composed of multiple sorted blocks, each of size `batch_size`, allowing for efficient batched heap operations. 
+*   **Internal Structure**: The BGPQ maintains a min-heap structure. This heap is composed of multiple sorted blocks, each of size `batch_size`, allowing for efficient batched heap operations.

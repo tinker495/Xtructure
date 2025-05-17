@@ -1,6 +1,8 @@
-import chex
 import inspect
 from typing import Any
+
+import chex
+
 
 def isnamedtupleinstance(x):
     t = type(x)
@@ -11,6 +13,7 @@ def isnamedtupleinstance(x):
     if not isinstance(f, tuple):
         return False
     return all(type(n) == str for n in f)
+
 
 def get_leaf_elements(tree: chex.Array):
     """

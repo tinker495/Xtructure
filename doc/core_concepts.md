@@ -7,18 +7,20 @@ import jax
 import jax.numpy as jnp
 from Xtructure import xtructure_dataclass, FieldDescriptor
 
+
 # Example: Defining a data structure for HashTable values
 @xtructure_dataclass
 class MyDataValue:
     id: FieldDescriptor[jnp.uint32]
-    position: FieldDescriptor[jnp.float32, (3,)] # A 3-element vector
-    flags: FieldDescriptor[jnp.bool_, (4,)]    # A 4-element boolean array
+    position: FieldDescriptor[jnp.float32, (3,)]  # A 3-element vector
+    flags: FieldDescriptor[jnp.bool_, (4,)]  # A 4-element boolean array
+
 
 # Example: Defining a data structure for BGPQ values
 @xtructure_dataclass
 class MyHeapItem:
     task_id: FieldDescriptor[jnp.int32]
-    payload: FieldDescriptor[jnp.float64, (2, 2)] # A 2x2 matrix
+    payload: FieldDescriptor[jnp.float64, (2, 2)]  # A 2x2 matrix
 ```
 
 ## `@xtructure_dataclass`
@@ -38,7 +40,7 @@ This decorator transforms a Python class into a JAX-compatible structure (specif
         *   Each field in the instance will be filled with its default value, tiled or broadcasted to this new batched shape.
     *   This method is auto-generated based on `FieldDescriptor` definitions if not explicitly provided.
 *   **`random(cls, shape=(), key: jax.random.PRNGKey = ...)`** (classmethod): Creates an instance with random data.
-    *   `shape`: Specifies batch dimensions (e.g., `(10,)` or `(5, 2)`), which are prepended to the `intrinsic_shape` of each field. 
+    *   `shape`: Specifies batch dimensions (e.g., `(10,)` or `(5, 2)`), which are prepended to the `intrinsic_shape` of each field.
         *   For example, if a field is `data: FieldDescriptor[jnp.float32, (3,)]` (intrinsic shape `(3,)`):
             *   Calling `YourClass.random(key=k)` or `YourClass.random(shape=(), key=k)` results in `instance.data.shape` being `(3,)`.
             *   Calling `YourClass.random(shape=(10,), key=k)` results in `instance.data.shape` being `(10, 3)`.
@@ -64,4 +66,4 @@ Defines the type and shape of each field within an `@xtructure_dataclass`.
     *   `dtype`: The JAX dtype (e.g., `jnp.int32`, `jnp.float32`, `jnp.bool_`). Can also be another `@xtructure_dataclass` type for nesting.
     *   `intrinsic_shape` (optional): A tuple defining the field's shape *excluding* batch dimensions (e.g., `(3,)` for a vector, `(2,2)` for a matrix). Defaults to `()` for a scalar.
     *   `fill_value` (optional): The value used when `cls.default()` is called.
-        *   Defaults: `-1` (max value) for unsigned integers, `jnp.inf` for signed integers and floats. `None` for nested structures (their own default applies). 
+        *   Defaults: `-1` (max value) for unsigned integers, `jnp.inf` for signed integers and floats. `None` for nested structures (their own default applies).

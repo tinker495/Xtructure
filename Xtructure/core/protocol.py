@@ -1,10 +1,13 @@
-from typing import Any, Dict, Type, Protocol, Tuple as TypingTuple, TypeVar
+from typing import Any, Dict, Protocol
+from typing import Tuple as TypingTuple
+from typing import Type, TypeVar
 
 import chex
 
 from .structuredtype import StructuredType
 
 T = TypeVar("T")
+
 
 # Protocol defining the interface added by @xtructure_data
 class Xtructurable(Protocol[T]):
@@ -15,16 +18,18 @@ class Xtructurable(Protocol[T]):
     # __dict__ is used by the __getitem__ implementation
     __dict__: Dict[str, Any]
 
-
     # Methods and properties added by add_shape_dtype_getitem_len
     @property
-    def shape(self) -> Any: # Actual type is a dynamically generated namedtuple
+    def shape(self) -> Any:  # Actual type is a dynamically generated namedtuple
         ...
+
     @property
-    def dtype(self) -> Any: # Actual type is a dynamically generated namedtuple
+    def dtype(self) -> Any:  # Actual type is a dynamically generated namedtuple
         ...
+
     def __getitem__(self: T, index: Any) -> T:
         ...
+
     def __len__(self) -> int:
         ...
 
@@ -33,40 +38,53 @@ class Xtructurable(Protocol[T]):
     @classmethod
     def default(cls: Type[T], shape: Any = ...) -> T:
         ...
+
     @property
-    def default_shape(self) -> Any: # Derived from self.default().shape
+    def default_shape(self) -> Any:  # Derived from self.default().shape
         ...
+
     @property
-    def structured_type(self) -> 'StructuredType': # Forward reference for StructuredType
+    def structured_type(self) -> "StructuredType":  # Forward reference for StructuredType
         ...
+
     @property
     def batch_shape(self) -> TypingTuple[int, ...]:
         ...
+
     def reshape(self: T, new_shape: TypingTuple[int, ...]) -> T:
         ...
+
     def flatten(self: T) -> T:
         ...
+
     @classmethod
-    def random(cls: Type[T], shape: TypingTuple[int, ...] = ..., key: Any = ...) -> T: # Ellipsis for default value
+    def random(
+        cls: Type[T], shape: TypingTuple[int, ...] = ..., key: Any = ...
+    ) -> T:  # Ellipsis for default value
         ...
 
     # Methods and properties added by add_string_representation_methods
-    def __str__(self) -> str: # The actual implementation takes **kwargs, but signature can be simpler for Protocol
+    def __str__(
+        self,
+    ) -> str:  # The actual implementation takes **kwargs, but signature can be simpler for Protocol
         ...
-    def str(self) -> str: # Alias for __str__
+
+    def str(self) -> str:  # Alias for __str__
         ...
 
     # Methods and properties added by add_indexing_methods
-    def at(self: T, index: Any) -> 'AtIndexer':
+    def at(self: T, index: Any) -> "AtIndexer":
         ...
+
 
 class AtIndexer(Protocol[T]):
-
-    def __getitem__(self: T, index: Any) -> 'Updater':
+    def __getitem__(self: T, index: Any) -> "Updater":
         ...
+
 
 class Updater(Protocol[T]):
     def set(self: T, value: Any) -> T:
         ...
+
     def set_as_condition(self: T, condition: chex.Array, value: Any) -> T:
         ...

@@ -1,6 +1,6 @@
+from typing import Any, Type, TypeVar
+
 import jax.numpy as jnp
-from collections import namedtuple
-from typing import Type, TypeVar, Any
 
 T = TypeVar("T")
 
@@ -13,8 +13,8 @@ class _Updater:
 
     def set(self, values_to_set):
         new_field_data = {}
-        
-        if not hasattr(self.cls, '__dataclass_fields__'):
+
+        if not hasattr(self.cls, "__dataclass_fields__"):
             raise TypeError(
                 f"Class {self.cls.__name__} is not a recognized dataclass or does not have __dataclass_fields__. "
                 f"The .at[...].set(...) feature expects a dataclass structure."
@@ -22,24 +22,24 @@ class _Updater:
 
         for field_name in self.cls.__dataclass_fields__:
             current_field_value = getattr(self.obj_instance, field_name)
-            
+
             try:
                 updater_ref = current_field_value.at[self.indices]
-                if hasattr(updater_ref, 'set'):
+                if hasattr(updater_ref, "set"):
                     value_for_this_field = None
                     if isinstance(values_to_set, self.cls):
                         value_for_this_field = getattr(values_to_set, field_name)
                     else:
                         value_for_this_field = values_to_set
-                    
+
                     new_field_data[field_name] = updater_ref.set(value_for_this_field)
                 else:
                     new_field_data[field_name] = current_field_value
             except Exception:
                 new_field_data[field_name] = current_field_value
-        
+
         return self.cls(**new_field_data)
-    
+
     def set_as_condition(self, condition: jnp.ndarray, value_to_conditionally_set: Any):
         """
         Sets parts of the fields of the dataclass instance based on a condition.
@@ -61,7 +61,7 @@ class _Updater:
         """
         new_field_data = {}
 
-        if not hasattr(self.cls, '__dataclass_fields__'):
+        if not hasattr(self.cls, "__dataclass_fields__"):
             raise TypeError(
                 f"Class {self.cls.__name__} is not a recognized dataclass or does not have __dataclass_fields__. "
                 f"The .at[...].set_as_condition(...) feature expects a dataclass structure."
@@ -75,39 +75,49 @@ class _Updater:
                 update_val_for_this_field_if_true = getattr(value_to_conditionally_set, field_name)
             else:
                 update_val_for_this_field_if_true = value_to_conditionally_set
-            
+
             try:
-                if isinstance(getattr(original_field_value, 'at', None), AtIndexer):
+                if isinstance(getattr(original_field_value, "at", None), AtIndexer):
                     nested_updater = original_field_value.at[self.indices]
-                    new_field_data[field_name] = nested_updater.set_as_condition(condition, update_val_for_this_field_if_true)
-                elif hasattr(original_field_value, 'at') and hasattr(original_field_value.at[self.indices], 'set'):
+                    new_field_data[field_name] = nested_updater.set_as_condition(
+                        condition, update_val_for_this_field_if_true
+                    )
+                elif hasattr(original_field_value, "at") and hasattr(
+                    original_field_value.at[self.indices], "set"
+                ):
                     original_slice_of_field = original_field_value[self.indices]
-                    
+
                     # Ensure condition is a JAX array to get its ndim property
                     cond_array = jnp.asarray(condition)
                     data_rank = original_slice_of_field.ndim
                     condition_rank = cond_array.ndim
-                    
+
                     reshaped_cond = cond_array
                     if data_rank > condition_rank:
                         num_new_axes = data_rank - condition_rank
                         reshaped_cond = cond_array.reshape(cond_array.shape + (1,) * num_new_axes)
                     # If condition_rank >= data_rank, jnp.where will handle broadcasting or error appropriately.
-                                        
+
                     conditionally_updated_slice = jnp.where(
-                        reshaped_cond,
-                        update_val_for_this_field_if_true,
-                        original_slice_of_field
+                        reshaped_cond, update_val_for_this_field_if_true, original_slice_of_field
                     )
-                    new_field_data[field_name] = original_field_value.at[self.indices].set(conditionally_updated_slice)
+                    new_field_data[field_name] = original_field_value.at[self.indices].set(
+                        conditionally_updated_slice
+                    )
                 else:
                     new_field_data[field_name] = original_field_value
             except Exception as e:
                 import sys
-                print(f"Warning: Could not apply conditional set to field '{field_name}' of class '{self.cls.__name__}'. Error: {e}", file=sys.stderr)
+
+                print(
+                    f"Warning: Could not apply conditional set to field '{field_name}' "
+                    f"of class '{self.cls.__name__}'. Error: {e}",
+                    file=sys.stderr,
+                )
                 new_field_data[field_name] = original_field_value
-                
+
         return self.cls(**new_field_data)
+
 
 class AtIndexer:
     def __init__(self, obj_instance):

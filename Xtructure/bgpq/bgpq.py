@@ -19,6 +19,7 @@ from ..core import Xtructurable
 SORT_STABLE = True  # Use stable sorting to maintain insertion order for equal keys
 SIZE_DTYPE = jnp.uint32
 
+
 @chex.dataclass
 class BGPQ:
     """
@@ -271,7 +272,9 @@ class BGPQ:
         return heap, added
 
     @jax.jit
-    def insert(heap: "BGPQ", block_key: chex.Array, block_val: Xtructurable, added_size: int = None):
+    def insert(
+        heap: "BGPQ", block_key: chex.Array, block_val: Xtructurable, added_size: int = None
+    ):
         """
         Insert new elements into the priority queue.
         Maintains heap property through merge operations and heapification.

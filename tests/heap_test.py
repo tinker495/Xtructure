@@ -1,9 +1,8 @@
-import chex
 import jax
 import jax.numpy as jnp
 import pytest
 
-from Xtructure import BGPQ, xtructure_dataclass, FieldDescriptor
+from Xtructure import BGPQ, FieldDescriptor, xtructure_dataclass
 
 
 @xtructure_dataclass
@@ -15,9 +14,9 @@ class XtructureValue:
     2. table_index: cuckoo table index
     """
 
-    a: FieldDescriptor(jnp.uint8) # type: ignore
-    b: FieldDescriptor(jnp.uint32, (1, 2)) # type: ignore
-    c: FieldDescriptor(jnp.float32, (1, 2, 3)) # type: ignore
+    a: FieldDescriptor(jnp.uint8)  # type: ignore
+    b: FieldDescriptor(jnp.uint32, (1, 2))  # type: ignore
+    c: FieldDescriptor(jnp.float32, (1, 2, 3))  # type: ignore
 
 
 def rotl(x, n):

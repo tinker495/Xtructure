@@ -2,19 +2,20 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from Xtructure import HashTable, hash_func_builder, xtructure_dataclass, FieldDescriptor
+from Xtructure import FieldDescriptor, HashTable, hash_func_builder, xtructure_dataclass
 
 
 @xtructure_dataclass
 class XtructureValue:
-    a: FieldDescriptor(jnp.uint8) # type: ignore
-    b: FieldDescriptor(jnp.uint32, (1, 2)) # type: ignore
+    a: FieldDescriptor(jnp.uint8)  # type: ignore
+    b: FieldDescriptor(jnp.uint32, (1, 2))  # type: ignore
 
 
 @jax.jit
 def is_equal(a, b):
     tree_equal = jax.tree_util.tree_map(lambda x, y: jnp.all(x == y), a, b)
     return jax.tree_util.tree_reduce(jnp.logical_and, tree_equal)
+
 
 @pytest.fixture
 def hash_func():
@@ -120,9 +121,7 @@ def test_same_state_insert_at_batch(hash_func):
         idx, table_idx, found = jax.vmap(lookup, in_axes=(None, 0))(table, samples)
         assert jnp.all(found), "Cross-batch state missing"
         contents = table.table[idx, table_idx]
-        assert jnp.all(
-            jax.vmap(is_equal)(contents, samples)
-        ), "Inserted states not found in table"
+        assert jnp.all(jax.vmap(is_equal)(contents, samples)), "Inserted states not found in table"
 
 
 def test_large_hash_table(hash_func):

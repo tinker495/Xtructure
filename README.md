@@ -32,22 +32,24 @@ import jax.numpy as jnp
 
 from Xtructure import HashTable, hash_func_builder, BGPQ, KEY_DTYPE, xtructure_dataclass, FieldDescriptor
 
+
 # Define a custom data structure using xtructure_data
 @xtructure_dataclass
 class MyDataValue:
     a: FieldDescriptor[jnp.uint8]
     b: FieldDescriptor[jnp.uint32, (1, 2)]
 
+
 # --- HashTable Example ---
 print("--- HashTable Example ---")
 
 # 1. Build a hash function for your custom data structure
-my_hash_func = hash_func_builder(MyDataValue.default()) # Pass an instance for builder
+my_hash_func = hash_func_builder(MyDataValue.default())  # Pass an instance for builder
 
 # 2. Build the HashTable
 # HashTable.build(pytree_def_type_class, inital_hash_seed, capacity)
 table_capacity = 1000
-hash_table = HashTable.build(MyDataValue, 1, table_capacity) # Pass the class for build
+hash_table = HashTable.build(MyDataValue, 1, table_capacity)  # Pass the class for build
 
 # 3. Prepare data to insert
 num_items_to_insert = 100
@@ -75,17 +77,19 @@ else:
 # --- Batched GPU Priority Queue (BGPQ) Example ---
 print("\n--- BGPQ Example ---")
 
+
 # Define another custom data structure for the BGPQ values (can be the same or different)
 @xtructure_dataclass
 class MyHeapValue:
     id: FieldDescriptor[jnp.int32]
     data: FieldDescriptor[jnp.float32, (2,)]
 
+
 # 1. Build a BGPQ
 # BGPQ.build(max_size, batch_size, pytree_def_type_for_values_class)
 pq_max_size = 2000
-pq_batch_size = 64 # Items to insert/delete per operation
-priority_queue = BGPQ.build(pq_max_size, pq_batch_size, MyHeapValue) # Pass the class for build
+pq_batch_size = 64  # Items to insert/delete per operation
+priority_queue = BGPQ.build(pq_max_size, pq_batch_size, MyHeapValue)  # Pass the class for build
 print(f"BGPQ: Built with max_size={priority_queue.max_size}, batch_size={priority_queue.batch_size}")
 
 # 2. Prepare keys and values to insert
@@ -105,7 +109,7 @@ for i in range(0, num_items_to_insert_pq, pq_batch_size):
     current_values_chunk = jax.tree_util.tree_map(lambda arr: arr[start_idx:end_idx], values_for_pq)
 
     keys_to_insert, values_to_insert = BGPQ.make_batched(current_keys_chunk, current_values_chunk, pq_batch_size)
-    
+
     priority_queue = BGPQ.insert(priority_queue, keys_to_insert, values_to_insert)
 
 print(f"BGPQ: Inserted items. Current size: {priority_queue.size}")

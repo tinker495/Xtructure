@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name="Xtructure",
-    version="0.0.3",
+    version="0.0.4",
     author="tinker495",
     author_email="wjdrbtjr495@gmail.com",
     description="JAX-optimized data structures",
@@ -19,8 +19,8 @@ setuptools.setup(
         "tabulate>=0.9.0",
     ],
     extras_require={
-        'dev': [
-            'pytest>=7.0.0',
+        "dev": [
+            "pytest>=7.0.0",
         ]
     },
     classifiers=[
@@ -30,4 +30,4 @@ setuptools.setup(
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
     ],
     python_requires=">=3.8",
-) 
+)

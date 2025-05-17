@@ -18,6 +18,7 @@ HASH_TABLE_IDX_DTYPE = jnp.uint8
 T = TypeVar("T")
 HASH_FUNC_TYPE = Callable[[Xtructurable, int], Tuple[jnp.uint32, jnp.ndarray]]
 
+
 @chex.dataclass
 class HashTable:
     """
@@ -45,7 +46,13 @@ class HashTable:
 
     @staticmethod
     @partial(jax.jit, static_argnums=(0, 1, 2, 3, 4))
-    def build(dataclass: Xtructurable, seed: int, capacity: int, cuckoo_table_n: int = 2, hash_size_multiplier: int = 2):
+    def build(
+        dataclass: Xtructurable,
+        seed: int,
+        capacity: int,
+        cuckoo_table_n: int = 2,
+        hash_size_multiplier: int = 2,
+    ):
         """
         Initialize a new hash table with specified parameters.
 

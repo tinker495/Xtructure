@@ -1,4 +1,3 @@
-import jax.numpy as jnp
 from collections import namedtuple
 from typing import Type, TypeVar
 
@@ -34,10 +33,7 @@ def add_shape_dtype_len(cls: Type[T]) -> Type[T]:
     def get_type(self) -> type_tuple:
         """Get dtypes of all fields in the dataclass"""
         return type_tuple(
-            *[
-                getattr(self, field_name).dtype
-                for field_name in cls.__annotations__.keys()
-            ]
+            *[getattr(self, field_name).dtype for field_name in cls.__annotations__.keys()]
         )
 
     setattr(cls, "dtype", property(get_type))
