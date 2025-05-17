@@ -30,7 +30,7 @@ Quick examples can still be found below for a brief overview.
 import jax
 import jax.numpy as jnp
 
-from Xtructure import HashTable, hash_func_builder, BGPQ, KEY_DTYPE, xtructure_dataclass, FieldDescriptor
+from xtructure import HashTable, hash_func_builder, BGPQ, KEY_DTYPE, xtructure_dataclass, FieldDescriptor
 
 
 # Define a custom data structure using xtructure_data
@@ -135,7 +135,7 @@ If you use this code in your research, please cite:
 
 ```
 @software{kyuseokjung2025xtructure,
-    title={Xtructure: JAX-optimized Data Structures},
+    title={xtructure: JAX-optimized Data Structures},
     author={Kyuseok Jung},
     url = {https://github.com/tinker495/Xtructure},
     year={2025},

@@ -107,7 +107,7 @@ class FieldDescriptor:
 
 # Example usage (to be placed in your class definitions later):
 #
-# from Xtructure.field_descriptors import FieldDescriptor
+# from xtructure.field_descriptors import FieldDescriptor
 #
 # @xtructure_data
 # class MyData:

@@ -1,11 +1,11 @@
 # Core Concepts: Defining Custom Data Structures
 
-Before using `HashTable` or `BGPQ` in Xtructure, you often need to define the structure of the data you want to store. This is done using the `@xtructure_dataclass` decorator and `FieldDescriptor`.
+Before using `HashTable` or `BGPQ` in xtructure, you often need to define the structure of the data you want to store. This is done using the `@xtructure_dataclass` decorator and `FieldDescriptor`.
 
 ```python
 import jax
 import jax.numpy as jnp
-from Xtructure import xtructure_dataclass, FieldDescriptor
+from xtructure import xtructure_dataclass, FieldDescriptor
 
 
 # Example: Defining a data structure for HashTable values

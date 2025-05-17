@@ -5,7 +5,7 @@ A Cuckoo hash table optimized for JAX.
 ```python
 import jax
 import jax.numpy as jnp
-from Xtructure import HashTable, hash_func_builder, xtructure_dataclass, FieldDescriptor
+from xtructure import HashTable, hash_func_builder, xtructure_dataclass, FieldDescriptor
 
 
 # Define a data structure (as an example from core_concepts.md)

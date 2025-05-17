@@ -5,7 +5,7 @@ A priority queue optimized for batched operations on GPUs. It maintains items so
 ```python
 import jax
 import jax.numpy as jnp
-from Xtructure import BGPQ, xtructure_dataclass, FieldDescriptor
+from xtructure import BGPQ, xtructure_dataclass, FieldDescriptor
 
 
 # Define a data structure for BGPQ values (as an example from core_concepts.md)
