@@ -15,7 +15,6 @@ import jax
 import jax.numpy as jnp
 
 from ..core import Xtructurable
-from ..util import set_array, set_tree
 
 SORT_STABLE = True  # Use stable sorting to maintain insertion order for equal keys
 SIZE_DTYPE = jnp.uint32
@@ -251,8 +250,8 @@ class BGPQ:
             head, hvalues, keys, values = BGPQ.merge_sort_split(
                 key_store[n], val_store[n], keys, values
             )
-            key_store = set_array(key_store, head, n)
-            val_store = set_tree(val_store, hvalues, n)
+            key_store = key_store.at[n].set(head)
+            val_store = val_store.at[n].set(hvalues)
             return key_store, val_store, keys, values, BGPQ._next(n, last_node)
 
         heap.key_store, heap.val_store, keys, values, _ = jax.lax.while_loop(
@@ -263,8 +262,8 @@ class BGPQ:
 
         def _size_not_full(heap):
             """Insert remaining elements if heap not full"""
-            heap.key_store = set_array(heap.key_store, keys, last_node)
-            heap.val_store = set_tree(heap.val_store, values, last_node)
+            heap.key_store = heap.key_store.at[last_node].set(keys)
+            heap.val_store = heap.val_store.at[last_node].set(values)
             return heap
 
         added = last_node < heap.branch_size
@@ -295,8 +294,8 @@ class BGPQ:
         root_key, root_val, block_key, block_val = BGPQ.merge_sort_split(
             root_key, root_val, block_key, block_val
         )
-        heap.key_store = set_array(heap.key_store, root_key, 0)
-        heap.val_store = set_tree(heap.val_store, root_val, 0)
+        heap.key_store = heap.key_store.at[0].set(root_key)
+        heap.val_store = heap.val_store.at[0].set(root_val)
 
         # Handle buffer overflow
         block_key, block_val, heap.key_buffer, heap.val_buffer, buffer_overflow = BGPQ.merge_buffer(
@@ -333,13 +332,13 @@ class BGPQ:
         last_key = heap.key_store[last]
         last_val = heap.val_store[last]
 
-        heap.key_store = set_array(heap.key_store, jnp.inf, last)
+        heap.key_store = heap.key_store.at[last].set(jnp.inf)
 
         root_key, root_val, heap.key_buffer, heap.val_buffer = BGPQ.merge_sort_split(
             last_key, last_val, heap.key_buffer, heap.val_buffer
         )
-        heap.key_store = set_array(heap.key_store, root_key, 0)
-        heap.val_store = set_tree(heap.val_store, root_val, 0)
+        heap.key_store = heap.key_store.at[0].set(root_key)
+        heap.val_store = heap.val_store.at[0].set(root_val)
 
         def _lr(n):
             """Get left and right child indices"""
@@ -381,8 +380,12 @@ class BGPQ:
             kc, vc, ky, vy = BGPQ.merge_sort_split(
                 key_store[current_node], val_store[current_node], ky, vy
             )
-            key_store = set_array(set_array(set_array(key_store, ky, y), kc, current_node), kx, x)
-            val_store = set_tree(set_tree(set_tree(val_store, vy, y), vc, current_node), vx, x)
+            key_store = key_store.at[y].set(ky)
+            key_store = key_store.at[current_node].set(kc)
+            key_store = key_store.at[x].set(kx)
+            val_store = val_store.at[y].set(vy)
+            val_store = val_store.at[current_node].set(vc)
+            val_store = val_store.at[x].set(vx)
 
             nc = y
             nl, nr = _lr(y)
@@ -421,8 +424,8 @@ class BGPQ:
                 heap.key_buffer,
                 heap.val_buffer,
             )
-            heap.key_store = set_array(heap.key_store, root_key, 0)
-            heap.val_store = set_tree(heap.val_store, root_val, 0)
+            heap.key_store = heap.key_store.at[0].set(root_key)
+            heap.val_store = heap.val_store.at[0].set(root_val)
             return heap
 
         heap = jax.lax.cond(size > 1, BGPQ.delete_heapify, make_empty, heap)

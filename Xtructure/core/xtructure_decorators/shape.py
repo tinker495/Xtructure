@@ -5,7 +5,7 @@ from typing import Type, TypeVar
 T = TypeVar("T")
 
 
-def add_shape_dtype_getitem_len(cls: Type[T]) -> Type[T]:
+def add_shape_dtype_len(cls: Type[T]) -> Type[T]:
     """
     Augments the class with properties to inspect the shape and dtype of its
     fields, an `__getitem__` method for indexing/slicing, and a `__len__`
@@ -41,18 +41,6 @@ def add_shape_dtype_getitem_len(cls: Type[T]) -> Type[T]:
         )
 
     setattr(cls, "dtype", property(get_type))
-
-    def getitem(self, index):
-        """Support indexing operations on the dataclass"""
-        new_values = {}
-        for field_name, field_value in self.__dict__.items():
-            if hasattr(field_value, "__getitem__"):
-                new_values[field_name] = field_value[index]
-            else:
-                new_values[field_name] = field_value
-        return cls(**new_values)
-
-    setattr(cls, "__getitem__", getitem)
 
     def len(self):
         """Get length of the first field's first dimension"""

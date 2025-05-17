@@ -1,5 +1,7 @@
 from typing import Any, Dict, Type, Protocol, Tuple as TypingTuple, TypeVar
 
+import chex
+
 from .structuredtype import StructuredType
 
 T = TypeVar("T")
@@ -52,4 +54,19 @@ class Xtructurable(Protocol[T]):
     def __str__(self) -> str: # The actual implementation takes **kwargs, but signature can be simpler for Protocol
         ...
     def str(self) -> str: # Alias for __str__
+        ...
+
+    # Methods and properties added by add_indexing_methods
+    def at(self: T, index: Any) -> 'AtIndexer':
+        ...
+
+class AtIndexer(Protocol[T]):
+
+    def __getitem__(self: T, index: Any) -> 'Updater':
+        ...
+
+class Updater(Protocol[T]):
+    def set(self: T, value: Any) -> T:
+        ...
+    def set_as_condition(self: T, condition: chex.Array, value: Any) -> T:
         ...

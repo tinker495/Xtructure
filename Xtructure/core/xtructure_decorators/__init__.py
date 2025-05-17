@@ -5,7 +5,8 @@ from typing import Type, TypeVar
 
 from .default import _add_auto_default_method_if_needed
 from .string_format import add_string_representation_methods
-from .shape import add_shape_dtype_getitem_len
+from .shape import add_shape_dtype_len
+from .indexing import add_indexing_methods
 from .structur_util import add_structure_utilities
 
 T = TypeVar("T")
@@ -33,8 +34,11 @@ def xtructure_dataclass(cls: Type[T]) -> Type[Xtructurable[T]]:
     # Ensure class has a default method for initialization
     cls = _add_auto_default_method_if_needed(cls)
 
-    # add shape and dtype and getitem and len
-    cls = add_shape_dtype_getitem_len(cls)
+    # add shape and dtype and len
+    cls = add_shape_dtype_len(cls)
+
+    # add indexing methods
+    cls = add_indexing_methods(cls)
 
     # add structure utilities and random
     cls = add_structure_utilities(cls)

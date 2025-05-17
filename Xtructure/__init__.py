@@ -11,12 +11,6 @@ from .core import (
     StructuredType,
     FieldDescriptor
 )
-from .util import (
-    set_tree,
-    set_tree_as_condition,
-    set_array,
-    set_array_as_condition
-)
 
 __all__ = [
     # bgpq.py
@@ -33,9 +27,4 @@ __all__ = [
     "StructuredType",
     # core.field_descriptors.py
     "FieldDescriptor",
-    # util.py
-    "set_tree",
-    "set_tree_as_condition",
-    "set_array",
-    "set_array_as_condition"
 ] 

@@ -11,7 +11,6 @@ import jax
 import jax.numpy as jnp
 
 from ..core import Xtructurable
-from ..util import set_tree_as_condition
 
 SIZE_DTYPE = jnp.uint32
 HASH_TABLE_IDX_DTYPE = jnp.uint8
@@ -206,7 +205,7 @@ class HashTable:
             """
             insert the state in the table
             """
-            table.table = set_tree_as_condition(table.table, idx, input, table_idx)
+            table.table = table.table.at[idx, table_idx].set(input)
             table.table_idx = table.table_idx.at[idx].add(1)
             return table
 
@@ -317,7 +316,7 @@ class HashTable:
         seeds, index, _ = jax.lax.while_loop(_cond, _while, (seeds, _idxs, unupdated))
 
         idx, table_idx = index[:, 0], index[:, 1].astype(HASH_TABLE_IDX_DTYPE)
-        table.table = set_tree_as_condition(table.table, updatable, inputs, idx, table_idx)
+        table.table = table.table.at[idx, table_idx].set_as_condition(updatable, inputs)
         table.table_idx = table.table_idx.at[idx].add(updatable)
         table.size += jnp.sum(updatable, dtype=SIZE_DTYPE)
         return table, idx, table_idx

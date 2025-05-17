@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from Xtructure import HashTable, hash_func_builder, xtructure_dataclass, FieldDescriptor, set_tree
+from Xtructure import HashTable, hash_func_builder, xtructure_dataclass, FieldDescriptor
 
 
 @xtructure_dataclass
@@ -81,7 +81,7 @@ def test_same_state_insert_at_batch(hash_func):
         new_clone_idx = jax.random.randint(key, (cloned_sample_num,), 0, batch)
 
         # Create deliberate duplicates within the batch
-        samples = set_tree(samples, samples[cloned_sample_idx], new_clone_idx)
+        samples = samples.at[new_clone_idx].set(samples[cloned_sample_idx])
         h, bytesed = jax.vmap(hash_func, in_axes=(0, None))(samples, 0)
         unique_count = jnp.unique(bytesed, axis=0).shape[0]
         # after this, some states are duplicated
