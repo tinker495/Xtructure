@@ -52,6 +52,14 @@ This decorator transforms a Python class into a JAX-compatible structure (specif
 *   `reshape(self, new_shape)`: Reshapes batch dimensions.
 *   `flatten(self)`: Flattens batch dimensions.
 *   `__str__(self)` / `str(self)`: Provides a string representation.
+    *   Handles instances based on their `structured_type`:
+        *   `SINGLE`: Uses the original `__str__` method of the instance or a custom pretty formatter for a detailed field-by-field view.
+        *   `BATCHED`: For small batches, all items are formatted. For large batches (controlled by `MAX_PRINT_BATCH_SIZE` and `SHOW_BATCH_SIZE`), it provides a summarized view showing the first few and last few elements, along with the batch shape, using `tabulate` for neat formatting.
+        *   `UNSTRUCTURED`: Indicates that the data is unstructured relative to its default shape.
+*   `default_shape` (property): Returns a namedtuple showing the JAX shapes of all fields as they would be in an instance created by `cls.default()_` (i.e., without any batch dimensions).
+*   `at[index_or_slice]` (property): Provides access to an updater object for out-of-place modifications of the instance's fields at the given `index_or_slice`.
+    *   `set(values_to_set)`: Returns a new instance with the fields at the specified `index_or_slice` updated with `values_to_set`. If `values_to_set` is an instance of the same dataclass, corresponding fields are used for the update; otherwise, `values_to_set` is applied to all selected field slices.
+    *   `set_as_condition(condition, value_to_conditionally_set)`: Returns a new instance where fields at the specified `index_or_slice` are updated based on a JAX boolean `condition`. If an element in `condition` is true, the corresponding element in the field slice is updated with `value_to_conditionally_set`.
 
 ## `FieldDescriptor`
 
