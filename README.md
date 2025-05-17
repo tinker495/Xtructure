@@ -24,7 +24,7 @@ Detailed documentation on how to use Xtructure is available in the `doc/` direct
 
 Quick examples can still be found below for a brief overview.
 
-## Quick Examples (from original README)
+## Quick Examples
 
 ```python
 import jax
