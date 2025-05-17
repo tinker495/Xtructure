@@ -6,14 +6,11 @@ T = TypeVar("T")
 
 def add_shape_dtype_len(cls: Type[T]) -> Type[T]:
     """
-    Augments the class with properties to inspect the shape and dtype of its
-    fields, an `__getitem__` method for indexing/slicing, and a `__len__`
-    method.
+    Augments the class with `shape` and `dtype` properties to inspect its
+    fields, and a `__len__` method.
 
     The `shape` and `dtype` properties return namedtuples reflecting the
     structure of the dataclass fields.
-    The `__getitem__` method allows instances to be indexed, applying the
-    index to each field.
     The `__len__` method conventionally returns the size of the first
     dimension of the first field of the instance, which is often useful
     for determining batch sizes.

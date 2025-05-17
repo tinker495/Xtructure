@@ -1,6 +1,3 @@
-import inspect
-from typing import Any
-
 import chex
 
 
@@ -32,7 +29,3 @@ def get_leaf_elements(tree: chex.Array):
             yield from get_leaf_elements(item)  # Recursively process sub-tuples
     else:
         yield tree  # Yield the leaf element
-
-
-def is_potentially_xtructure_class(annotation_obj: Any) -> bool:
-    return inspect.isclass(annotation_obj)

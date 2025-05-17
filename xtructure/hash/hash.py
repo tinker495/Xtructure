@@ -193,9 +193,20 @@ class HashTable:
 
     def lookup(table: "HashTable", hash_func: HASH_FUNC_TYPE, input: Xtructurable):
         """
-        find the index of the state in the table if it exists.
-        if it exists return the index, cuckoo_idx and True
-        if is does not exist return the
+        Finds the state in the hash table using Cuckoo hashing.
+
+        Args:
+            table: The HashTable instance.
+            hash_func: The hash function to use.
+            input: The Xtructurable state to look up.
+
+        Returns:
+            A tuple (idx, table_idx, found):
+            - idx (int): The primary hash index in the table.
+            - table_idx (int): The cuckoo table index (which hash function/slot was used or probed).
+            - found (bool): True if the state was found, False otherwise.
+            If not found, idx and table_idx indicate the first empty slot encountered
+            during the Cuckoo search path where an insertion could occur.
         """
         index = HashTable.get_new_idx(hash_func, table, input, table.seed)
         _, idx, table_idx, found = HashTable._lookup(

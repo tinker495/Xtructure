@@ -4,7 +4,7 @@ import chex
 
 from xtructure.core.protocol import Xtructurable
 
-from .default import _add_auto_default_method_if_needed
+from .default import add_auto_default_method_if_needed
 from .indexing import add_indexing_methods
 from .shape import add_shape_dtype_len
 from .string_format import add_string_representation_methods
@@ -34,7 +34,7 @@ def xtructure_dataclass(cls: Type[T]) -> Type[Xtructurable[T]]:
     cls = chex.dataclass(cls)
 
     # Ensure class has a default method for initialization
-    cls = _add_auto_default_method_if_needed(cls)
+    cls = add_auto_default_method_if_needed(cls)
 
     # add shape and dtype and len
     cls = add_shape_dtype_len(cls)
@@ -49,6 +49,6 @@ def xtructure_dataclass(cls: Type[T]) -> Type[Xtructurable[T]]:
     cls = add_string_representation_methods(cls)
 
     # Ensure class has a default method for initialization
-    assert hasattr(cls, "default"), "HeapValue class must have a default method."
+    assert hasattr(cls, "default"), "xtructureclass must have a default method."
 
     return cls

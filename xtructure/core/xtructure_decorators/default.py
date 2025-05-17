@@ -14,7 +14,7 @@ def is_potentially_xtructure_class(annotation_obj: Any) -> bool:
     return inspect.isclass(annotation_obj)
 
 
-def _add_auto_default_method_if_needed(cls: Type[T]) -> Type[T]:
+def add_auto_default_method_if_needed(cls: Type[T]) -> Type[T]:
     if hasattr(cls, "default"):
         # User has provided a custom default method, so we don't overwrite it.
         return cls

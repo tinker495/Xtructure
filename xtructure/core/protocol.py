@@ -18,7 +18,7 @@ class Xtructurable(Protocol[T]):
     # __dict__ is used by the __getitem__ implementation
     __dict__: Dict[str, Any]
 
-    # Methods and properties added by add_shape_dtype_getitem_len
+    # Methods and properties added by add_shape_dtype_len
     @property
     def shape(self) -> Any:  # Actual type is a dynamically generated namedtuple
         ...
@@ -27,13 +27,15 @@ class Xtructurable(Protocol[T]):
     def dtype(self) -> Any:  # Actual type is a dynamically generated namedtuple
         ...
 
+    # Method added by add_indexing_methods (responsible for __getitem__)
     def __getitem__(self: T, index: Any) -> T:
         ...
 
+    # Method added by add_shape_dtype_len
     def __len__(self) -> int:
         ...
 
-    # Methods and properties added by add_structure_utilities_and_random
+    # Methods and properties added by add_structure_utilities
     # Assumes the class T has a 'default' classmethod as per the decorator's assertion
     @classmethod
     def default(cls: Type[T], shape: Any = ...) -> T:
@@ -72,7 +74,7 @@ class Xtructurable(Protocol[T]):
     def str(self) -> str:  # Alias for __str__
         ...
 
-    # Methods and properties added by add_indexing_methods
+    # Method added by add_indexing_methods
     def at(self: T, index: Any) -> "AtIndexer":
         ...
 

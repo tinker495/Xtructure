@@ -121,7 +121,10 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
             shape = list(get_leaf_elements(self.shape))
             return shape[0][: (len(shape[0]) - default_dim)]
         else:
-            raise ValueError(f"State is not structured: {self.shape} != {self.default_shape}")
+            raise ValueError(
+                f"batch_shape is not defined for structured_type '{self.structured_type}'."
+                f" Shape: {self.shape}, Default Shape: {self.default_shape}"
+            )
 
     def reshape(self, new_shape: tuple[int, ...]) -> T:
         if self.structured_type == StructuredType.BATCHED:
@@ -136,7 +139,10 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
                 lambda x: jnp.reshape(x, new_shape + x.shape[batch_dim:]), self
             )
         else:
-            raise ValueError(f"State is not structured: {self.shape} != {self.default_shape}")
+            raise ValueError(
+                f"Reshape is only supported for BATCHED structured_type. Current type: '{self.structured_type}'."
+                f"Shape: {self.shape}, Default Shape: {self.default_shape}"
+            )
 
     def flatten(self):
         if self.structured_type != StructuredType.BATCHED:
@@ -174,7 +180,7 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
                 # Recursively call random for the nested xtructure_data class.
                 # Pass the batch 'shape' and field_key.
                 # The nested random method will manage its own internal field shapes.
-                data[field_name] = nested_class.dtype.random(shape=shape, key=field_key)
+                data[field_name] = nested_class.random(shape=shape, key=field_key)
             else:
                 # This branch handles primitive JAX array fields.
                 current_default_shape = cfg["default_field_shape"]
