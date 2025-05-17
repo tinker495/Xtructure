@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from Xtructure import BGPQ, FieldDescriptor, xtructure_dataclass
+from xtructure import BGPQ, FieldDescriptor, xtructure_dataclass
 
 
 @xtructure_dataclass

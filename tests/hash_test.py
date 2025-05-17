@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from Xtructure import FieldDescriptor, HashTable, hash_func_builder, xtructure_dataclass
+from xtructure import FieldDescriptor, HashTable, hash_func_builder, xtructure_dataclass
 
 
 @xtructure_dataclass

@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 
-from Xtructure import FieldDescriptor, StructuredType, xtructure_dataclass
+from xtructure import FieldDescriptor, StructuredType, xtructure_dataclass
 
 
 # Test data structures
