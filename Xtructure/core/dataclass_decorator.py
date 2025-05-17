@@ -269,7 +269,7 @@ def add_structure_utilities_and_random(cls: Type[T]) -> Type[T]:
                 # Recursively call random for the nested xtructure_data class.
                 # Pass the batch 'shape' and field_key.
                 # The nested random method will manage its own internal field shapes.
-                data[field_name] = nested_class.random(shape=shape, key=field_key)
+                data[field_name] = nested_class.dtype.random(shape=shape, key=field_key)
             else:
                 # This branch handles primitive JAX array fields.
                 current_default_shape = cfg['default_field_shape']
@@ -337,7 +337,7 @@ def add_string_representation_methods(cls: Type[T]) -> Type[T]:
     # If the original __str__ is just the basic one from `object`, it's not very informative.
     # In such cases, or if no __str__ was found, `repr` is a better fallback for dataclasses.
     if _original_str_method is None or _original_str_method == object.__str__:
-        _single_item_formatter = repr
+        _single_item_formatter = _custom_pretty_formatter
     else:
         # Use the captured original __str__ method.
         # We need to ensure it's called as a method of the item.
@@ -355,21 +355,10 @@ def add_string_representation_methods(cls: Type[T]) -> Type[T]:
 
         if structured_type == StructuredType.SINGLE:
             # For a single item, call the chosen formatter.
-            # Pass kwargs only if the formatter is not the built-in repr.
-            if _single_item_formatter is repr:
-                if use_kwargs:
-                    return repr(self, **kwargs)
-                else:
-                    return repr(self)
+            if use_kwargs:
+                return _single_item_formatter(self, **kwargs)
             else:
-                # Our lambda wrapper for _original_str_method doesn't currently pass kwargs.
-                # If _original_str_method was, e.g., a user's custom __str__ that took kwargs,
-                # this would need adjustment or a different convention.
-                # For now, assuming _original_str_method (like a dataclass __str__) doesn't expect these kwargs.
-                if use_kwargs:
-                    return _single_item_formatter(self, **kwargs)
-                else:
-                    return _single_item_formatter(self) # Invokes the lambda: _original_str_method(self)
+                return _single_item_formatter(self) # **kwargs will be an empty dict
         
         elif structured_type == StructuredType.BATCHED:
             batch_shape = self.batch_shape
@@ -541,3 +530,42 @@ def _add_auto_default_method_if_needed(cls: Type[T]) -> Type[T]:
     # The class must provide its own default method.
     # So, we don't attach anything, and the main assertion in xtructure_data will trigger.
     return cls
+
+
+def _custom_pretty_formatter(item, **_kwargs): # Accepts and ignores _kwargs for now
+    class_name = item.__class__.__name__
+    
+    field_values = {}
+    # Prioritize __dataclass_fields__ for declared fields in dataclasses
+    if hasattr(item, '__dataclass_fields__'):
+        for field_name_df in getattr(item, '__dataclass_fields__', {}).keys():
+            try:
+                field_values[field_name_df] = getattr(item, field_name_df)
+            except AttributeError:
+                # Field declared but not present; should be rare for dataclasses
+                pass 
+    elif hasattr(item, '__dict__'):
+        # Fallback for non-dataclasses or if __dataclass_fields__ is not found/empty
+        field_values = item.__dict__
+    else:
+        # No way to access fields, fallback to simple repr
+        return repr(item)
+
+    if not field_values:
+        return f"{class_name}()"
+    
+    parts = []
+    for name, value in field_values.items():
+        try:
+            value_str = str(value) # Use str() to leverage our enhanced __str__ for nested items
+        except Exception:
+            value_str = "<error converting value to string>"
+
+        if '\n' in value_str:
+            # Indent all lines of the multi-line value string for better readability
+            indented_value = "\n".join(["    " + line for line in value_str.split('\n')])
+            parts.append(f"  {name}: \n{indented_value}")
+        else:
+            parts.append(f"  {name}: {value_str}")
+    
+    return f"{class_name}(\n" + ",\n".join(parts) + "\n)"
