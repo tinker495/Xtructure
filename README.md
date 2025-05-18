@@ -30,7 +30,7 @@ Quick examples can still be found below for a brief overview.
 import jax
 import jax.numpy as jnp
 
-from xtructure import HashTable, BGPQ, KEY_DTYPE, xtructure_dataclass, FieldDescriptor
+from xtructure import HashTable, BGPQ, xtructure_dataclass, FieldDescriptor
 
 
 # Define a custom data structure using xtructure_data
@@ -92,7 +92,7 @@ print(f"BGPQ: Built with max_size={priority_queue.max_size}, batch_size={priorit
 # 2. Prepare keys and values to insert
 num_items_to_insert_pq = 150
 prng_key = jax.random.PRNGKey(10)
-keys_for_pq = jax.random.uniform(prng_key, (num_items_to_insert_pq,)).astype(KEY_DTYPE)
+keys_for_pq = jax.random.uniform(prng_key, (num_items_to_insert_pq,)).astype(jnp.bfloat16)
 prng_key, subkey = jax.random.split(prng_key)
 values_for_pq = MyHeapValue.random((num_items_to_insert_pq,), key=subkey)
 
