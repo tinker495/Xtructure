@@ -141,10 +141,6 @@ class HashTable:
             Tuple of (seed, idx, table_idx, found)
         """
 
-        def _check_equal(state1, state2):
-            tree_equal = jax.tree_util.tree_map(lambda x, y: jnp.all(x == y), state1, state2)
-            return jax.tree_util.tree_reduce(jnp.logical_and, tree_equal)
-
         def _cond(val):
             seed, idx, table_idx, found = val
             filled_idx = table.table_idx[idx]
@@ -169,7 +165,7 @@ class HashTable:
                 return seed, idx, table_idx
 
             state = table.table[idx, table_idx]
-            found = _check_equal(state, input)
+            found = state == input
             seed, idx, table_idx = jax.lax.cond(
                 found,
                 lambda _: (seed, idx, table_idx),
@@ -179,7 +175,7 @@ class HashTable:
             return seed, idx, table_idx, found
 
         state = table.table[idx, table_idx]
-        found = jnp.logical_or(found, _check_equal(state, input))
+        found = jnp.logical_or(found, state == input)
         update_seed, idx, table_idx, found = jax.lax.while_loop(
             _cond, _while, (seed, idx, table_idx, found)
         )

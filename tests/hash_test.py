@@ -10,12 +10,6 @@ class XtructureValue:
     b: FieldDescriptor(jnp.uint32, (1, 2))  # type: ignore
 
 
-@jax.jit
-def is_equal(a, b):
-    tree_equal = jax.tree_util.tree_map(lambda x, y: jnp.all(x == y), a, b)
-    return jax.tree_util.tree_reduce(jnp.logical_and, tree_equal)
-
-
 def test_hash_table_lookup():
     count = 1000
     sample = XtructureValue.random((count,))
@@ -115,7 +109,9 @@ def test_same_state_insert_at_batch():
         idx, table_idx, found = jax.vmap(lookup, in_axes=(None, 0))(table, samples)
         assert jnp.all(found), "Cross-batch state missing"
         contents = table.table[idx, table_idx]
-        assert jnp.all(jax.vmap(is_equal)(contents, samples)), "Inserted states not found in table"
+        assert jnp.all(
+            jax.vmap(lambda x, y: x == y)(contents, samples)
+        ), "Inserted states not found in table"
 
 
 def test_large_hash_table():
