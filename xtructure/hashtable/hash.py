@@ -4,7 +4,7 @@ This module provides functionality for hashing Xtructurables and managing collis
 """
 
 from functools import partial
-from typing import Callable, Tuple, TypeVar
+from typing import TypeVar
 
 import chex
 import jax
@@ -16,7 +16,6 @@ SIZE_DTYPE = jnp.uint32
 HASH_TABLE_IDX_DTYPE = jnp.uint8
 
 T = TypeVar("T")
-HASH_FUNC_TYPE = Callable[[Xtructurable, int], Tuple[jnp.uint32, jnp.ndarray]]
 
 
 @chex.dataclass
@@ -83,7 +82,6 @@ class HashTable:
 
     @staticmethod
     def get_new_idx(
-        hash_func: HASH_FUNC_TYPE,
         table: "HashTable",
         input: Xtructurable,
         seed: int,
@@ -92,7 +90,6 @@ class HashTable:
         Calculate new index for input state using the hash function.
 
         Args:
-            hash_func: Hash function to use
             table: Hash table instance
             input: State to hash
             seed: Seed for hash function
@@ -100,13 +97,12 @@ class HashTable:
         Returns:
             Index in the table for the input state
         """
-        hash_value, _ = hash_func(input, seed)
+        hash_value, _ = input.hash(seed)
         idx = hash_value % table._capacity
         return idx
 
     @staticmethod
     def get_new_idx_byterized(
-        hash_func: HASH_FUNC_TYPE,
         table: "HashTable",
         input: Xtructurable,
         seed: int,
@@ -116,13 +112,12 @@ class HashTable:
         Similar to get_new_idx but also returns the byte representation for
         equality comparison.
         """
-        hash_value, bytes = hash_func(input, seed)
+        hash_value, bytes = input.hash(seed)
         idx = hash_value % table._capacity
         return idx, bytes
 
     @staticmethod
     def _lookup(
-        hash_func: HASH_FUNC_TYPE,
         table: "HashTable",
         input: Xtructurable,
         idx: int,
@@ -135,7 +130,6 @@ class HashTable:
         Uses cuckoo hashing technique to check multiple possible locations.
 
         Args:
-            hash_func: Hash function to use
             table: Hash table instance
             input: State to look up
             idx: Initial index to check
@@ -166,7 +160,7 @@ class HashTable:
                     next_table,
                     lambda _: (
                         seed + 1,
-                        HashTable.get_new_idx(hash_func, table, input, seed + 1),
+                        HashTable.get_new_idx(table, input, seed + 1),
                         HASH_TABLE_IDX_DTYPE(0),
                     ),
                     lambda _: (seed, idx, HASH_TABLE_IDX_DTYPE(table_idx + 1)),
@@ -191,13 +185,12 @@ class HashTable:
         )
         return update_seed, idx, table_idx, found
 
-    def lookup(table: "HashTable", hash_func: HASH_FUNC_TYPE, input: Xtructurable):
+    def lookup(table: "HashTable", input: Xtructurable):
         """
         Finds the state in the hash table using Cuckoo hashing.
 
         Args:
             table: The HashTable instance.
-            hash_func: The hash function to use.
             input: The Xtructurable state to look up.
 
         Returns:
@@ -208,13 +201,13 @@ class HashTable:
             If not found, idx and table_idx indicate the first empty slot encountered
             during the Cuckoo search path where an insertion could occur.
         """
-        index = HashTable.get_new_idx(hash_func, table, input, table.seed)
+        index = HashTable.get_new_idx(table, input, table.seed)
         _, idx, table_idx, found = HashTable._lookup(
-            hash_func, table, input, index, HASH_TABLE_IDX_DTYPE(0), table.seed, False
+            table, input, index, HASH_TABLE_IDX_DTYPE(0), table.seed, False
         )
         return idx, table_idx, found
 
-    def insert(table: "HashTable", hash_func: HASH_FUNC_TYPE, input: Xtructurable):
+    def insert(table: "HashTable", input: Xtructurable):
         """
         insert the state in the table
         """
@@ -227,7 +220,7 @@ class HashTable:
             table.table_idx = table.table_idx.at[idx].add(1)
             return table
 
-        idx, table_idx, found = HashTable.lookup(hash_func, table, input)
+        idx, table_idx, found = HashTable.lookup(table, input)
         return (
             jax.lax.cond(
                 found, lambda _: table, lambda _: _update_table(table, input, idx, table_idx), None
@@ -258,7 +251,6 @@ class HashTable:
 
     @staticmethod
     def _parallel_insert(
-        hash_func: HASH_FUNC_TYPE,
         table: "HashTable",
         inputs: Xtructurable,
         seeds: chex.Array,
@@ -271,7 +263,7 @@ class HashTable:
                 next_table = table_idx >= (table.cuckoo_table_n - 1)
 
                 def next_table_fn(seed, table):
-                    next_idx = HashTable.get_new_idx(hash_func, table, state, seed)
+                    next_idx = HashTable.get_new_idx(table, state, seed)
                     seed = seed + 1
                     return seed, next_idx, table.table_idx[next_idx].astype(jnp.uint32)
 
@@ -339,14 +331,11 @@ class HashTable:
         table.size += jnp.sum(updatable, dtype=SIZE_DTYPE)
         return table, idx, table_idx
 
-    def parallel_insert(
-        table: "HashTable", hash_func: HASH_FUNC_TYPE, inputs: Xtructurable, filled: chex.Array
-    ):
+    def parallel_insert(table: "HashTable", inputs: Xtructurable, filled: chex.Array):
         """
         Parallel insertion of multiple states into the hash table.
 
         Args:
-            hash_func: Hash function to use
             table: Hash table instance
             inputs: States to insert
             filled: Boolean array indicating which inputs are valid
@@ -363,7 +352,7 @@ class HashTable:
 
         # Get initial indices and byte representations
         initial_idx, bytes = jax.vmap(
-            partial(HashTable.get_new_idx_byterized, hash_func), in_axes=(None, 0, None)
+            partial(HashTable.get_new_idx_byterized), in_axes=(None, 0, None)
         )(table, inputs, table.seed)
 
         batch_len = filled.shape[0]
@@ -375,7 +364,7 @@ class HashTable:
 
         # Look up each state
         seeds, idx, table_idx, found = jax.vmap(
-            partial(HashTable._lookup, hash_func), in_axes=(None, 0, 0, None, None, 0)
+            partial(HashTable._lookup), in_axes=(None, 0, 0, None, None, 0)
         )(table, inputs, initial_idx, HASH_TABLE_IDX_DTYPE(0), table.seed, ~unique_filled)
 
         idxs = jnp.stack([idx, table_idx], axis=1, dtype=SIZE_DTYPE)
@@ -383,12 +372,12 @@ class HashTable:
 
         # Perform parallel insertion
         table, idx, table_idx = HashTable._parallel_insert(
-            hash_func, table, inputs, seeds, idxs, updatable, batch_len
+            table, inputs, seeds, idxs, updatable, batch_len
         )
 
         # Get final indices
         _, idx, table_idx, _ = jax.vmap(
-            partial(HashTable._lookup, hash_func), in_axes=(None, 0, 0, None, None, 0)
+            partial(HashTable._lookup), in_axes=(None, 0, 0, None, None, 0)
         )(table, inputs, initial_idx, HASH_TABLE_IDX_DTYPE(0), table.seed, ~filled)
 
         return table, updatable, unique_filled, idx, table_idx

@@ -1,6 +1,6 @@
 from .bgpq import BGPQ
 from .core import FieldDescriptor, StructuredType, Xtructurable, xtructure_dataclass
-from .hash import HashTable, hash_func_builder
+from .hashtable import HashTable
 
 __all__ = [
     # bgpq.py
@@ -8,8 +8,6 @@ __all__ = [
     "HeapValue",
     "BGPQ",
     # hash.py
-    "xxhash",
-    "hash_func_builder",
     "HashTable",
     # core.dataclass.py
     "Xtructurable",

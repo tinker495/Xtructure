@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 
-from ..core import Xtructurable
+from .. import Xtructurable
 
 
 def rotl(x, n):
@@ -52,6 +52,9 @@ def hash_func_builder(x: Xtructurable):
     @jax.jit
     def _to_bytes(x):
         """Convert input to byte array."""
+        # Check if x is a JAX boolean array and cast to uint8 if true
+        if x.dtype == jnp.bool_:
+            x = x.astype(jnp.uint8)
         return jax.lax.bitcast_convert_type(x, jnp.uint8).reshape(-1)
 
     @jax.jit
@@ -101,3 +104,13 @@ def hash_func_builder(x: Xtructurable):
         return hash_value, bytes
 
     return jax.jit(_h)
+
+
+def hash_function_decorator(cls):
+    """
+    Decorator to add a hash function to a class.
+    """
+
+    setattr(cls, "hash", hash_func_builder(cls))
+
+    return cls

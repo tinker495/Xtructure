@@ -1,8 +1,7 @@
 import jax
 import jax.numpy as jnp
-import pytest
 
-from xtructure import FieldDescriptor, HashTable, hash_func_builder, xtructure_dataclass
+from xtructure import FieldDescriptor, HashTable, xtructure_dataclass
 
 
 @xtructure_dataclass
@@ -17,17 +16,12 @@ def is_equal(a, b):
     return jax.tree_util.tree_reduce(jnp.logical_and, tree_equal)
 
 
-@pytest.fixture
-def hash_func():
-    return hash_func_builder(XtructureValue)
-
-
-def test_hash_table_lookup(hash_func):
+def test_hash_table_lookup():
     count = 1000
     sample = XtructureValue.random((count,))
     table = HashTable.build(XtructureValue, 1, int(1e4))
 
-    lookup = jax.jit(lambda table, sample: HashTable.lookup(table, hash_func, sample))
+    lookup = jax.jit(lambda table, sample: HashTable.lookup(table, sample))
     idx, table_idx, found = jax.vmap(lookup, in_axes=(None, 0))(table, sample)
 
     assert idx.shape == (count,)
@@ -36,16 +30,16 @@ def test_hash_table_lookup(hash_func):
     assert not jnp.any(found)  # Initially all should be not found
 
 
-def test_hash_table_insert(hash_func):
+def test_hash_table_insert():
     count = 1000
     batch = 4000
     table = HashTable.build(XtructureValue, 1, int(1e4))
 
     sample = XtructureValue.random((count,))
 
-    lookup = jax.jit(lambda table, sample: HashTable.lookup(table, hash_func, sample))
+    lookup = jax.jit(lambda table, sample: HashTable.lookup(table, sample))
     parallel_insert = jax.jit(
-        lambda table, sample, filled: HashTable.parallel_insert(table, hash_func, sample, filled)
+        lambda table, sample, filled: HashTable.parallel_insert(table, sample, filled)
     )
 
     # Check initial state
@@ -62,13 +56,13 @@ def test_hash_table_insert(hash_func):
     assert jnp.mean(inserted) > 0  # Some states should have been inserted
 
 
-def test_same_state_insert_at_batch(hash_func):
+def test_same_state_insert_at_batch():
     batch = 5000
     table = HashTable.build(XtructureValue, 1, int(1e5))
     parallel_insert = jax.jit(
-        lambda table, sample, filled: HashTable.parallel_insert(table, hash_func, sample, filled)
+        lambda table, sample, filled: HashTable.parallel_insert(table, sample, filled)
     )
-    lookup = jax.jit(lambda table, sample: HashTable.lookup(table, hash_func, sample))
+    lookup = jax.jit(lambda table, sample: HashTable.lookup(table, sample))
 
     num = 10
     counts = 0
@@ -83,7 +77,7 @@ def test_same_state_insert_at_batch(hash_func):
 
         # Create deliberate duplicates within the batch
         samples = samples.at[new_clone_idx].set(samples[cloned_sample_idx])
-        h, bytesed = jax.vmap(hash_func, in_axes=(0, None))(samples, 0)
+        h, bytesed = jax.vmap(lambda x: x.hash(0))(samples)
         unique_count = jnp.unique(bytesed, axis=0).shape[0]
         # after this, some states are duplicated
         all_samples.append(samples)
@@ -124,13 +118,13 @@ def test_same_state_insert_at_batch(hash_func):
         assert jnp.all(jax.vmap(is_equal)(contents, samples)), "Inserted states not found in table"
 
 
-def test_large_hash_table(hash_func):
+def test_large_hash_table():
     count = int(1e7)
     batch = int(1e4)
     table = HashTable.build(XtructureValue, 1, count)
 
     sample = XtructureValue.random((count,))
-    hash, bytes = jax.vmap(hash_func, in_axes=(0, None))(sample, 0)
+    hash, bytes = jax.vmap(lambda x: x.hash(0))(sample)
     unique_bytes = jnp.unique(bytes, axis=0, return_index=True)[1]
     unique_bytes_len = unique_bytes.shape[0]
     unique_hash = jnp.unique(hash, axis=0, return_index=True)[1]
@@ -138,9 +132,9 @@ def test_large_hash_table(hash_func):
     print(f"unique_bytes_len: {unique_bytes_len}, unique_hash_len: {unique_hash_len}")
 
     parallel_insert = jax.jit(
-        lambda table, sample, filled: HashTable.parallel_insert(table, hash_func, sample, filled)
+        lambda table, sample, filled: HashTable.parallel_insert(table, sample, filled)
     )
-    lookup = jax.jit(lambda table, sample: HashTable.lookup(table, hash_func, sample))
+    lookup = jax.jit(lambda table, sample: HashTable.lookup(table, sample))
 
     # Insert in batches
     inserted_count = 0

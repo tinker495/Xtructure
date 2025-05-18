@@ -5,7 +5,7 @@ A Cuckoo hash table optimized for JAX.
 ```python
 import jax
 import jax.numpy as jnp
-from xtructure import HashTable, hash_func_builder, xtructure_dataclass, FieldDescriptor
+from xtructure import HashTable, xtructure_dataclass, FieldDescriptor
 
 
 # Define a data structure (as an example from core_concepts.md)
@@ -16,11 +16,7 @@ class MyDataValue:
     flags: FieldDescriptor[jnp.bool_, (4,)]
 
 
-# 1. Build a hash function specific to your data structure
-#    The hash function needs an example instance to understand the structure.
-my_hash_func = hash_func_builder(MyDataValue.default())
-
-# 2. Build the HashTable
+# 1. Build the HashTable
 #    HashTable.build(pytree_def_type, initial_hash_seed, capacity)
 table_capacity = 1000
 hash_table = HashTable.build(MyDataValue, 123, table_capacity)
@@ -33,11 +29,11 @@ key = jax.random.PRNGKey(0)
 sample_data = MyDataValue.random(shape=(num_items_to_insert,), key=key)
 
 # 4. Insert data
-#    HashTable.parallel_insert(table, hash_func, samples, filled_mask)
+#    HashTable.parallel_insert(table, samples, filled_mask)
 #    'filled_mask' indicates which items in 'sample_data' are valid.
 filled_mask = jnp.ones(num_items_to_insert, dtype=jnp.bool_)
 hash_table, inserted_mask, unique_mask, idxs, table_idxs = HashTable.parallel_insert(
-    hash_table, my_hash_func, sample_data, filled_mask
+    hash_table, sample_data, filled_mask
 )
 
 print(f"HashTable: Inserted {jnp.sum(inserted_mask)} items.")
@@ -50,9 +46,9 @@ print(f"HashTable size: {hash_table.size}")
 # table_idxs: cuckoo table indices (0 to CUCKOO_TABLE_N-1) used for each stored item.
 
 # 5. Lookup data
-#    HashTable.lookup(table, hash_func, item_to_lookup)
+#    HashTable.lookup(table, item_to_lookup)
 item_to_check = sample_data[0]  # Let's check the first item we inserted
-idx, table_idx, found = HashTable.lookup(hash_table, my_hash_func, item_to_check)
+idx, table_idx, found = HashTable.lookup(hash_table, item_to_check)
 
 if found:
     retrieved_item = hash_table.table[idx, table_idx]  # Accessing the item from the internal table
@@ -77,9 +73,6 @@ else:
 ## Key `HashTable` Details
 
 *   **Cuckoo Hashing**: Uses `CUCKOO_TABLE_N` (an internal constant, typically small e.g. 2-4) hash functions/slots per primary index to resolve collisions. This means an item can be stored in one of `N` locations.
-*   **`hash_func_builder(pytree_example)`**: Generates a JIT-compiled hash function tailored for the provided PyTree structure.
-    *   It converts the PyTree to bytes, then to `jnp.uint32` arrays, and applies `xxhash`.
-    *   Returns both the final hash value and the item's byte representation (used for precise equality checks during lookup to resolve hash collisions).
 *   **`HashTable.build(dataclass, seed, capacity)`**:
     *   `dataclass`: The *class* of your custom data structure (e.g., `MyDataValue`). An instance of this class (e.g., `MyDataValue.default()`) is used internally to define the table structure.
     *   `seed`: Integer seed for hashing.

@@ -30,7 +30,7 @@ Quick examples can still be found below for a brief overview.
 import jax
 import jax.numpy as jnp
 
-from xtructure import HashTable, hash_func_builder, BGPQ, KEY_DTYPE, xtructure_dataclass, FieldDescriptor
+from xtructure import HashTable, BGPQ, KEY_DTYPE, xtructure_dataclass, FieldDescriptor
 
 
 # Define a custom data structure using xtructure_data
@@ -43,10 +43,7 @@ class MyDataValue:
 # --- HashTable Example ---
 print("--- HashTable Example ---")
 
-# 1. Build a hash function for your custom data structure
-my_hash_func = hash_func_builder(MyDataValue.default())  # Pass an instance for builder
-
-# 2. Build the HashTable
+# 1. Build the HashTable
 # HashTable.build(pytree_def_type_class, inital_hash_seed, capacity)
 table_capacity = 1000
 hash_table = HashTable.build(MyDataValue, 1, table_capacity)  # Pass the class for build
@@ -56,17 +53,17 @@ num_items_to_insert = 100
 sample_data = MyDataValue.random((num_items_to_insert,), key=jax.random.PRNGKey(0))
 
 # 4. Insert data
-# HashTable.parallel_insert(table, hash_func, samples, filled_mask (optional))
+# HashTable.parallel_insert(table, samples, filled_mask (optional))
 hash_table, inserted_mask, unique_mask, idxs, table_idxs = HashTable.parallel_insert(
-    hash_table, my_hash_func, sample_data, jnp.ones(num_items_to_insert, dtype=jnp.bool_)
+    hash_table, sample_data, jnp.ones(num_items_to_insert, dtype=jnp.bool_)
 )
 print(f"HashTable: Inserted {jnp.sum(inserted_mask)} items. Unique items inserted: {jnp.sum(unique_mask)}")
 print(f"HashTable size: {hash_table.size}")
 
 # 5. Lookup data
-# HashTable.lookup(table, hash_func, item_to_lookup)
+# HashTable.lookup(table, item_to_lookup)
 item_to_check = sample_data[0]
-idx, table_idx, found = HashTable.lookup(hash_table, my_hash_func, item_to_check)
+idx, table_idx, found = HashTable.lookup(hash_table, item_to_check)
 
 if found:
     retrieved_item = hash_table.table[idx, table_idx]
