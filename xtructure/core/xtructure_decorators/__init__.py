@@ -38,6 +38,9 @@ def xtructure_dataclass(cls: Type[T]) -> Type[Xtructurable[T]]:
     # Ensure class has a default method for initialization
     cls = add_auto_default_method_if_needed(cls)
 
+    # Ensure class has a default method for initialization
+    assert hasattr(cls, "default"), "xtructureclass must have a default method."
+
     # add shape and dtype and len
     cls = add_shape_dtype_len(cls)
 
@@ -49,9 +52,6 @@ def xtructure_dataclass(cls: Type[T]) -> Type[Xtructurable[T]]:
 
     # add string representation methods
     cls = add_string_representation_methods(cls)
-
-    # Ensure class has a default method for initialization
-    assert hasattr(cls, "default"), "xtructureclass must have a default method."
 
     # add hash function
     cls = hash_function_decorator(cls)

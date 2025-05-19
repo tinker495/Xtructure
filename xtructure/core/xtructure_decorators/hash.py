@@ -88,7 +88,7 @@ def hash_func_builder(x: Xtructurable):
                 x_reshaped
             ).reshape(-1)
 
-    def _h(x, seed):
+    def _h(x, seed = 0):
         """
         Main hash function that converts state to bytes and applies xxhash.
         Returns both hash value and byte representation.

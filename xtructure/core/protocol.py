@@ -78,6 +78,9 @@ class Xtructurable(Protocol[T]):
     def at(self: T, index: Any) -> "AtIndexer":
         ...
 
+    def hash(self: T, seed: int = 0) -> TypingTuple[int, chex.Array]:
+        ...
+
 
 class AtIndexer(Protocol[T]):
     def __getitem__(self: T, index: Any) -> "Updater":
