@@ -22,7 +22,7 @@ class XtructureValue:
 @jax.jit
 def key_gen(x: XtructureValue) -> float:
     uint32_hash, _ = x.hash()
-    key = uint32_hash.astype(jnp.float32) % (2**12) / (2**8)
+    key = uint32_hash % (2**12) / (2**8)
     return key.astype(jnp.float32)
 
 
@@ -117,12 +117,12 @@ def test_heap_insert_and_delete_random_size(heap_setup):
     for i in range(0, 512, 1):
 
         size = jax.random.randint(
-            jax.random.PRNGKey(i), minval=batch_size-1, maxval=batch_size, shape=()
-        )
+            jax.random.PRNGKey(i), minval=1, maxval=batch_size // 8, shape=()
+        ) * 8
         value = XtructureValue.random(shape=(size,), key=jax.random.PRNGKey(i))
         key = _key_gen(value)
         key, value = BGPQ.make_batched(key, value, batch_size)
-        heap = BGPQ.insert(heap, key, value)
+        heap = BGPQ.insert(heap, key, value, size)
         all_sizes.append(size)
 
     all_sizes = jnp.array(all_sizes)

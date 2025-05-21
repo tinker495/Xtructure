@@ -152,7 +152,7 @@ class BGPQ:
         sorted_key, sorted_idx = jax.lax.sort_key_val(
             key, jnp.arange(key.shape[0]), is_stable=SORT_STABLE
         )
-        val = jax.tree_util.tree_map(lambda x: x[sorted_idx], val)
+        val = val[sorted_idx]
 
         # Check for active elements (non-infinity)
         filled = jnp.isfinite(sorted_key)
