@@ -38,7 +38,8 @@ class BGPQ:
     """
 
     max_size: int
-    size: int
+    heap_size: int
+    buffer_size: int
     branch_size: int
     batch_size: int
     key_store: chex.Array  # shape = (total_size, batch_size)
@@ -68,7 +69,8 @@ class BGPQ:
             else total_size // batch_size + 1
         )
         max_size = branch_size * batch_size
-        size = SIZE_DTYPE(0)
+        heap_size = SIZE_DTYPE(0)
+        buffer_size = SIZE_DTYPE(0)
 
         # Initialize storage arrays with infinity for unused slots
         key_store = jnp.full((branch_size, batch_size), jnp.inf, dtype=key_dtype)
@@ -78,7 +80,8 @@ class BGPQ:
 
         return BGPQ(
             max_size=max_size,
-            size=size,
+            heap_size=heap_size,
+            buffer_size=buffer_size,
             branch_size=branch_size,
             batch_size=batch_size,
             key_store=key_store,
@@ -86,6 +89,10 @@ class BGPQ:
             key_buffer=key_buffer,
             val_buffer=val_buffer,
         )
+
+    @property
+    def size(self):
+        return self.heap_size * self.batch_size + self.buffer_size
 
     @staticmethod
     @jax.jit
@@ -238,7 +245,7 @@ class BGPQ:
                 - Updated heap
                 - Boolean indicating if insertion was successful
         """
-        last_node = heap.size // heap.batch_size
+        last_node = SIZE_DTYPE(heap.heap_size)
 
         def _cond(var):
             """Continue while not reached last node"""
@@ -300,21 +307,24 @@ class BGPQ:
         heap.key_store = heap.key_store.at[0].set(root_key)
         heap.val_store = heap.val_store.at[0].set(root_val)
 
+        heap.heap_size = jnp.where(heap.heap_size == 0, 1, heap.heap_size)
+
         # Handle buffer overflow
         block_key, block_val, heap.key_buffer, heap.val_buffer, buffer_overflow = BGPQ.merge_buffer(
             block_key, block_val, heap.key_buffer, heap.val_buffer
         )
+        heap.buffer_size = jnp.sum(jnp.isfinite(heap.key_buffer), dtype=SIZE_DTYPE)
 
         # Perform heapification if needed
         heap, added = jax.lax.cond(
             buffer_overflow,
             BGPQ._insert_heapify,
-            lambda heap, block_key, block_val: (heap, True),
+            lambda heap, block_key, block_val: (heap, False),
             heap,
             block_key,
             block_val,
         )
-        heap.size = heap.size + added_size * added
+        heap.heap_size = SIZE_DTYPE(heap.heap_size + added)
         return heap
 
     @staticmethod
@@ -328,8 +338,9 @@ class BGPQ:
         Returns:
             Updated heap instance
         """
-        size = SIZE_DTYPE(heap.size // heap.batch_size)
-        last = size - 1
+        
+        last = heap.heap_size
+        heap.heap_size = SIZE_DTYPE(last - 1)
 
         # Move last node to root and clear last position
         last_key = heap.key_store[last]
@@ -340,6 +351,7 @@ class BGPQ:
         root_key, root_val, heap.key_buffer, heap.val_buffer = BGPQ.merge_sort_split(
             last_key, last_val, heap.key_buffer, heap.val_buffer
         )
+        heap.buffer_size = jnp.sum(jnp.isfinite(heap.key_buffer), dtype=SIZE_DTYPE)
         heap.key_store = heap.key_store.at[0].set(root_key)
         heap.val_store = heap.val_store.at[0].set(root_val)
 
@@ -356,8 +368,7 @@ class BGPQ:
             min_l = key_store[l][0]
             min_r = key_store[r][0]
             min_lr = jnp.minimum(min_l, min_r)
-            out_of_bounds = jnp.logical_or(jnp.logical_or(c >= size, l >= size), r >= size)
-            return jnp.logical_and(max_c > min_lr, ~out_of_bounds)
+            return max_c > min_lr
 
         def _f(var):
             """Perform one step of heapification"""
@@ -417,7 +428,6 @@ class BGPQ:
         """
         min_keys = heap.key_store[0]
         min_values = heap.val_store[0]
-        size = SIZE_DTYPE(heap.size // heap.batch_size)
 
         def make_empty(heap: "BGPQ"):
             """Handle case where heap becomes empty"""
@@ -429,8 +439,9 @@ class BGPQ:
             )
             heap.key_store = heap.key_store.at[0].set(root_key)
             heap.val_store = heap.val_store.at[0].set(root_val)
+            heap.heap_size = SIZE_DTYPE(0)
+            heap.buffer_size = SIZE_DTYPE(0)
             return heap
 
-        heap = jax.lax.cond(size > 1, BGPQ.delete_heapify, make_empty, heap)
-        heap.size = SIZE_DTYPE(heap.size - jnp.sum(jnp.isfinite(min_keys)))
+        heap = jax.lax.cond(heap.heap_size == 0, make_empty, BGPQ.delete_heapify, heap)
         return heap, min_keys, min_values

@@ -55,7 +55,7 @@ def test_heap_insert_and_delete_batch_size(heap_setup, N):
         key = _key_gen(value)
         heap = BGPQ.insert(heap, key, value)
 
-    assert heap.size == N * batch_size, f"Expected size 512 * batch_size, got {heap.size}"
+    assert heap.size == N * batch_size, f"Expected size {N} * batch_size = {N * batch_size}, got {heap.size}, heap.heap_size: {heap.heap_size}, heap.buffer_size: {heap.buffer_size}"
 
     stacked_val = heap.val_store[:N]
     stacked_key = heap.key_store[:N]
@@ -130,7 +130,7 @@ def test_heap_insert_and_delete_random_size(heap_setup, N):
 
     all_sizes = jnp.array(all_sizes)
     total_size = jnp.sum(all_sizes)
-    assert heap.size == total_size, f"Expected size {total_size}, got {heap.size}"
+    assert heap.size == total_size, f"Expected size {total_size}, got {heap.size}, heap.heap_size: {heap.heap_size}, heap.buffer_size: {heap.buffer_size}"
 
     stacked_val = heap.val_store[: total_size // batch_size]
     stacked_key = heap.key_store[: total_size // batch_size]
