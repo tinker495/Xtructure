@@ -345,7 +345,7 @@ class BGPQ:
             Updated heap instance
         """
 
-        last = heap.heap_size - 1
+        last = heap.heap_size
         heap.heap_size = SIZE_DTYPE(last - 1)
 
         # Move last node to root and clear last position
