@@ -1,9 +1,9 @@
 import jax
 import jax.numpy as jnp
 import pytest
+import random
 
 from xtructure import BGPQ, FieldDescriptor, xtructure_dataclass
-
 
 @xtructure_dataclass
 class XtructureValue:
@@ -43,21 +43,22 @@ def test_heap_initialization(heap_setup):
     assert heap.size == 0
     assert heap.batch_size == batch_size
 
-
-def test_heap_insert_and_delete_batch_size(heap_setup):
+@pytest.mark.parametrize("N", [128, 256, 311, 512, 707] + [random.randint(1, 800) for _ in range(5)])
+def test_heap_insert_and_delete_batch_size(heap_setup, N):
     heap, batch_size, max_size, _key_gen = heap_setup
+    rnd_key = jax.random.PRNGKey(random.randint(0, 1000000))
 
     # Test batch insertion
-    for i in range(0, 512, 1):
-
-        value = XtructureValue.random(shape=(batch_size,), key=jax.random.PRNGKey(i))
+    for i in range(0, N, 1):
+        rnd_key, seed1 = jax.random.split(rnd_key, 2)
+        value = XtructureValue.random(shape=(batch_size,), key=seed1)
         key = _key_gen(value)
         heap = BGPQ.insert(heap, key, value)
 
-    assert heap.size == 512 * batch_size, f"Expected size 512 * batch_size, got {heap.size}"
+    assert heap.size == N * batch_size, f"Expected size 512 * batch_size, got {heap.size}"
 
-    stacked_val = heap.val_store[:512]
-    stacked_key = heap.key_store[:512]
+    stacked_val = heap.val_store[:N]
+    stacked_key = heap.key_store[:N]
 
     stacked_val_key = jax.vmap(_key_gen)(stacked_val)
     isclose = jnp.isclose(stacked_key, stacked_val_key)
@@ -109,17 +110,19 @@ def test_heap_insert_and_delete_batch_size(heap_setup):
     )
 
 
-def test_heap_insert_and_delete_random_size(heap_setup):
+@pytest.mark.parametrize("N", [128, 256, 311, 512, 707] + [random.randint(1, 800) for _ in range(5)])
+def test_heap_insert_and_delete_random_size(heap_setup, N):
     heap, batch_size, max_size, _key_gen = heap_setup
+    rnd_key = jax.random.PRNGKey(random.randint(0, 1000000))
 
     # Test batch insertion
     all_sizes = []
-    for i in range(0, 512, 1):
-
+    for i in range(0, N, 1):
+        rnd_key, seed1, seed2 = jax.random.split(rnd_key, 3)
         size = jax.random.randint(
-            jax.random.PRNGKey(i), minval=1, maxval=batch_size // 8, shape=()
+            seed1, minval=1, maxval=batch_size // 8, shape=()
         ) * 8
-        value = XtructureValue.random(shape=(size,), key=jax.random.PRNGKey(i))
+        value = XtructureValue.random(shape=(size,), key=seed2)
         key = _key_gen(value)
         key, value = BGPQ.make_batched(key, value, batch_size)
         heap = BGPQ.insert(heap, key, value, size)
