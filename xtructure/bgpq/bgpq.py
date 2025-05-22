@@ -258,7 +258,7 @@ class BGPQ:
         heap.key_store, heap.val_store, keys, values, _ = jax.lax.while_loop(
             _cond,
             insert_heapify,
-            (heap.key_store, heap.val_store, block_key, block_val, BGPQ._next(0, last_node)),
+            (heap.key_store, heap.val_store, block_key, block_val, BGPQ._next(SIZE_DTYPE(0), last_node)),
         )
 
         def _size_not_full(heap):

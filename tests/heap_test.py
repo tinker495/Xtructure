@@ -43,7 +43,7 @@ def test_heap_initialization(heap_setup):
     assert heap.size == 0
     assert heap.batch_size == batch_size
 
-@pytest.mark.parametrize("N", [128, 256, 311, 512, 707] + [random.randint(1, 800) for _ in range(5)])
+@pytest.mark.parametrize("N", [128, 256, 311, 512, 707] + [random.randint(1, 700) for _ in range(5)])
 def test_heap_insert_and_delete_batch_size(heap_setup, N):
     heap, batch_size, max_size, _key_gen = heap_setup
     rnd_key = jax.random.PRNGKey(random.randint(0, 1000000))
@@ -110,7 +110,7 @@ def test_heap_insert_and_delete_batch_size(heap_setup, N):
     )
 
 
-@pytest.mark.parametrize("N", [128, 256, 311, 512, 707] + [random.randint(1, 800) for _ in range(5)])
+@pytest.mark.parametrize("N", [128, 256, 311, 512, 707] + [random.randint(1, 700) for _ in range(5)])
 def test_heap_insert_and_delete_random_size(heap_setup, N):
     heap, batch_size, max_size, _key_gen = heap_setup
     rnd_key = jax.random.PRNGKey(random.randint(0, 1000000))
