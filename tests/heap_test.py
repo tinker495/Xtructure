@@ -53,7 +53,7 @@ def test_heap_insert_and_delete_batch_size(heap_setup, N):
         rnd_key, seed1 = jax.random.split(rnd_key, 2)
         value = XtructureValue.random(shape=(batch_size,), key=seed1)
         key = _key_gen(value)
-        heap = BGPQ.insert(heap, key, value)
+        heap = heap.insert(key, value)
 
     assert heap.size == N * batch_size, f"Expected size {N} * batch_size = {N * batch_size}, got {heap.size}, heap.heap_size: {heap.heap_size}, heap.buffer_size: {heap.buffer_size}"
 
@@ -64,8 +64,9 @@ def test_heap_insert_and_delete_batch_size(heap_setup, N):
     isclose = jnp.isclose(stacked_key, stacked_val_key)
     assert jnp.all(isclose), (
         f"inserted keys and values mismatch, this means that insert is corrupted"
-        f"Key and value mismatch, \nstacked_key: \n{stacked_key},"
-        f"\nstacked_val_key: \n{stacked_val_key},"
+        f"Key and value mismatch, \nstacked_key: \n{stacked_key[jnp.where(~isclose)]},"
+        f"\nstacked_val_key: \n{stacked_val_key[jnp.where(~isclose)]},"
+        f"\nstacked_val: \n{stacked_val[jnp.where(~isclose)][:3]},"
         f"\nidexs: \n{jnp.where(~isclose)}"
     )
 
@@ -125,7 +126,7 @@ def test_heap_insert_and_delete_random_size(heap_setup, N):
         value = XtructureValue.random(shape=(size,), key=seed2)
         key = _key_gen(value)
         key, value = BGPQ.make_batched(key, value, batch_size)
-        heap = BGPQ.insert(heap, key, value, size)
+        heap = heap.insert(key, value)
         all_sizes.append(size)
 
     all_sizes = jnp.array(all_sizes)
@@ -139,8 +140,9 @@ def test_heap_insert_and_delete_random_size(heap_setup, N):
     isclose = jnp.isclose(stacked_key, stacked_val_key)
     assert jnp.all(isclose), (
         f"inserted keys and values mismatch, this means that insert is corrupted"
-        f"Key and value mismatch, \nstacked_key: \n{stacked_key},"
-        f"\nstacked_val_key: \n{stacked_val_key},"
+        f"Key and value mismatch, \nstacked_key: \n{stacked_key[jnp.where(~isclose)]},"
+        f"\nstacked_val_key: \n{stacked_val_key[jnp.where(~isclose)]},"
+        f"\nstacked_val: \n{stacked_val[jnp.where(~isclose)][:3]},"
         f"\nidexs: \n{jnp.where(~isclose)}"
     )
 
