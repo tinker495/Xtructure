@@ -64,8 +64,9 @@ def test_heap_insert_and_delete_batch_size(heap_setup, N):
     isclose = jnp.isclose(stacked_key, stacked_val_key)
     assert jnp.all(isclose), (
         f"inserted keys and values mismatch, this means that insert is corrupted"
-        f"Key and value mismatch, \nstacked_key: \n{stacked_key},"
-        f"\nstacked_val_key: \n{stacked_val_key},"
+        f"Key and value mismatch, \nstacked_key: \n{stacked_key[jnp.where(~isclose)]},"
+        f"\nstacked_val_key: \n{stacked_val_key[jnp.where(~isclose)]},"
+        f"\nstacked_val: \n{stacked_val[jnp.where(~isclose)][:3]},"
         f"\nidexs: \n{jnp.where(~isclose)}"
     )
 
@@ -139,8 +140,9 @@ def test_heap_insert_and_delete_random_size(heap_setup, N):
     isclose = jnp.isclose(stacked_key, stacked_val_key)
     assert jnp.all(isclose), (
         f"inserted keys and values mismatch, this means that insert is corrupted"
-        f"Key and value mismatch, \nstacked_key: \n{stacked_key},"
-        f"\nstacked_val_key: \n{stacked_val_key},"
+        f"Key and value mismatch, \nstacked_key: \n{stacked_key[jnp.where(~isclose)]},"
+        f"\nstacked_val_key: \n{stacked_val_key[jnp.where(~isclose)]},"
+        f"\nstacked_val: \n{stacked_val[jnp.where(~isclose)][:3]},"
         f"\nidexs: \n{jnp.where(~isclose)}"
     )
 
