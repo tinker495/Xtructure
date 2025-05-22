@@ -280,7 +280,7 @@ class BGPQ:
 
     @jax.jit
     def insert(
-        heap: "BGPQ", block_key: chex.Array, block_val: Xtructurable, added_size: int = None
+        heap: "BGPQ", block_key: chex.Array, block_val: Xtructurable
     ):
         """
         Insert new elements into the priority queue.
@@ -295,8 +295,6 @@ class BGPQ:
         Returns:
             Updated heap instance
         """
-        if added_size is None:
-            added_size = jnp.sum(jnp.isfinite(block_key))
 
         # Merge with root node
         root_key = heap.key_store[0]
