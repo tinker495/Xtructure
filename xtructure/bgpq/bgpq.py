@@ -92,7 +92,11 @@ class BGPQ:
 
     @property
     def size(self):
-        return self.heap_size * self.batch_size + self.buffer_size
+        return jnp.where(
+            self.heap_size <= 1,
+            jnp.sum(jnp.isfinite(self.key_store[0])) + self.buffer_size,
+            self.heap_size * self.batch_size + self.buffer_size,
+        )
 
     @staticmethod
     @jax.jit
@@ -265,7 +269,13 @@ class BGPQ:
         heap.key_store, heap.val_store, keys, values, _ = jax.lax.while_loop(
             _cond,
             insert_heapify,
-            (heap.key_store, heap.val_store, block_key, block_val, BGPQ._next(SIZE_DTYPE(0), last_node)),
+            (
+                heap.key_store,
+                heap.val_store,
+                block_key,
+                block_val,
+                BGPQ._next(SIZE_DTYPE(0), last_node),
+            ),
         )
 
         def _size_not_full(heap):
@@ -279,9 +289,7 @@ class BGPQ:
         return heap, added
 
     @jax.jit
-    def insert(
-        heap: "BGPQ", block_key: chex.Array, block_val: Xtructurable
-    ):
+    def insert(heap: "BGPQ", block_key: chex.Array, block_val: Xtructurable):
         """
         Insert new elements into the priority queue.
         Maintains heap property through merge operations and heapification.
@@ -336,8 +344,8 @@ class BGPQ:
         Returns:
             Updated heap instance
         """
-        
-        last = heap.heap_size
+
+        last = heap.heap_size - 1
         heap.heap_size = SIZE_DTYPE(last - 1)
 
         # Move last node to root and clear last position
@@ -346,12 +354,8 @@ class BGPQ:
 
         heap.key_store = heap.key_store.at[last].set(jnp.inf)
 
-        root_key, root_val, heap.key_buffer, heap.val_buffer = BGPQ.merge_sort_split(
-            last_key, last_val, heap.key_buffer, heap.val_buffer
-        )
-        heap.buffer_size = jnp.sum(jnp.isfinite(heap.key_buffer), dtype=SIZE_DTYPE)
-        heap.key_store = heap.key_store.at[0].set(root_key)
-        heap.val_store = heap.val_store.at[0].set(root_val)
+        heap.key_store = heap.key_store.at[0].set(last_key)
+        heap.val_store = heap.val_store.at[0].set(last_val)
 
         def _lr(n):
             """Get left and right child indices"""
@@ -408,6 +412,12 @@ class BGPQ:
         heap.key_store, heap.val_store, _, _, _ = jax.lax.while_loop(
             _cond, _f, (heap.key_store, heap.val_store, c, l, r)
         )
+
+        root_key, root_val, heap.key_buffer, heap.val_buffer = BGPQ.merge_sort_split(
+            heap.key_store[0], heap.val_store[0], heap.key_buffer, heap.val_buffer
+        )
+        heap.key_store = heap.key_store.at[0].set(root_key)
+        heap.val_store = heap.val_store.at[0].set(root_val)
         return heap
 
     @jax.jit
@@ -437,7 +447,6 @@ class BGPQ:
             )
             heap.key_store = heap.key_store.at[0].set(root_key)
             heap.val_store = heap.val_store.at[0].set(root_val)
-            heap.heap_size = SIZE_DTYPE(0)
             heap.buffer_size = SIZE_DTYPE(0)
             return heap
 
