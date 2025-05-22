@@ -354,8 +354,12 @@ class BGPQ:
 
         heap.key_store = heap.key_store.at[last].set(jnp.inf)
 
-        heap.key_store = heap.key_store.at[0].set(last_key)
-        heap.val_store = heap.val_store.at[0].set(last_val)
+        root_key, root_val, heap.key_buffer, heap.val_buffer = BGPQ.merge_sort_split(
+            last_key, last_val, heap.key_buffer, heap.val_buffer
+        )
+
+        heap.key_store = heap.key_store.at[0].set(root_key)
+        heap.val_store = heap.val_store.at[0].set(root_val)
 
         def _lr(n):
             """Get left and right child indices"""
@@ -412,12 +416,6 @@ class BGPQ:
         heap.key_store, heap.val_store, _, _, _ = jax.lax.while_loop(
             _cond, _f, (heap.key_store, heap.val_store, c, l, r)
         )
-
-        root_key, root_val, heap.key_buffer, heap.val_buffer = BGPQ.merge_sort_split(
-            heap.key_store[0], heap.val_store[0], heap.key_buffer, heap.val_buffer
-        )
-        heap.key_store = heap.key_store.at[0].set(root_key)
-        heap.val_store = heap.val_store.at[0].set(root_val)
         return heap
 
     @jax.jit
