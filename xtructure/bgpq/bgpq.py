@@ -20,6 +20,36 @@ SORT_STABLE = True  # Use stable sorting to maintain insertion order for equal k
 SIZE_DTYPE = jnp.uint32
 
 
+@jax.jit
+def merge_sort_split(
+    ak: chex.Array, av: Xtructurable, bk: chex.Array, bv: Xtructurable
+) -> tuple[chex.Array, Xtructurable, chex.Array, Xtructurable]:
+    """
+    Merge and split two sorted arrays while maintaining their relative order.
+    This is a key operation for maintaining heap property in batched operations.
+
+    Args:
+        ak: First array of keys
+        av: First array of values
+        bk: Second array of keys
+        bv: Second array of values
+
+    Returns:
+        tuple containing:
+            - First half of merged and sorted keys
+            - First half of corresponding values
+            - Second half of merged and sorted keys
+            - Second half of corresponding values
+    """
+    n = ak.shape[-1]  # size of group
+    key = jnp.concatenate([ak, bk])
+    val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), av, bv)
+    sorted_key, sorted_idx = jax.lax.sort_key_val(
+        key, jnp.arange(key.shape[0]), is_stable=SORT_STABLE
+    )
+    sorted_val = val[sorted_idx]
+    return sorted_key[:n], sorted_val[:n], sorted_key[n:], sorted_val[n:]
+
 @chex.dataclass
 class BGPQ:
     """
@@ -98,41 +128,9 @@ class BGPQ:
             self.heap_size * self.batch_size + self.buffer_size,
         )
 
-    @staticmethod
-    @jax.jit
-    def merge_sort_split(
-        ak: chex.Array, av: Xtructurable, bk: chex.Array, bv: Xtructurable
-    ) -> tuple[chex.Array, Xtructurable, chex.Array, Xtructurable]:
-        """
-        Merge and split two sorted arrays while maintaining their relative order.
-        This is a key operation for maintaining heap property in batched operations.
-
-        Args:
-            ak: First array of keys
-            av: First array of values
-            bk: Second array of keys
-            bv: Second array of values
-
-        Returns:
-            tuple containing:
-                - First half of merged and sorted keys
-                - First half of corresponding values
-                - Second half of merged and sorted keys
-                - Second half of corresponding values
-        """
-        n = ak.shape[-1]  # size of group
-        key = jnp.concatenate([ak, bk])
-        val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), av, bv)
-        sorted_key, sorted_idx = jax.lax.sort_key_val(
-            key, jnp.arange(key.shape[0]), is_stable=SORT_STABLE
-        )
-        sorted_val = val[sorted_idx]
-        return sorted_key[:n], sorted_val[:n], sorted_key[n:], sorted_val[n:]
-
-    @staticmethod
     @jax.jit
     def merge_buffer(
-        blockk: chex.Array, blockv: Xtructurable, bufferk: chex.Array, bufferv: Xtructurable
+        heap: "BGPQ", blockk: chex.Array, blockv: Xtructurable
     ):
         """
         Merge buffer contents with block contents, handling overflow conditions.
@@ -156,8 +154,8 @@ class BGPQ:
         """
         n = blockk.shape[0]
         # Concatenate block and buffer
-        key = jnp.concatenate([blockk, bufferk])
-        val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), blockv, bufferv)
+        key = jnp.concatenate([blockk, heap.key_buffer])
+        val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), blockv, heap.val_buffer)
 
         # Sort concatenated arrays
         sorted_key, sorted_idx = jax.lax.sort_key_val(
@@ -178,14 +176,14 @@ class BGPQ:
             """Handle case where buffer doesn't overflow"""
             return key[n - 1 :], val[n - 1 :], key[: n - 1], val[: n - 1]
 
-        blockk, blockv, bufferk, bufferv = jax.lax.cond(
+        blockk, blockv, heap.key_buffer, heap.val_buffer = jax.lax.cond(
             buffer_overflow,
             overflowed,
             not_overflowed,
             sorted_key,
             val,
         )
-        return blockk, blockv, bufferk, bufferv, buffer_overflow
+        return heap, blockk, blockv, buffer_overflow
 
     @staticmethod
     @partial(jax.jit, static_argnums=(2))
@@ -259,7 +257,7 @@ class BGPQ:
         def insert_heapify(var):
             """Perform one step of heapification"""
             key_store, val_store, keys, values, n = var
-            head, hvalues, keys, values = BGPQ.merge_sort_split(
+            head, hvalues, keys, values = merge_sort_split(
                 key_store[n], val_store[n], keys, values
             )
             key_store = key_store.at[n].set(head)
@@ -307,7 +305,7 @@ class BGPQ:
         # Merge with root node
         root_key = heap.key_store[0]
         root_val = heap.val_store[0]
-        root_key, root_val, block_key, block_val = BGPQ.merge_sort_split(
+        root_key, root_val, block_key, block_val = merge_sort_split(
             root_key, root_val, block_key, block_val
         )
         heap.key_store = heap.key_store.at[0].set(root_key)
@@ -316,8 +314,8 @@ class BGPQ:
         heap.heap_size = jnp.where(heap.heap_size == 0, 1, heap.heap_size)
 
         # Handle buffer overflow
-        block_key, block_val, heap.key_buffer, heap.val_buffer, buffer_overflow = BGPQ.merge_buffer(
-            block_key, block_val, heap.key_buffer, heap.val_buffer
+        heap, block_key, block_val, buffer_overflow = heap.merge_buffer(
+            block_key, block_val
         )
         heap.buffer_size = jnp.sum(jnp.isfinite(heap.key_buffer), dtype=SIZE_DTYPE)
 
@@ -354,7 +352,7 @@ class BGPQ:
 
         heap.key_store = heap.key_store.at[last].set(jnp.inf)
 
-        root_key, root_val, heap.key_buffer, heap.val_buffer = BGPQ.merge_sort_split(
+        root_key, root_val, heap.key_buffer, heap.val_buffer = merge_sort_split(
             last_key, last_val, heap.key_buffer, heap.val_buffer
         )
 
@@ -391,13 +389,13 @@ class BGPQ:
             )
 
             # Merge and swap nodes
-            ky, vy, kx, vx = BGPQ.merge_sort_split(
+            ky, vy, kx, vx = merge_sort_split(
                 key_store[left_child],
                 val_store[left_child],
                 key_store[right_child],
                 val_store[right_child],
             )
-            kc, vc, ky, vy = BGPQ.merge_sort_split(
+            kc, vc, ky, vy = merge_sort_split(
                 key_store[current_node], val_store[current_node], ky, vy
             )
             key_store = key_store.at[y].set(ky)
@@ -437,7 +435,7 @@ class BGPQ:
 
         def make_empty(heap: "BGPQ"):
             """Handle case where heap becomes empty"""
-            root_key, root_val, heap.key_buffer, heap.val_buffer = BGPQ.merge_sort_split(
+            root_key, root_val, heap.key_buffer, heap.val_buffer = merge_sort_split(
                 jnp.full_like(heap.key_store[0], jnp.inf),
                 heap.val_store[0],
                 heap.key_buffer,
