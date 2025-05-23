@@ -142,9 +142,9 @@ class BGPQ:
     @property
     def size(self):
         return jnp.where(
-            self.heap_size <= 1,
+            self.heap_size == 0,
             jnp.sum(jnp.isfinite(self.key_store[0])) + self.buffer_size,
-            self.heap_size * self.batch_size + self.buffer_size,
+            (self.heap_size + 1) * self.batch_size + self.buffer_size,
         )
 
     @jax.jit
@@ -247,7 +247,7 @@ class BGPQ:
                 - Updated heap
                 - Boolean indicating if insertion was successful
         """
-        last_node = SIZE_DTYPE(heap.heap_size)
+        last_node = SIZE_DTYPE(heap.heap_size + 1)
 
         def _cond(var):
             """Continue while not reached last node"""
@@ -311,8 +311,6 @@ class BGPQ:
         )
         heap.key_store = heap.key_store.at[0].set(root_key)
         heap.val_store = heap.val_store.at[0].set(root_val)
-
-        heap.heap_size = jnp.where(heap.heap_size == 0, 1, heap.heap_size)
 
         # Handle buffer overflow
         heap, block_key, block_val, buffer_overflow = heap.merge_buffer(
