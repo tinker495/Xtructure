@@ -28,8 +28,8 @@ def key_gen(x: XtructureValue) -> float:
 
 @pytest.fixture
 def heap_setup():
-    batch_size = 128
-    max_size = 100000
+    batch_size = int(1e4)
+    max_size = int(2e7)
     heap = BGPQ.build(max_size, batch_size, XtructureValue, jnp.float32)
 
     _key_gen = jax.jit(jax.vmap(key_gen))
@@ -125,8 +125,8 @@ def test_heap_insert_and_delete_random_size(heap_setup, N):
     for i in range(0, N, 1):
         rnd_key, seed1, seed2 = jax.random.split(rnd_key, 3)
         size = jax.random.randint(
-            seed1, minval=1, maxval=batch_size // 8, shape=()
-        ) * 8
+            seed1, minval=1, maxval=8, shape=()
+        ) * batch_size // 8
         value = XtructureValue.random(shape=(size,), key=seed2)
         key = _key_gen(value)
         key, value = BGPQ.make_batched(key, value, batch_size)

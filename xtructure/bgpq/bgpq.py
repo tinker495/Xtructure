@@ -50,6 +50,25 @@ def merge_sort_split(
     sorted_val = val[sorted_idx]
     return sorted_key[:n], sorted_val[:n], sorted_key[n:], sorted_val[n:]
 
+@jax.jit
+def _next(current, target):
+    """
+    Calculate the next index in the heap traversal path.
+    Uses leading zero count (clz) for efficient binary tree navigation.
+
+    Args:
+        current: Current index in the heap
+        target: Target index to reach
+
+    Returns:
+        Next index in the path from current to target
+    """
+    clz_current = jax.lax.clz(current)
+    clz_target = jax.lax.clz(target)
+    shift_amount = clz_current - clz_target - 1
+    next_index = target.astype(SIZE_DTYPE) >> shift_amount
+    return next_index
+
 @chex.dataclass
 class BGPQ:
     """
@@ -213,25 +232,6 @@ class BGPQ:
         return key, val
 
     @staticmethod
-    def _next(current, target):
-        """
-        Calculate the next index in the heap traversal path.
-        Uses leading zero count (clz) for efficient binary tree navigation.
-
-        Args:
-            current: Current index in the heap
-            target: Target index to reach
-
-        Returns:
-            Next index in the path from current to target
-        """
-        clz_current = jax.lax.clz(current)
-        clz_target = jax.lax.clz(target)
-        shift_amount = clz_current - clz_target - 1
-        next_index = target.astype(SIZE_DTYPE) >> shift_amount
-        return next_index
-
-    @staticmethod
     def _insert_heapify(heap: "BGPQ", block_key: chex.Array, block_val: Xtructurable):
         """
         Internal method to maintain heap property after insertion.
@@ -251,39 +251,40 @@ class BGPQ:
 
         def _cond(var):
             """Continue while not reached last node"""
-            _, _, _, _, n = var
+            _, _, _, n = var
             return n < last_node
 
         def insert_heapify(var):
             """Perform one step of heapification"""
-            key_store, val_store, keys, values, n = var
+            heap, keys, values, n = var
             head, hvalues, keys, values = merge_sort_split(
-                key_store[n], val_store[n], keys, values
+                heap.key_store[n], heap.val_store[n], keys, values
             )
-            key_store = key_store.at[n].set(head)
-            val_store = val_store.at[n].set(hvalues)
-            return key_store, val_store, keys, values, BGPQ._next(n, last_node)
+            heap.key_store = heap.key_store.at[n].set(head)
+            heap.val_store = heap.val_store.at[n].set(hvalues)
+            return heap, keys, values, _next(n, last_node)
 
-        heap.key_store, heap.val_store, keys, values, _ = jax.lax.while_loop(
+        heap, keys, values, _ = jax.lax.while_loop(
             _cond,
             insert_heapify,
             (
-                heap.key_store,
-                heap.val_store,
+                heap,
                 block_key,
                 block_val,
-                BGPQ._next(SIZE_DTYPE(0), last_node),
+                _next(SIZE_DTYPE(0), last_node),
             ),
         )
 
-        def _size_not_full(heap):
+        def _size_not_full(heap, keys, values):
             """Insert remaining elements if heap not full"""
             heap.key_store = heap.key_store.at[last_node].set(keys)
             heap.val_store = heap.val_store.at[last_node].set(values)
             return heap
 
         added = last_node < heap.branch_size
-        heap = jax.lax.cond(added, _size_not_full, lambda heap: heap, heap)
+        heap = jax.lax.cond(added, _size_not_full, 
+                            lambda heap, keys, values: heap,
+                            heap, keys, values)
         return heap, added
 
     @jax.jit
@@ -367,18 +368,18 @@ class BGPQ:
 
         def _cond(var):
             """Continue while heap property is violated"""
-            key_store, val_store, c, l, r = var
-            max_c = key_store[c][-1]
-            min_l = key_store[l][0]
-            min_r = key_store[r][0]
+            heap, c, l, r = var
+            max_c = heap.key_store[c][-1]
+            min_l = heap.key_store[l][0]
+            min_r = heap.key_store[r][0]
             min_lr = jnp.minimum(min_l, min_r)
             return max_c > min_lr
 
         def _f(var):
             """Perform one step of heapification"""
-            key_store, val_store, current_node, left_child, right_child = var
-            max_left_child = key_store[left_child][-1]
-            max_right_child = key_store[right_child][-1]
+            heap, current_node, left_child, right_child = var
+            max_left_child = heap.key_store[left_child][-1]
+            max_right_child = heap.key_store[right_child][-1]
 
             # Choose child with smaller key
             x, y = jax.lax.cond(
@@ -390,29 +391,29 @@ class BGPQ:
 
             # Merge and swap nodes
             ky, vy, kx, vx = merge_sort_split(
-                key_store[left_child],
-                val_store[left_child],
-                key_store[right_child],
-                val_store[right_child],
+                heap.key_store[left_child],
+                heap.val_store[left_child],
+                heap.key_store[right_child],
+                heap.val_store[right_child],
             )
             kc, vc, ky, vy = merge_sort_split(
-                key_store[current_node], val_store[current_node], ky, vy
+                heap.key_store[current_node], heap.val_store[current_node], ky, vy
             )
-            key_store = key_store.at[y].set(ky)
-            key_store = key_store.at[current_node].set(kc)
-            key_store = key_store.at[x].set(kx)
-            val_store = val_store.at[y].set(vy)
-            val_store = val_store.at[current_node].set(vc)
-            val_store = val_store.at[x].set(vx)
+            heap.key_store = heap.key_store.at[y].set(ky)
+            heap.key_store = heap.key_store.at[current_node].set(kc)
+            heap.key_store = heap.key_store.at[x].set(kx)
+            heap.val_store = heap.val_store.at[y].set(vy)
+            heap.val_store = heap.val_store.at[current_node].set(vc)
+            heap.val_store = heap.val_store.at[x].set(vx)
 
             nc = y
             nl, nr = _lr(y)
-            return key_store, val_store, nc, nl, nr
+            return heap, nc, nl, nr
 
         c = SIZE_DTYPE(0)
         l, r = _lr(c)
-        heap.key_store, heap.val_store, _, _, _ = jax.lax.while_loop(
-            _cond, _f, (heap.key_store, heap.val_store, c, l, r)
+        heap, _, _, _ = jax.lax.while_loop(
+            _cond, _f, (heap, c, l, r)
         )
         return heap
 
