@@ -62,6 +62,8 @@ def hash_func_builder(x: Xtructurable):
         """Convert entire state tree to flattened byte array."""
         x = jax.tree_util.tree_map(_to_bytes, x)
         x, _ = jax.tree_util.tree_flatten(x)
+        if len(x) == 0:
+            return jnp.array([], dtype=jnp.uint8)
         return jnp.concatenate(x)
 
     default_bytes = _byterize(x.default())
@@ -88,7 +90,7 @@ def hash_func_builder(x: Xtructurable):
                 x_reshaped
             ).reshape(-1)
 
-    def _h(x, seed = 0):
+    def _h(x, seed=0):
         """
         Main hash function that converts state to bytes and applies xxhash.
         Returns both hash value and byte representation.
