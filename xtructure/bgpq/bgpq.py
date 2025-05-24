@@ -50,6 +50,7 @@ def merge_sort_split(
     sorted_val = val[sorted_idx]
     return sorted_key[:n], sorted_val[:n], sorted_key[n:], sorted_val[n:]
 
+
 @jax.jit
 def _next(current, target):
     """
@@ -68,6 +69,7 @@ def _next(current, target):
     shift_amount = clz_current - clz_target - 1
     next_index = target.astype(SIZE_DTYPE) >> shift_amount
     return next_index
+
 
 @chex.dataclass
 class BGPQ:
@@ -148,9 +150,7 @@ class BGPQ:
         )
 
     @jax.jit
-    def merge_buffer(
-        heap: "BGPQ", blockk: chex.Array, blockv: Xtructurable
-    ):
+    def merge_buffer(heap: "BGPQ", blockk: chex.Array, blockv: Xtructurable):
         """
         Merge buffer contents with block contents, handling overflow conditions.
 
@@ -192,8 +192,7 @@ class BGPQ:
             return key[:n], val[:n], key[n:], val[n:]
 
         def not_overflowed(key, val):
-            """Handle case where buffer doesn't overflow"""
-            return key[n - 1 :], val[n - 1 :], key[: n - 1], val[: n - 1]
+            return key[-n:], val[-n:], key[:-n], val[:-n]
 
         blockk, blockv, heap.key_buffer, heap.val_buffer = jax.lax.cond(
             buffer_overflow,
@@ -282,9 +281,9 @@ class BGPQ:
             return heap
 
         added = last_node < heap.branch_size
-        heap = jax.lax.cond(added, _size_not_full, 
-                            lambda heap, keys, values: heap,
-                            heap, keys, values)
+        heap = jax.lax.cond(
+            added, _size_not_full, lambda heap, keys, values: heap, heap, keys, values
+        )
         return heap, added
 
     @jax.jit
@@ -304,18 +303,14 @@ class BGPQ:
         """
 
         # Merge with root node
-        root_key = heap.key_store[0]
-        root_val = heap.val_store[0]
         root_key, root_val, block_key, block_val = merge_sort_split(
-            root_key, root_val, block_key, block_val
+            heap.key_store[0], heap.val_store[0], block_key, block_val
         )
         heap.key_store = heap.key_store.at[0].set(root_key)
         heap.val_store = heap.val_store.at[0].set(root_val)
 
         # Handle buffer overflow
-        heap, block_key, block_val, buffer_overflow = heap.merge_buffer(
-            block_key, block_val
-        )
+        heap, block_key, block_val, buffer_overflow = heap.merge_buffer(block_key, block_val)
         heap.buffer_size = jnp.sum(jnp.isfinite(heap.key_buffer), dtype=SIZE_DTYPE)
 
         # Perform heapification if needed
@@ -410,9 +405,7 @@ class BGPQ:
 
         c = SIZE_DTYPE(0)
         l, r = _lr(c)
-        heap, _, _, _ = jax.lax.while_loop(
-            _cond, _f, (heap, c, l, r)
-        )
+        heap, _, _, _ = jax.lax.while_loop(_cond, _f, (heap, c, l, r))
         return heap
 
     @jax.jit
