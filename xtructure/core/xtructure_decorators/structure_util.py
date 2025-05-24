@@ -67,7 +67,7 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
             # This field is a nested xtructure_data instance
             cfg["type"] = "xtructure"
             # Store the actual nested class type (e.g., Parent, Current)
-            cfg["nested_class_type"] = cls.__annotations__[field_name_cfg]
+            cfg["nested_class_type"] = cls.__annotations__[field_name_cfg].dtype
             # Store the namedtuple of dtypes for the nested structure
             cfg["actual_dtype"] = actual_dtype_or_nested_dtype_tuple
         else:
