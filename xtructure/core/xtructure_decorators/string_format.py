@@ -58,7 +58,7 @@ def add_string_representation_methods(cls: Type[T]) -> Type[T]:
                 return _single_item_formatter(self)  # **kwargs will be an empty dict
 
         elif structured_type == StructuredType.BATCHED:
-            batch_shape = self.batch_shape
+            batch_shape = self.shape.batch
             batch_len_val = (
                 jnp.prod(jnp.array(batch_shape)) if len(batch_shape) != 1 else batch_shape[0]
             )
