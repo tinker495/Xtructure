@@ -201,6 +201,7 @@ class BGPQ:
             sorted_key,
             val,
         )
+        heap.buffer_size = jnp.sum(jnp.isfinite(heap.key_buffer), dtype=SIZE_DTYPE)
         return heap, blockk, blockv, buffer_overflow
 
     @staticmethod
@@ -311,7 +312,6 @@ class BGPQ:
 
         # Handle buffer overflow
         heap, block_key, block_val, buffer_overflow = heap.merge_buffer(block_key, block_val)
-        heap.buffer_size = jnp.sum(jnp.isfinite(heap.key_buffer), dtype=SIZE_DTYPE)
 
         # Perform heapification if needed
         heap, added = jax.lax.cond(
