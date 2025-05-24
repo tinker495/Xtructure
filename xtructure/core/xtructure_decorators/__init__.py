@@ -4,7 +4,7 @@ import chex
 
 from xtructure.core.protocol import Xtructurable
 
-from .default import add_auto_default_method_if_needed
+from .default import add_default_method
 from .hash import hash_function_decorator
 from .indexing import add_indexing_methods
 from .ops import add_comparison_operators
@@ -36,7 +36,7 @@ def xtructure_dataclass(cls: Type[T]) -> Type[Xtructurable[T]]:
     cls = chex.dataclass(cls)
 
     # Ensure class has a default method for initialization
-    cls = add_auto_default_method_if_needed(cls)
+    cls = add_default_method(cls)
 
     # Ensure class has a default method for initialization
     assert hasattr(cls, "default"), "xtructureclass must have a default method."
@@ -58,5 +58,7 @@ def xtructure_dataclass(cls: Type[T]) -> Type[Xtructurable[T]]:
 
     # add comparison operators
     cls = add_comparison_operators(cls)
+
+    setattr(cls, "is_xtructed", True)
 
     return cls
