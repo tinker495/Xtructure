@@ -102,23 +102,23 @@ def test_structured_type():
 
     batched = SimpleData.default(shape=(5,))
     assert batched.structured_type == StructuredType.BATCHED
-    assert batched.batch_shape == (5,)
+    assert batched.shape.batch == (5,)
 
     batched2d = SimpleData.default(shape=(5, 10))
     assert batched2d.structured_type == StructuredType.BATCHED
-    assert batched2d.batch_shape == (5, 10)
+    assert batched2d.shape.batch == (5, 10)
 
     vector = VectorData.default(shape=(5, 10))
     assert vector.structured_type == StructuredType.BATCHED
-    assert vector.batch_shape == (5, 10)
+    assert vector.shape.batch == (5, 10)
 
     matrix = MatrixData.default(shape=(5, 10))
     assert matrix.structured_type == StructuredType.BATCHED
-    assert matrix.batch_shape == (5, 10)
+    assert matrix.shape.batch == (5, 10)
 
     nested = NestedData.default(shape=(5, 10))
     assert nested.structured_type == StructuredType.BATCHED
-    assert nested.batch_shape == (5, 10)
+    assert nested.shape.batch == (5, 10)
 
 
 def test_reshape():
@@ -126,55 +126,55 @@ def test_reshape():
     batched = SimpleData.default(shape=(10,))
     reshaped = batched.reshape((2, 5))
     assert reshaped.structured_type == StructuredType.BATCHED
-    assert reshaped.batch_shape == (2, 5)
+    assert reshaped.shape.batch == (2, 5)
     assert reshaped.id.shape == (2, 5)
     assert reshaped.value.shape == (2, 5)
 
     batched2d = SimpleData.default(shape=(2, 3))
     reshaped2d = batched2d.reshape((6,))
     assert reshaped2d.structured_type == StructuredType.BATCHED
-    assert reshaped2d.batch_shape == (6,)
+    assert reshaped2d.shape.batch == (6,)
     assert reshaped2d.id.shape == (6,)
     assert reshaped2d.value.shape == (6,)
 
     vector = VectorData.default(shape=(10,))
     reshaped_vector = vector.reshape((2, 5))
     assert reshaped_vector.structured_type == StructuredType.BATCHED
-    assert reshaped_vector.batch_shape == (2, 5)
+    assert reshaped_vector.shape.batch == (2, 5)
     assert reshaped_vector.position.shape == (2, 5, 3)
     assert reshaped_vector.velocity.shape == (2, 5, 3)
 
     vector2d = VectorData.default(shape=(2, 3))
     reshaped_vector2d = vector2d.reshape((6,))
     assert reshaped_vector2d.structured_type == StructuredType.BATCHED
-    assert reshaped_vector2d.batch_shape == (6,)
+    assert reshaped_vector2d.shape.batch == (6,)
     assert reshaped_vector2d.position.shape == (6, 3)
     assert reshaped_vector2d.velocity.shape == (6, 3)
 
     matrix = MatrixData.default(shape=(10,))
     reshaped_matrix = matrix.reshape((2, 5))
     assert reshaped_matrix.structured_type == StructuredType.BATCHED
-    assert reshaped_matrix.batch_shape == (2, 5)
+    assert reshaped_matrix.shape.batch == (2, 5)
     assert reshaped_matrix.matrix.shape == (2, 5, 2, 2)
 
     matrix2d = MatrixData.default(shape=(2, 3))
     reshaped_matrix2d = matrix2d.reshape((6,))
     assert reshaped_matrix2d.structured_type == StructuredType.BATCHED
-    assert reshaped_matrix2d.batch_shape == (6,)
+    assert reshaped_matrix2d.shape.batch == (6,)
     assert reshaped_matrix2d.matrix.shape == (6, 2, 2)
     assert reshaped_matrix2d.flags.shape == (6, 4)
 
     nested = NestedData.default(shape=(10,))
     reshaped_nested = nested.reshape((2, 5))
     assert reshaped_nested.structured_type == StructuredType.BATCHED
-    assert reshaped_nested.batch_shape == (2, 5)
+    assert reshaped_nested.shape.batch == (2, 5)
     assert reshaped_nested.simple.id.shape == (2, 5)
     assert reshaped_nested.simple.value.shape == (2, 5)
 
     nested2d = NestedData.default(shape=(2, 3))
     reshaped_nested2d = nested2d.reshape((6,))
     assert reshaped_nested2d.structured_type == StructuredType.BATCHED
-    assert reshaped_nested2d.batch_shape == (6,)
+    assert reshaped_nested2d.shape.batch == (6,)
     assert reshaped_nested2d.simple.id.shape == (6,)
     assert reshaped_nested2d.simple.value.shape == (6,)
 
@@ -185,35 +185,35 @@ def test_flatten():
     flattened = batched.flatten()
     print(flattened.structured_type)
     assert flattened.structured_type == StructuredType.BATCHED
-    assert flattened.batch_shape == (6,)
+    assert flattened.shape.batch == (6,)
     assert flattened.id.shape == (6,)
     assert flattened.value.shape == (6,)
 
     batched2d = SimpleData.default(shape=(2, 3))
     flattened2d = batched2d.flatten()
     assert flattened2d.structured_type == StructuredType.BATCHED
-    assert flattened2d.batch_shape == (6,)
+    assert flattened2d.shape.batch == (6,)
     assert flattened2d.id.shape == (6,)
     assert flattened2d.value.shape == (6,)
 
     vector = VectorData.default(shape=(2, 3))
     flattened_vector = vector.flatten()
     assert flattened_vector.structured_type == StructuredType.BATCHED
-    assert flattened_vector.batch_shape == (6,)
+    assert flattened_vector.shape.batch == (6,)
     assert flattened_vector.position.shape == (6, 3)
     assert flattened_vector.velocity.shape == (6, 3)
 
     matrix = MatrixData.default(shape=(2, 3))
     flattened_matrix = matrix.flatten()
     assert flattened_matrix.structured_type == StructuredType.BATCHED
-    assert flattened_matrix.batch_shape == (6,)
+    assert flattened_matrix.shape.batch == (6,)
     assert flattened_matrix.matrix.shape == (6, 2, 2)
     assert flattened_matrix.flags.shape == (6, 4)
 
     nested = NestedData.default(shape=(2, 3))
     flattened_nested = nested.flatten()
     assert flattened_nested.structured_type == StructuredType.BATCHED
-    assert flattened_nested.batch_shape == (6,)
+    assert flattened_nested.shape.batch == (6,)
     assert flattened_nested.simple.id.shape == (6,)
     assert flattened_nested.simple.value.shape == (6,)
 
@@ -229,7 +229,7 @@ def test_indexing():
     # Test slicing
     sliced = batched[1:3]
     assert sliced.structured_type == StructuredType.BATCHED
-    assert sliced.batch_shape == (2,)
+    assert sliced.shape.batch == (2,)
     assert sliced.id.shape == (2,)
     assert sliced.value.shape == (2,)
 

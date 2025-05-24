@@ -28,8 +28,8 @@ def key_gen(x: XtructureValue) -> float:
 
 @pytest.fixture
 def heap_setup():
-    batch_size = 128
-    max_size = 100000
+    batch_size = int(1e4)
+    max_size = int(2e7)
     heap = BGPQ.build(max_size, batch_size, XtructureValue, jnp.float32)
 
     _key_gen = jax.jit(jax.vmap(key_gen))
@@ -49,13 +49,17 @@ def test_heap_insert_and_delete_batch_size(heap_setup, N):
     rnd_key = jax.random.PRNGKey(random.randint(0, 1000000))
 
     # Test batch insertion
+    total_size = 0
     for i in range(0, N, 1):
         rnd_key, seed1 = jax.random.split(rnd_key, 2)
         value = XtructureValue.random(shape=(batch_size,), key=seed1)
         key = _key_gen(value)
         heap = heap.insert(key, value)
-
-    assert heap.size == N * batch_size, f"Expected size {N} * batch_size = {N * batch_size}, got {heap.size}, heap.heap_size: {heap.heap_size}, heap.buffer_size: {heap.buffer_size}"
+        total_size += batch_size
+        assert heap.size == total_size, (
+            f"Expected size {total_size}, got {heap.size},"
+            f"heap.heap_size: {heap.heap_size}, heap.buffer_size: {heap.buffer_size}"
+        )
 
     stacked_val = heap.val_store[:N]
     stacked_key = heap.key_store[:N]
@@ -117,21 +121,21 @@ def test_heap_insert_and_delete_random_size(heap_setup, N):
     rnd_key = jax.random.PRNGKey(random.randint(0, 1000000))
 
     # Test batch insertion
-    all_sizes = []
+    total_size = 0
     for i in range(0, N, 1):
         rnd_key, seed1, seed2 = jax.random.split(rnd_key, 3)
         size = jax.random.randint(
-            seed1, minval=1, maxval=batch_size // 8, shape=()
-        ) * 8
+            seed1, minval=1, maxval=8, shape=()
+        ) * batch_size // 8
         value = XtructureValue.random(shape=(size,), key=seed2)
         key = _key_gen(value)
         key, value = BGPQ.make_batched(key, value, batch_size)
         heap = heap.insert(key, value)
-        all_sizes.append(size)
-
-    all_sizes = jnp.array(all_sizes)
-    total_size = jnp.sum(all_sizes)
-    assert heap.size == total_size, f"Expected size {total_size}, got {heap.size}, heap.heap_size: {heap.heap_size}, heap.buffer_size: {heap.buffer_size}"
+        total_size += size
+        assert heap.size == total_size, (
+            f"Expected size {total_size}, got {heap.size},"
+            f"heap.heap_size: {heap.heap_size}, heap.buffer_size: {heap.buffer_size}"
+        )
 
     stacked_val = heap.val_store[: total_size // batch_size]
     stacked_key = heap.key_store[: total_size // batch_size]

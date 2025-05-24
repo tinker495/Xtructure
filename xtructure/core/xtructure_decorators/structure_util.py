@@ -1,12 +1,21 @@
-from typing import Any, Dict, Type, TypeVar
+from typing import Any, Type, TypeVar
 
 import jax
 import jax.numpy as jnp
 
+from xtructure.core.field_descriptors import FieldDescriptor
 from xtructure.core.structuredtype import StructuredType
-from xtructure.core.utils import get_leaf_elements, isnamedtupleinstance
 
 T = TypeVar("T")
+
+
+def is_nested_xtructure(dtype: Any) -> bool:
+    if isinstance(dtype, type):
+        if hasattr(dtype, "is_xtructed"):
+            return True
+        return False
+    else:
+        return False
 
 
 def add_structure_utilities(cls: Type[T]) -> Type[T]:
@@ -36,18 +45,9 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
     """
     assert hasattr(cls, "default"), "There is no default method."
 
-    default_shape = cls.default().shape
-    default_dtype = cls.default().dtype
-    try:
-        # Get the shape of the first leaf element in the default instance
-        first_leaf_shape = next(get_leaf_elements(default_shape))
-        default_dim = len(first_leaf_shape)
-    except StopIteration:  # No leaf elements (e.g., class with no fields)
-        default_dim = 0
-    except IndexError:  # Should ideally be caught by StopIteration if get_leaf_elements is robust
-        # This case was for when default_shape[0] was accessed on an empty default_shape.
-        # With get_leaf_elements, StopIteration is more likely for truly empty structures.
-        default_dim = 0  # Defaulting to 0 for safety, implies scalar-like leaves.
+    field_descriptors: dict[str, FieldDescriptor] = cls.__annotations__
+    default_shape = dict([(fn, fd.intrinsic_shape) for fn, fd in field_descriptors.items()])
+    default_dtype = dict([(fn, fd.dtype) for fn, fd in field_descriptors.items()])
 
     # Pre-calculate generation configurations for the random method
     _field_generation_configs = []
@@ -58,16 +58,14 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
         cfg = {}
         cfg["name"] = field_name_cfg
         # Retrieve the dtype or nested dtype tuple for the current field
-        actual_dtype_or_nested_dtype_tuple = getattr(default_dtype, field_name_cfg)
-        cfg["default_field_shape"] = getattr(
-            default_shape, field_name_cfg, ()
-        )  # Default to empty tuple if not found
+        actual_dtype_or_nested_dtype_tuple = default_dtype[field_name_cfg]
+        cfg["default_field_shape"] = default_shape[field_name_cfg]
 
-        if isnamedtupleinstance(actual_dtype_or_nested_dtype_tuple):
+        if is_nested_xtructure(actual_dtype_or_nested_dtype_tuple):
             # This field is a nested xtructure_data instance
             cfg["type"] = "xtructure"
             # Store the actual nested class type (e.g., Parent, Current)
-            cfg["nested_class_type"] = cls.__annotations__[field_name_cfg]
+            cfg["nested_class_type"] = cls.__annotations__[field_name_cfg].dtype
             # Store the namedtuple of dtypes for the nested structure
             cfg["actual_dtype"] = actual_dtype_or_nested_dtype_tuple
         else:
@@ -96,41 +94,11 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
                 cfg["gen_dtype"] = actual_dtype
         _field_generation_configs.append(cfg)
 
-    def get_default_shape(self) -> Dict[str, Any]:
-        return default_shape
-
-    def get_structured_type(self) -> StructuredType:
-        shape = self.shape
-        if shape == default_shape:
-            return StructuredType.SINGLE
-        else:
-            batched_shapes = [
-                s[: -len(ds)] if ds != () else s
-                for ds, s in zip(get_leaf_elements(default_shape), get_leaf_elements(shape))
-            ]
-            first_shape = batched_shapes[0]
-            if all(shape == first_shape for shape in batched_shapes):
-                return StructuredType.BATCHED
-            else:
-                return StructuredType.UNSTRUCTURED
-
-    def batch_shape(self) -> tuple[int, ...]:
-        if self.structured_type == StructuredType.SINGLE:
-            return ()
-        elif self.structured_type == StructuredType.BATCHED:
-            shape = list(get_leaf_elements(self.shape))
-            return shape[0][: (len(shape[0]) - default_dim)]
-        else:
-            raise ValueError(
-                f"batch_shape is not defined for structured_type '{self.structured_type}'."
-                f" Shape: {self.shape}, Default Shape: {self.default_shape}"
-            )
-
     def reshape(self, new_shape: tuple[int, ...]) -> T:
         if self.structured_type == StructuredType.BATCHED:
-            total_length = jnp.prod(jnp.array(self.batch_shape))
+            total_length = jnp.prod(jnp.array(self.shape.batch))
             new_total_length = jnp.prod(jnp.array(new_shape))
-            batch_dim = len(self.batch_shape)
+            batch_dim = len(self.shape.batch)
             if total_length != new_total_length:
                 raise ValueError(
                     f"Total length of the state and new shape does not match: {total_length} != {new_total_length}"
@@ -151,7 +119,7 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
                 f"Current type: {self.structured_type}"
             )
 
-        current_batch_shape = self.batch_shape
+        current_batch_shape = self.shape.batch
         # jnp.prod of an empty tuple array is 1, which is correct for total_length
         # if current_batch_shape is ().
         total_length = jnp.prod(jnp.array(current_batch_shape))
@@ -177,10 +145,11 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
 
             if cfg["type"] == "xtructure":
                 nested_class = cfg["nested_class_type"]
+                # For nested xtructures, combine batch shape with field shape
+                current_default_shape = cfg["default_field_shape"]
+                target_shape = shape + current_default_shape
                 # Recursively call random for the nested xtructure_data class.
-                # Pass the batch 'shape' and field_key.
-                # The nested random method will manage its own internal field shapes.
-                data[field_name] = nested_class.random(shape=shape, key=field_key)
+                data[field_name] = nested_class.random(shape=target_shape, key=field_key)
             else:
                 # This branch handles primitive JAX array fields.
                 current_default_shape = cfg["default_field_shape"]
@@ -218,9 +187,6 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
         return cls(**data)
 
     # add method based on default state
-    setattr(cls, "default_shape", property(get_default_shape))
-    setattr(cls, "structured_type", property(get_structured_type))
-    setattr(cls, "batch_shape", property(batch_shape))
     setattr(cls, "reshape", reshape)
     setattr(cls, "flatten", flatten)
     setattr(cls, "random", classmethod(random))
