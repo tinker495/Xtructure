@@ -12,7 +12,10 @@ A Python package providing JAX-optimized data structures, including a batched pr
 
 ```bash
 pip install xtructure
+pip install xtructure @ git+https://github.com/tinker495/xtructure.git # recommended
 ```
+
+Currently under active development, with frequent updates and potential bug fixes. For the most up-to-date version, it is recommended to install directly from the Git repository.
 
 ## Documentation
 
