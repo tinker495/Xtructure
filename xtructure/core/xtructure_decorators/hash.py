@@ -37,7 +37,7 @@ def xxhash(x, seed):
     return acc
 
 
-def hash_func_builder(x: Xtructurable):
+def byterize_hash_func_builder(x: Xtructurable):
     """
     Build a hash function for the pytree.
     This function creates a JIT-compiled hash function that converts pytree to bytes
@@ -95,7 +95,7 @@ def hash_func_builder(x: Xtructurable):
         Main hash function that converts state to bytes and applies xxhash.
         Returns both hash value and byte representation.
         """
-        bytes = _byterize(x)
+        bytes = x.bytes
         uint32ed = _to_uint32(bytes)
 
         def scan_body(seed, x):
@@ -105,14 +105,16 @@ def hash_func_builder(x: Xtructurable):
         hash_value, _ = jax.lax.scan(scan_body, seed, uint32ed)
         return hash_value, bytes
 
-    return jax.jit(_h)
+    return jax.jit(_byterize), jax.jit(_h)
 
 
 def hash_function_decorator(cls):
     """
     Decorator to add a hash function to a class.
     """
+    byterize, hash_func = byterize_hash_func_builder(cls)
 
-    setattr(cls, "hash", hash_func_builder(cls))
+    setattr(cls, "bytes", property(byterize))
+    setattr(cls, "hash", hash_func)
 
     return cls

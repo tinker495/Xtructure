@@ -78,6 +78,10 @@ class Xtructurable(Protocol[T]):
     def at(self: T, index: Any) -> "AtIndexer":
         ...
 
+    @property
+    def bytes(self: T) -> chex.Array:
+        ...
+
     def hash(self: T, seed: int = 0) -> TypingTuple[int, chex.Array]:
         ...
 
