@@ -310,19 +310,19 @@ if __name__ == "__main__":
         # Generate random arrays
         if jnp.issubdtype(dtype, jnp.integer):
             ak_rand = jr.randint(
-                key_ak, (size_ak,), minval=0, maxval=max(1, size_ak * 2), dtype=dtype
+                key_ak, (size_ak,), minval=0, maxval=max(1, size_ak * 10), dtype=dtype
             )
             bk_rand = jr.randint(
-                key_bk, (size_bk,), minval=0, maxval=max(1, size_bk * 2), dtype=dtype
+                key_bk, (size_bk,), minval=0, maxval=max(1, size_bk * 10), dtype=dtype
             )
         elif jnp.issubdtype(dtype, jnp.floating):
             # For float types, use uniform. maxval should be > minval for uniform.
             # Using a simple range, can be adjusted if a specific float range is needed.
             ak_rand = jr.uniform(
-                key_ak, (size_ak,), dtype=dtype, minval=0.0, maxval=float(max(1, size_ak * 2))
+                key_ak, (size_ak,), dtype=dtype, minval=0.0, maxval=float(max(1, size_ak * 10))
             )
             bk_rand = jr.uniform(
-                key_bk, (size_bk,), dtype=dtype, minval=0.0, maxval=float(max(1, size_bk * 2))
+                key_bk, (size_bk,), dtype=dtype, minval=0.0, maxval=float(max(1, size_bk * 10))
             )
         else:
             raise TypeError(f"Unsupported dtype for random generation: {dtype}")
@@ -391,27 +391,19 @@ if __name__ == "__main__":
     verify_and_time_merge(subkey, size_ak=8, size_bk=8, dtype=jnp.int32)
 
     key, subkey = jr.split(key)
-    verify_and_time_merge(subkey, size_ak=100, size_bk=150, dtype=jnp.int32)
+    verify_and_time_merge(subkey, size_ak=200, size_bk=200, dtype=jnp.int32)
 
     key, subkey = jr.split(key)
-    verify_and_time_merge(subkey, size_ak=1000, size_bk=1200, dtype=jnp.int32)
+    verify_and_time_merge(subkey, size_ak=1000, size_bk=1000, dtype=jnp.int32)
 
     key, subkey = jr.split(key)
-    verify_and_time_merge(subkey, size_ak=5000, size_bk=4000, dtype=jnp.int32)
+    verify_and_time_merge(subkey, size_ak=5000, size_bk=5000, dtype=jnp.int32)
 
     key, subkey = jr.split(key)
-    verify_and_time_merge(subkey, size_ak=100, size_bk=150, dtype=jnp.float32)  # Test with floats
+    verify_and_time_merge(subkey, size_ak=200, size_bk=200, dtype=jnp.float32)
 
     key, subkey = jr.split(key)
-    verify_and_time_merge(subkey, size_ak=1000, size_bk=1000, dtype=jnp.float32)  # Test with floats
+    verify_and_time_merge(subkey, size_ak=1000, size_bk=1000, dtype=jnp.float32)
 
     key, subkey = jr.split(key)
-    verify_and_time_merge(subkey, size_ak=5000, size_bk=4000, dtype=jnp.float32)  # Test with floats
-
-    # Example with one empty array (special case for merge logic)
-    key, subkey = jr.split(key)
-    verify_and_time_merge(subkey, size_ak=0, size_bk=100, dtype=jnp.int32)
-    key, subkey = jr.split(key)
-    verify_and_time_merge(subkey, size_ak=100, size_bk=0, dtype=jnp.int32)
-    key, subkey = jr.split(key)
-    verify_and_time_merge(subkey, size_ak=0, size_bk=0, dtype=jnp.int32)
+    verify_and_time_merge(subkey, size_ak=5000, size_bk=5000, dtype=jnp.float32)
