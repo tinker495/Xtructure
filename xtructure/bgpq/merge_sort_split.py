@@ -78,7 +78,7 @@ def merge_sort_split_idx(
 
 
 # New kernel and wrapper function for merging with loops and returning indices
-def merge_indices_kernel_loop(ak_ref, bk_ref, merged_indices_ref):
+def merge_indices_kernel_loop(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref):
     """
     Pallas kernel to merge two sorted arrays (ak, bk) and write the indices
     of the merged elements (relative to a conceptual [ak, bk] concatenation)
@@ -94,14 +94,48 @@ def merge_indices_kernel_loop(ak_ref, bk_ref, merged_indices_ref):
         # cond_operands is (current_idx_a, current_idx_b,
         # current_out_ptr_val, ak_ref_ignored, bk_ref_ignored, merged_indices_ref_for_cond)
         # We pass refs for consistent function signature, but use captured ones for stores.
-        current_idx_a, current_idx_b, current_out_ptr_val, _, _, _ = cond_operands
+        (
+            current_idx_a,
+            current_idx_b,
+            current_out_ptr_val,
+            val_a_to_store,
+            _,
+            _,
+            _,
+        ) = cond_operands  # Added val_a_to_store
+        val_a_casted = val_a_to_store.astype(
+            merged_keys_ref.dtype
+        )  # Cast to merged_keys_ref's dtype
+        pl.store(
+            merged_keys_ref,
+            (current_out_ptr_val,),
+            val_a_casted,
+            eviction_policy="evict_last",  # Store the casted key
+        )
         pl.store(
             merged_indices_ref, (current_out_ptr_val,), current_idx_a, eviction_policy="evict_last"
         )
         return current_idx_a + 1, current_idx_b
 
     def false_branch_body_fn(cond_operands):
-        current_idx_a, current_idx_b, current_out_ptr_val, _, _, _ = cond_operands
+        (
+            current_idx_a,
+            current_idx_b,
+            current_out_ptr_val,
+            _,
+            val_b_to_store,
+            _,
+            _,
+        ) = cond_operands  # Added val_b_to_store
+        val_b_casted = val_b_to_store.astype(
+            merged_keys_ref.dtype
+        )  # Cast to merged_keys_ref's dtype
+        pl.store(
+            merged_keys_ref,
+            (current_out_ptr_val,),
+            val_b_casted,
+            eviction_policy="evict_last",  # Store the casted key
+        )
         pl.store(
             merged_indices_ref,
             (current_out_ptr_val,),
@@ -126,12 +160,13 @@ def merge_indices_kernel_loop(ak_ref, bk_ref, merged_indices_ref):
         val_b = pl.load(loop_bk_ref, (idx_b,))
         pred = val_a <= val_b
 
+        # Pass val_a and val_b to be stored by the conditional branches
         updated_idx_a, updated_idx_b = jax.lax.cond(
             pred,
             true_branch_body_fn,
             false_branch_body_fn,
-            # Pass current indices, out_ptr, and refs to branch functions
-            (idx_a, idx_b, out_ptr, loop_ak_ref, loop_bk_ref, loop_merged_indices_ref),
+            # Pass current indices, out_ptr, actual values, and refs to branch functions
+            (idx_a, idx_b, out_ptr, val_a, val_b, loop_ak_ref, loop_merged_indices_ref),
         )
         return (
             updated_idx_a,
@@ -158,7 +193,14 @@ def merge_indices_kernel_loop(ak_ref, bk_ref, merged_indices_ref):
 
     def ak_loop_body(state):
         current_idx_a, current_out_ptr, loop_ak_ref, loop_merged_indices_ref = state
-        # val_to_store = pl.load(loop_ak_ref, (current_idx_a,)) # Not storing value, but index
+        val_to_store = pl.load(loop_ak_ref, (current_idx_a,))  # Load the key to store
+        val_casted = val_to_store.astype(merged_keys_ref.dtype)  # Cast to merged_keys_ref's dtype
+        pl.store(
+            merged_keys_ref,
+            (current_out_ptr,),
+            val_casted,
+            eviction_policy="evict_last",  # Store the casted key
+        )
         pl.store(
             loop_merged_indices_ref, (current_out_ptr,), current_idx_a, eviction_policy="evict_last"
         )
@@ -179,7 +221,14 @@ def merge_indices_kernel_loop(ak_ref, bk_ref, merged_indices_ref):
 
     def bk_loop_body(state):
         current_idx_b, current_out_ptr, loop_bk_ref, loop_merged_indices_ref = state
-        # val_to_store = pl.load(loop_bk_ref, (current_idx_b,)) # Not storing value, but index
+        val_to_store = pl.load(loop_bk_ref, (current_idx_b,))  # Load the key to store
+        val_casted = val_to_store.astype(merged_keys_ref.dtype)  # Cast to merged_keys_ref's dtype
+        pl.store(
+            merged_keys_ref,
+            (current_out_ptr,),
+            val_casted,
+            eviction_policy="evict_last",  # Store the casted key
+        )
         # Store index from bk, offset by n
         pl.store(
             loop_merged_indices_ref,
@@ -193,11 +242,13 @@ def merge_indices_kernel_loop(ak_ref, bk_ref, merged_indices_ref):
 
 
 @jax.jit
-def merge_arrays_indices_loop(ak: jax.Array, bk: jax.Array) -> jax.Array:
+def merge_arrays_indices_loop(ak: jax.Array, bk: jax.Array) -> Tuple[jax.Array, jax.Array]:
     """
     Merges two sorted JAX arrays ak and bk using a loop-based Pallas kernel
-    and returns an array of indices representing the merged order.
-    The indices refer to the positions in a conceptual concatenation [ak, bk].
+    and returns a tuple containing:
+    - merged_keys: The sorted merged array of keys.
+    - merged_indices: An array of indices representing the merged order.
+                      The indices refer to the positions in a conceptual concatenation [ak, bk].
     """
     # Assuming ak and bk are 1D arrays.
     # If you need to handle batched inputs, this function (or the kernel) would need modification,
@@ -210,9 +261,15 @@ def merge_arrays_indices_loop(ak: jax.Array, bk: jax.Array) -> jax.Array:
 
     # The output will be an array of indices, with length n + m.
     # Indices are integers, jnp.int32 is usually sufficient.
-    out_shape_dtype = jax.ShapeDtypeStruct((n + m,), jnp.int32)
 
-    return pl.pallas_call(merge_indices_kernel_loop, out_shape=out_shape_dtype)(ak, bk)
+    # Determine the common dtype for keys by promoting types of ak and bk.
+    key_dtype = jnp.result_type(ak.dtype, bk.dtype)
+    out_keys_shape_dtype = jax.ShapeDtypeStruct((n + m,), key_dtype)
+    out_idx_shape_dtype = jax.ShapeDtypeStruct((n + m,), jnp.int32)
+
+    return pl.pallas_call(
+        merge_indices_kernel_loop, out_shape=(out_keys_shape_dtype, out_idx_shape_dtype)
+    )(ak, bk)
 
 
 if __name__ == "__main__":
@@ -232,13 +289,15 @@ if __name__ == "__main__":
     # Concatenated: [1,2,3,4, | 1,2,3,4] (indices 0-3 for a1, 4-7 for b1)
     # Merged values: [1,1,2,2,3,3,4,4]
     # Expected indices: [0 (a1[0]), 4 (b1[0]), 1 (a1[1]), 5 (b1[1]), 2 (a1[2]), 6 (b1[2]), 3 (a1[3]), 7 (b1[3])]
-    merged_indices1 = merge_arrays_indices_loop(a1, b1)
+    merged_keys1, merged_indices1 = merge_arrays_indices_loop(a1, b1)
     print(f"a1: {a1}")
     print(f"b1: {b1}")
+    print(f"Merged keys for a1, b1: {merged_keys1}")
     print(f"Merged indices for a1, b1: {merged_indices1}")
     # To verify, let's reconstruct the sorted array using these indices
     concatenated1 = jnp.concatenate([a1, b1])
-    print(f"Reconstructed sorted array: {concatenated1[merged_indices1]}")
+    print(f"Reconstructed sorted array (using indices): {concatenated1[merged_indices1]}")
+    assert jnp.array_equal(merged_keys1, concatenated1[merged_indices1])
 
     # Test case 2: Interleaved arrays
     a2 = jnp.array([1, 5, 9])
@@ -246,12 +305,14 @@ if __name__ == "__main__":
     # Concatenated: [1,5,9, | 2,6,10] (indices 0-2 for a2, 3-5 for b2)
     # Merged values: [1,2,5,6,9,10]
     # Expected indices: [0 (a2[0]), 3 (b2[0]), 1 (a2[1]), 4 (b2[1]), 2 (a2[2]), 5 (b2[2])]
-    merged_indices2 = merge_arrays_indices_loop(a2, b2)
+    merged_keys2, merged_indices2 = merge_arrays_indices_loop(a2, b2)
     print(f"\na2: {a2}")
     print(f"b2: {b2}")
+    print(f"Merged keys for a2, b2: {merged_keys2}")
     print(f"Merged indices for a2, b2: {merged_indices2}")
     concatenated2 = jnp.concatenate([a2, b2])
-    print(f"Reconstructed sorted array: {concatenated2[merged_indices2]}")
+    print(f"Reconstructed sorted array (using indices): {concatenated2[merged_indices2]}")
+    assert jnp.array_equal(merged_keys2, concatenated2[merged_indices2])
 
     # Test case 3: One array exhausted first
     a3 = jnp.array([1, 2])
@@ -259,31 +320,47 @@ if __name__ == "__main__":
     # Concatenated: [1,2, | 3,4,5,6] (indices 0-1 for a3, 2-5 for b3)
     # Merged values: [1,2,3,4,5,6]
     # Expected indices: [0,1,2,3,4,5] (0,1 from a3; 2+0, 2+1, 2+2, 2+3 from b3)
-    merged_indices3 = merge_arrays_indices_loop(a3, b3)
+    merged_keys3, merged_indices3 = merge_arrays_indices_loop(a3, b3)
     print(f"\na3: {a3}")
     print(f"b3: {b3}")
+    print(f"Merged keys for a3, b3: {merged_keys3}")
     print(f"Merged indices for a3, b3: {merged_indices3}")
     concatenated3 = jnp.concatenate([a3, b3])
-    print(f"Reconstructed sorted array: {concatenated3[merged_indices3]}")
+    print(f"Reconstructed sorted array (using indices): {concatenated3[merged_indices3]}")
+    assert jnp.array_equal(merged_keys3, concatenated3[merged_indices3])
 
     # Test case 4: Empty array
     a4 = jnp.array([])
     b4 = jnp.array([1, 2, 3])
-    merged_indices4a = merge_arrays_indices_loop(a4, b4)  # ak empty
+    merged_keys4a, merged_indices4a = merge_arrays_indices_loop(a4, b4)  # ak empty
     # Expected: [0+0, 0+1, 0+2] -> [0,1,2] (relative to b4, offset by n=0)
     print(f"\na4: {a4}")
     print(f"b4: {b4}")
+    print(f"Merged keys for a4, b4: {merged_keys4a}")
     print(f"Merged indices for a4, b4: {merged_indices4a}")
     concatenated4a = jnp.concatenate([a4, b4])
-    print(f"Reconstructed sorted array: {concatenated4a[merged_indices4a]}")
+    # Check if concatenated4a is empty, if so, merged_keys4a should also be empty.
+    # Otherwise, proceed with reconstruction and assertion.
+    if concatenated4a.size > 0:
+        print(f"Reconstructed sorted array (using indices): {concatenated4a[merged_indices4a]}")
+        assert jnp.array_equal(merged_keys4a, concatenated4a[merged_indices4a])
+    else:
+        print("Reconstructed sorted array (using indices): [] (Inputs were empty)")
+        assert merged_keys4a.size == 0
 
-    merged_indices4b = merge_arrays_indices_loop(b4, a4)  # bk empty
+    merged_keys4b, merged_indices4b = merge_arrays_indices_loop(b4, a4)  # bk empty
     # Expected: [0,1,2] (relative to b4)
     print(f"\nb4: {b4}")
     print(f"a4: {a4}")
+    print(f"Merged keys for b4, a4: {merged_keys4b}")
     print(f"Merged indices for b4, a4: {merged_indices4b}")
     concatenated4b = jnp.concatenate([b4, a4])
-    print(f"Reconstructed sorted array: {concatenated4b[merged_indices4b]}")
+    if concatenated4b.size > 0:
+        print(f"Reconstructed sorted array (using indices): {concatenated4b[merged_indices4b]}")
+        assert jnp.array_equal(merged_keys4b, concatenated4b[merged_indices4b])
+    else:
+        print("Reconstructed sorted array (using indices): [] (Inputs were empty)")
+        assert merged_keys4b.size == 0
 
     # Test case 5: Arrays with duplicate values across them
     a5 = jnp.array([10, 20, 30])
@@ -291,12 +368,14 @@ if __name__ == "__main__":
     # Concat: [10,20,30 | 10,25,30] (idx 0-2 for a5, 3-5 for b5)
     # Merge: [10(a5), 10(b5), 20(a5), 25(b5), 30(a5), 30(b5)] (stable sort behavior: take from first array if equal)
     # Expect: [0 (a5[0]), 3 (b5[0]), 1 (a5[1]), 4 (b5[1]), 2 (a5[2]), 5 (b5[2])]
-    merged_indices5 = merge_arrays_indices_loop(a5, b5)
+    merged_keys5, merged_indices5 = merge_arrays_indices_loop(a5, b5)
     print(f"\na5: {a5}")
     print(f"b5: {b5}")
+    print(f"Merged keys for a5, b5: {merged_keys5}")
     print(f"Merged indices for a5, b5: {merged_indices5}")
     concatenated5 = jnp.concatenate([a5, b5])
-    print(f"Reconstructed sorted array: {concatenated5[merged_indices5]}")
+    print(f"Reconstructed sorted array (using indices): {concatenated5[merged_indices5]}")
+    assert jnp.array_equal(merged_keys5, concatenated5[merged_indices5])
 
     print("\n\n--- Testing new merge_arrays_indices_loop with random values and timing ---")
     import time
@@ -336,38 +415,51 @@ if __name__ == "__main__":
             print(f"  Sorted bk: {bk_sorted}")
 
         # --- Correctness Verification ---
-        merged_indices_pallas = merge_arrays_indices_loop(ak_sorted, bk_sorted)
-        # Ensure indices are on device for proper indexing before block_until_ready if not already
-        # merged_indices_pallas.block_until_ready()
+        merged_keys_pallas, merged_indices_pallas = merge_arrays_indices_loop(ak_sorted, bk_sorted)
+        # Ensure computations are done before checking/timing
+        merged_keys_pallas.block_until_ready()
+        merged_indices_pallas.block_until_ready()
 
         concatenated_inputs = jnp.concatenate([ak_sorted, bk_sorted])
-        reconstructed_merged_pallas = concatenated_inputs[merged_indices_pallas]
-        reconstructed_merged_pallas.block_until_ready()  # Ensure computation is done
+        # Reconstruct using indices to verify indices are correct
+        reconstructed_merged_from_indices_pallas = concatenated_inputs[merged_indices_pallas]
+        reconstructed_merged_from_indices_pallas.block_until_ready()
 
         reference_merged_jax = jnp.sort(concatenated_inputs)
         reference_merged_jax.block_until_ready()
 
         try:
-            assert jnp.array_equal(reconstructed_merged_pallas, reference_merged_jax)
-            print("  ✅ Correctness check PASSED.")
+            # Verify merged keys directly
+            assert jnp.array_equal(merged_keys_pallas, reference_merged_jax)
+            # Verify reconstructed from indices
+            assert jnp.array_equal(reconstructed_merged_from_indices_pallas, reference_merged_jax)
+            print("  ✅ Correctness check PASSED (both keys and indices).")
         except AssertionError:
             print("  ❌ Correctness check FAILED.")
             if size_ak < 20 and size_bk < 20:  # Print details for smaller failing arrays
-                print(f"    Pallas reconstructed: {reconstructed_merged_pallas}")
+                print(f"    Pallas merged keys:   {merged_keys_pallas}")
+                print(
+                    f"    Pallas reconstructed (from indices): {reconstructed_merged_from_indices_pallas}"
+                )
                 print(f"    JAX reference sorted: {reference_merged_jax}")
                 print(f"    Pallas indices:       {merged_indices_pallas}")
 
         # --- Timing Comparison ---
         # Pallas version timing (includes JIT compilation on first run for this shape/dtype)
         # Warm-up run for Pallas
-        _ = merge_arrays_indices_loop(ak_sorted, bk_sorted).block_until_ready()
+        _keys, _indices = merge_arrays_indices_loop(ak_sorted, bk_sorted)
+        _keys.block_until_ready()
+        _indices.block_until_ready()
 
         start_time_pallas = time.perf_counter()
         for _ in range(10):  # Run a few times for more stable timing
             # Re-assign to a new variable to ensure JAX doesn't
             # optimize away repeated calls on the same var if it caches
-            pallas_output_timing = merge_arrays_indices_loop(ak_sorted, bk_sorted)
-        pallas_output_timing.block_until_ready()  # Ensure last call is finished
+            pallas_keys_timing, pallas_indices_timing = merge_arrays_indices_loop(
+                ak_sorted, bk_sorted
+            )
+        pallas_keys_timing.block_until_ready()  # Ensure last call is finished
+        pallas_indices_timing.block_until_ready()
         end_time_pallas = time.perf_counter()
         pallas_time = (end_time_pallas - start_time_pallas) / 10
         print(f"  ⏱️ Pallas merge_arrays_indices_loop avg time: {pallas_time*1000:.4f} ms")

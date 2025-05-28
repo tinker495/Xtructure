@@ -43,10 +43,8 @@ def merge_sort_split(
             - Second half of corresponding values
     """
     n = ak.shape[-1]  # size of group
-    key = jnp.concatenate([ak, bk])
     val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), av, bv)
-    sorted_idx = merge_arrays_indices_loop(ak, bk)
-    sorted_key = key[sorted_idx]
+    sorted_key, sorted_idx = merge_arrays_indices_loop(ak, bk)
     sorted_val = val[sorted_idx]
     return sorted_key[:n], sorted_val[:n], sorted_key[n:], sorted_val[n:]
 
