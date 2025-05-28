@@ -91,29 +91,28 @@ def merge_indices_kernel_loop(ak_ref, bk_ref, merged_keys_ref, merged_indices_re
     # Helper functions for lax.cond need to use pl.store for side-effects
     # They will capture n and the refs: ak_ref, bk_ref, merged_indices_ref
     def true_branch_body_fn(cond_operands):
-        # cond_operands is (current_idx_a, current_idx_b,
-        # current_out_ptr_val, ak_ref_ignored, bk_ref_ignored, merged_indices_ref_for_cond)
-        # We pass refs for consistent function signature, but use captured ones for stores.
         (
             current_idx_a,
             current_idx_b,
             current_out_ptr_val,
             val_a_to_store,
             _,
-            _,
-            _,
-        ) = cond_operands  # Added val_a_to_store
-        val_a_casted = val_a_to_store.astype(
-            merged_keys_ref.dtype
-        )  # Cast to merged_keys_ref's dtype
+            _,  # Corresponds to loop_ak_ref from cond
+            merged_keys_ref_from_cond,  # Newly added
+            merged_indices_ref_from_cond,  # Corresponds to loop_merged_indices_ref from cond
+        ) = cond_operands
+        val_a_casted = val_a_to_store.astype(merged_keys_ref_from_cond.dtype)
         pl.store(
-            merged_keys_ref,
+            merged_keys_ref_from_cond,
             (current_out_ptr_val,),
             val_a_casted,
-            eviction_policy="evict_last",  # Store the casted key
+            eviction_policy="evict_last",
         )
         pl.store(
-            merged_indices_ref, (current_out_ptr_val,), current_idx_a, eviction_policy="evict_last"
+            merged_indices_ref_from_cond,
+            (current_out_ptr_val,),
+            current_idx_a,
+            eviction_policy="evict_last",
         )
         return current_idx_a + 1, current_idx_b
 
@@ -124,20 +123,19 @@ def merge_indices_kernel_loop(ak_ref, bk_ref, merged_keys_ref, merged_indices_re
             current_out_ptr_val,
             _,
             val_b_to_store,
-            _,
-            _,
-        ) = cond_operands  # Added val_b_to_store
-        val_b_casted = val_b_to_store.astype(
-            merged_keys_ref.dtype
-        )  # Cast to merged_keys_ref's dtype
+            _,  # Corresponds to loop_ak_ref from cond
+            merged_keys_ref_from_cond,  # Newly added
+            merged_indices_ref_from_cond,  # Corresponds to loop_merged_indices_ref from cond
+        ) = cond_operands
+        val_b_casted = val_b_to_store.astype(merged_keys_ref_from_cond.dtype)
         pl.store(
-            merged_keys_ref,
+            merged_keys_ref_from_cond,
             (current_out_ptr_val,),
             val_b_casted,
-            eviction_policy="evict_last",  # Store the casted key
+            eviction_policy="evict_last",
         )
         pl.store(
-            merged_indices_ref,
+            merged_indices_ref_from_cond,
             (current_out_ptr_val,),
             n + current_idx_b,
             eviction_policy="evict_last",
@@ -145,28 +143,46 @@ def merge_indices_kernel_loop(ak_ref, bk_ref, merged_keys_ref, merged_indices_re
         return current_idx_a, current_idx_b + 1
 
     # Main merge loop using jax.lax.while_loop
-    # Loop state: (idx_a, idx_b, out_ptr, ak_ref, bk_ref, merged_indices_ref_loop_state)
+    # Loop state: (idx_a, idx_b, out_ptr, ak_ref, bk_ref, merged_keys_ref, merged_indices_ref)
     # merged_indices_ref is also passed to ensure it's part of the state if needed by JAX,
     # though pl.store uses the captured one.
-    initial_main_loop_state = (0, 0, 0, ak_ref, bk_ref, merged_indices_ref)
+    initial_main_loop_state = (0, 0, 0, ak_ref, bk_ref, merged_keys_ref, merged_indices_ref)
 
     def main_loop_condition(state):
-        idx_a, idx_b, _, _, _, _ = state
+        idx_a, idx_b, _, _, _, _, _ = state
         return jnp.logical_and(idx_a < n, idx_b < m)
 
     def main_loop_body(state):
-        idx_a, idx_b, out_ptr, loop_ak_ref, loop_bk_ref, loop_merged_indices_ref = state
+        (
+            idx_a,
+            idx_b,
+            out_ptr,
+            loop_ak_ref,
+            loop_bk_ref,
+            loop_merged_keys_ref,
+            loop_merged_indices_ref,
+        ) = state
         val_a = pl.load(loop_ak_ref, (idx_a,))
         val_b = pl.load(loop_bk_ref, (idx_b,))
         pred = val_a <= val_b
 
         # Pass val_a and val_b to be stored by the conditional branches
+        # Also pass relevant refs (loop_ak_ref, loop_merged_keys_ref, loop_merged_indices_ref)
         updated_idx_a, updated_idx_b = jax.lax.cond(
             pred,
             true_branch_body_fn,
             false_branch_body_fn,
-            # Pass current indices, out_ptr, actual values, and refs to branch functions
-            (idx_a, idx_b, out_ptr, val_a, val_b, loop_ak_ref, loop_merged_indices_ref),
+            # Operands to cond: current indices, out_ptr, actual values, and relevant refs
+            (
+                idx_a,
+                idx_b,
+                out_ptr,
+                val_a,
+                val_b,
+                loop_ak_ref,
+                loop_merged_keys_ref,
+                loop_merged_indices_ref,
+            ),
         )
         return (
             updated_idx_a,
@@ -174,60 +190,105 @@ def merge_indices_kernel_loop(ak_ref, bk_ref, merged_keys_ref, merged_indices_re
             out_ptr + 1,
             loop_ak_ref,
             loop_bk_ref,
+            loop_merged_keys_ref,
             loop_merged_indices_ref,
         )
 
     final_state_after_main_loop = jax.lax.while_loop(
         main_loop_condition, main_loop_body, initial_main_loop_state
     )
-    # Unpack state. Refs are carried through but we use the original (captured) ones for subsequent loops.
-    idx_a, idx_b, out_ptr, _, _, _ = final_state_after_main_loop
+    # Unpack state. Refs are carried through.
+    (
+        idx_a,
+        idx_b,
+        out_ptr,
+        _,
+        _,
+        final_loop_merged_keys_ref,
+        final_loop_merged_indices_ref,
+    ) = final_state_after_main_loop
 
     # Loop for remaining elements from ak
-    # Loop state: (current_idx_a, current_out_ptr, ak_ref_ignored, merged_indices_ref_loop_state)
-    initial_ak_loop_state = (idx_a, out_ptr, ak_ref, merged_indices_ref)
+    # Loop state: (current_idx_a, current_out_ptr, ak_ref_ignored, merged_keys_ref, merged_indices_ref_loop_state)
+    initial_ak_loop_state = (
+        idx_a,
+        out_ptr,
+        ak_ref,
+        final_loop_merged_keys_ref,
+        final_loop_merged_indices_ref,
+    )
 
     def ak_loop_condition(state):
-        current_idx_a, _, _, _ = state
+        current_idx_a, _, _, _, _ = state
         return current_idx_a < n
 
     def ak_loop_body(state):
-        current_idx_a, current_out_ptr, loop_ak_ref, loop_merged_indices_ref = state
-        val_to_store = pl.load(loop_ak_ref, (current_idx_a,))  # Load the key to store
-        val_casted = val_to_store.astype(merged_keys_ref.dtype)  # Cast to merged_keys_ref's dtype
+        (
+            current_idx_a,
+            current_out_ptr,
+            loop_ak_ref,
+            loop_merged_keys_ref,
+            loop_merged_indices_ref,
+        ) = state
+        val_to_store = pl.load(loop_ak_ref, (current_idx_a,))
+        val_casted = val_to_store.astype(loop_merged_keys_ref.dtype)
         pl.store(
-            merged_keys_ref,
+            loop_merged_keys_ref,
             (current_out_ptr,),
             val_casted,
-            eviction_policy="evict_last",  # Store the casted key
+            eviction_policy="evict_last",
         )
         pl.store(
             loop_merged_indices_ref, (current_out_ptr,), current_idx_a, eviction_policy="evict_last"
         )
-        return current_idx_a + 1, current_out_ptr + 1, loop_ak_ref, loop_merged_indices_ref
+        return (
+            current_idx_a + 1,
+            current_out_ptr + 1,
+            loop_ak_ref,
+            loop_merged_keys_ref,
+            loop_merged_indices_ref,
+        )
 
     final_state_after_ak_loop = jax.lax.while_loop(
         ak_loop_condition, ak_loop_body, initial_ak_loop_state
     )
-    idx_a, out_ptr, _, _ = final_state_after_ak_loop
+    (
+        idx_a,
+        out_ptr,
+        _,
+        final_loop_merged_keys_ref,
+        final_loop_merged_indices_ref,
+    ) = final_state_after_ak_loop
 
     # Loop for remaining elements from bk
-    # Loop state: (current_idx_b, current_out_ptr, bk_ref_ignored, merged_indices_ref_loop_state)
-    initial_bk_loop_state = (idx_b, out_ptr, bk_ref, merged_indices_ref)
+    # Loop state: (current_idx_b, current_out_ptr, bk_ref_ignored, merged_keys_ref, merged_indices_ref_loop_state)
+    initial_bk_loop_state = (
+        idx_b,
+        out_ptr,
+        bk_ref,
+        final_loop_merged_keys_ref,
+        final_loop_merged_indices_ref,
+    )
 
     def bk_loop_condition(state):
-        current_idx_b, _, _, _ = state
+        current_idx_b, _, _, _, _ = state
         return current_idx_b < m
 
     def bk_loop_body(state):
-        current_idx_b, current_out_ptr, loop_bk_ref, loop_merged_indices_ref = state
-        val_to_store = pl.load(loop_bk_ref, (current_idx_b,))  # Load the key to store
-        val_casted = val_to_store.astype(merged_keys_ref.dtype)  # Cast to merged_keys_ref's dtype
+        (
+            current_idx_b,
+            current_out_ptr,
+            loop_bk_ref,
+            loop_merged_keys_ref,
+            loop_merged_indices_ref,
+        ) = state
+        val_to_store = pl.load(loop_bk_ref, (current_idx_b,))
+        val_casted = val_to_store.astype(loop_merged_keys_ref.dtype)
         pl.store(
-            merged_keys_ref,
+            loop_merged_keys_ref,
             (current_out_ptr,),
             val_casted,
-            eviction_policy="evict_last",  # Store the casted key
+            eviction_policy="evict_last",
         )
         # Store index from bk, offset by n
         pl.store(
@@ -236,7 +297,13 @@ def merge_indices_kernel_loop(ak_ref, bk_ref, merged_keys_ref, merged_indices_re
             n + current_idx_b,
             eviction_policy="evict_last",
         )
-        return current_idx_b + 1, current_out_ptr + 1, loop_bk_ref, loop_merged_indices_ref
+        return (
+            current_idx_b + 1,
+            current_out_ptr + 1,
+            loop_bk_ref,
+            loop_merged_keys_ref,
+            loop_merged_indices_ref,
+        )
 
     jax.lax.while_loop(bk_loop_condition, bk_loop_body, initial_bk_loop_state)
 
