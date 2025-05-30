@@ -35,94 +35,48 @@ def add_shape_dtype_len(cls: Type[T]) -> Type[T]:
         Returns a namedtuple containing the batch shape (if present) and the shapes of all fields.
         If a field is itself a xtructure_dataclass, its shape is included as a nested namedtuple.
         """
-        # shape_tuple, cls, and default_shape are available from the outer scope (closure)
+        # Determine batch: if all fields have a leading batch dimension of the same size, use it.
+        # Otherwise, batch is ().
         field_shapes = []
         batch_shapes = []
-
         for field_name in cls.__annotations__.keys():
-            field_instance = getattr(self, field_name)
-            # actual_field_shape can be:
-            # 1. For primitive types (e.g. np.ndarray): a simple tuple like (10, 3, 4)
-            # 2. For nested xtructure_dataclass: a 'shape' namedtuple like ( (10,), (3,), (4,) )
-            actual_field_shape = field_instance.shape 
-            
-            # default_intrinsic_shape_for_field can be:
-            # 1. For primitive types: its intrinsic shape tuple, e.g. (3, 4)
-            # 2. For nested xtructure_dataclass: a tuple of the intrinsic shapes of its *own* fields
-            default_intrinsic_shape_for_field = getattr(default_shape, field_name)
-
-            # Determine if the current field is itself a xtructure_dataclass
-            is_nested_xtructure = (
-                isinstance(actual_field_shape, tuple)
-                and hasattr(actual_field_shape, "_fields") # True for namedtuples
-                and actual_field_shape.__class__.__name__ == "shape" # Check if it's our specific shape namedtuple
-            )
-
-            if is_nested_xtructure:
-                # actual_field_shape is the full shape of the nested instance, e.g., field_instance.shape
-                # which might be: ShapeClassForNested(batch=(B_nested,), fieldA=valA, ...)
-
-                # The batch of the nested instance contributes to the parent's batch calculation.
-                batch_shapes.append(actual_field_shape.batch)
-
-                # For the shape representation within the parent, we want to show this nested field
-                # as having batch=(), but retaining its other structural field values.
-                # actual_field_shape is a namedtuple. actual_field_shape[0] is its 'batch' value.
-                # actual_field_shape[1:] is a tuple of its other field values in order.
-                nested_field_values = actual_field_shape[1:] 
-                
-                # Construct the new shape object for storage in the parent:
-                # ShapeClassForNested(batch=(), fieldA=valA, ...)
-                processed_shape_for_field = actual_field_shape.__class__((), *nested_field_values)
-                
-                field_shapes.append(processed_shape_for_field)
-            else:
-                # Field is a primitive type (e.g., numpy array)
-                # actual_field_shape is a simple tuple (e.g., (D1, D2, D3))
-                # default_intrinsic_shape_for_field is a simple tuple (e.g., (S1, S2))
-                
-                current_processed_shape_for_field = actual_field_shape # Default if inconsistent
-
-                if default_intrinsic_shape_for_field == ():
-                    # If default intrinsic shape is empty, the entire actual shape is considered batch.
-                    batch_shapes.append(actual_field_shape)
-                    current_processed_shape_for_field = ()  # No specific intrinsic part
-                elif len(actual_field_shape) >= len(default_intrinsic_shape_for_field) and \
-                     actual_field_shape[-len(default_intrinsic_shape_for_field):] == default_intrinsic_shape_for_field:
-                    # Actual shape ends with the default intrinsic shape, split it.
-                    batch_part = actual_field_shape[:-len(default_intrinsic_shape_for_field)]
-                    intrinsic_part = actual_field_shape[-len(default_intrinsic_shape_for_field):]
-                    
-                    batch_shapes.append(batch_part)
-                    current_processed_shape_for_field = intrinsic_part
+            shape = getattr(self, field_name).shape
+            default_shape_field = getattr(default_shape, field_name)
+            if (
+                isinstance(shape, tuple)
+                and hasattr(shape, "_fields")
+                and shape.__class__.__name__ == "shape"
+            ):
+                # If the field is itself a xtructure_dataclass (nested shape_tuple)
+                if default_shape_field == ():
+                    batch_shapes.append(shape.batch)
+                    shape = shape.__class__((), *shape[1:])
+                elif shape.batch[-len(default_shape_field) :] == default_shape_field:
+                    batch_shapes.append(shape.batch[: -len(default_shape_field)])
+                    cuted_batch_shape = shape.batch[-len(default_shape_field) :]
+                    cuted_shape = shape[1:]
+                    shape = shape.__class__(cuted_batch_shape, *cuted_shape)
                 else:
-                    # Shapes are inconsistent or don't match.
-                    batch_shapes.append(-1) # Mark batch as inconsistent
-                    # current_processed_shape_for_field remains actual_field_shape by default
-                
-                field_shapes.append(current_processed_shape_for_field)
+                    batch_shapes.append(-1)
+            else:
+                if default_shape_field == ():
+                    batch_shapes.append(shape)
+                    shape = ()
+                elif shape[-len(default_shape_field) :] == default_shape_field:
+                    batch_shapes.append(shape[: -len(default_shape_field)])
+                    shape = shape[-len(default_shape_field) :]
+                else:
+                    batch_shapes.append(-1)
+            field_shapes.append(shape)
 
-        # Determine final_batch_shape
-        if not batch_shapes: # Handles case of no fields or if cls.__annotations__ is empty
-            final_batch_shape = () 
-        else:
-            # Check if any field dictated an inconsistent batch (-1)
-            if -1 in batch_shapes:
+        final_batch_shape = batch_shapes[0]
+        for batch_shape in batch_shapes[1:]:
+            if batch_shape == -1:
                 final_batch_shape = -1
-            else:
-                # All batch_shapes are actual tuples (or empty tuples if a field's batch part is empty).
-                # Check for uniformity among these potentially valid batch shapes.
-                first_b_shape = batch_shapes[0]
-                is_uniform = True
-                for b_shape in batch_shapes[1:]:
-                    if b_shape != first_b_shape:
-                        is_uniform = False
-                        break
-                if is_uniform:
-                    final_batch_shape = first_b_shape
-                else:
-                    final_batch_shape = -1 # Non-uniform valid batch shapes trigger inconsistency
-
+                break
+            if final_batch_shape != batch_shape:
+                final_batch_shape = -1
+                break
         return shape_tuple(final_batch_shape, *field_shapes)
 
     setattr(cls, "shape", property(get_shape))
