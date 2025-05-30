@@ -54,8 +54,7 @@ def add_shape_dtype_len(cls: Type[T]) -> Type[T]:
                 elif shape.batch[-len(default_shape_field) :] == default_shape_field:
                     batch_shapes.append(shape.batch[: -len(default_shape_field)])
                     cuted_batch_shape = shape.batch[-len(default_shape_field) :]
-                    cuted_shape = shape[1:]
-                    shape = shape.__class__(cuted_batch_shape, *cuted_shape)
+                    shape = shape.__class__(cuted_batch_shape, *shape[1:])
                 else:
                     batch_shapes.append(-1)
             else:
