@@ -15,7 +15,7 @@ import jax
 import jax.numpy as jnp
 
 from ..core import Xtructurable
-from .merge_sort_split import merge_arrays_indices_loop
+from .merge_sort_split import merge_arrays_parallel
 
 SORT_STABLE = True  # Use stable sorting to maintain insertion order for equal keys
 SIZE_DTYPE = jnp.uint32
@@ -44,7 +44,7 @@ def merge_sort_split(
     """
     n = ak.shape[-1]  # size of group
     val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), av, bv)
-    sorted_key, sorted_idx = merge_arrays_indices_loop(ak, bk)
+    sorted_key, sorted_idx = merge_arrays_parallel(ak, bk)
     sorted_val = val[sorted_idx]
     return sorted_key[:n], sorted_val[:n], sorted_key[n:], sorted_val[n:]
 
@@ -177,13 +177,8 @@ class BGPQ:
         """
         n = blockk.shape[0]
         # Concatenate block and buffer
-        key = jnp.concatenate([blockk, heap.key_buffer])
+        sorted_key, sorted_idx = merge_arrays_parallel(blockk, heap.key_buffer)
         val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), blockv, heap.val_buffer)
-
-        # Sort concatenated arrays
-        sorted_key, sorted_idx = jax.lax.sort_key_val(
-            key, jnp.arange(key.shape[0]), is_stable=SORT_STABLE
-        )
         val = val[sorted_idx]
 
         # Check for active elements (non-infinity)

@@ -339,6 +339,220 @@ def merge_arrays_indices_loop(ak: jax.Array, bk: jax.Array) -> Tuple[jax.Array, 
     )(ak, bk)
 
 
+# ### Implementation of Merge Path Algorithm ###
+
+
+def _get_sentinels(dtype):
+    """Returns the min and max sentinel values for a given dtype."""
+    if jnp.issubdtype(dtype, jnp.integer):
+        return jnp.iinfo(dtype).min, jnp.iinfo(dtype).max
+    if jnp.issubdtype(dtype, jnp.floating):
+        return dtype.type(-jnp.inf), dtype.type(jnp.inf)
+    raise TypeError(f"Unsupported dtype for sentinel values: {dtype}")
+
+
+def binary_search_partition(k, a, b):
+    """
+    Finds the partition of k elements between sorted arrays a and b.
+
+    This function implements the core logic of the "Merge Path" algorithm. It
+    uses binary search to find a split point (i, j) such that i elements from
+    array `a` and j elements from array `b` constitute the first k elements
+    of the merged array. Thus, i + j = k.
+
+    The search finds an index `i` in `[0, n]` that satisfies the condition:
+    `a[i-1] <= b[j]` and `b[j-1] <= a[i]`, where `j = k - i`. These checks
+    define a valid merge partition. The binary search below finds the
+    largest `i` that satisfies `a[i-1] <= b[k-i]`.
+
+    Args:
+      k: The total number of elements in the target partition (the "diagonal"
+         of the merge path grid).
+      a: A sorted JAX array or a Pallas Ref to one.
+      b: A sorted JAX array or a Pallas Ref to one.
+
+    Returns:
+      A tuple (i, j) where i is the number of elements to take from a and j
+      is the number of elements from b, satisfying i + j = k.
+    """
+    n = a.shape[0]
+    m = b.shape[0]
+
+    # The number of elements from `a`, `i`, must be in the range [low, high].
+    low = jnp.maximum(0, k - m)
+    high = jnp.minimum(n, k)
+
+    # Binary search for the correct partition index `i`. We are looking for the
+    # largest `i` in `[low, high]` such that `a[i-1] <= b[k-i]`.
+    def cond_fn(state):
+        low_i, high_i = state
+        return low_i < high_i
+
+    def body_fn(state):
+        low_i, high_i = state
+        # Bias the midpoint to the right to ensure the loop terminates when
+        # searching for the "last true" condition.
+        i = low_i + (high_i - low_i + 1) // 2
+        j = k - i
+
+        min_val, max_val = _get_sentinels(a.dtype)
+        is_a_safe = i > 0
+        is_b_safe = j < m
+
+        # A more robust way to handle conditional loading in Pallas to avoid
+        # the `scf.yield` lowering error.
+        # 1. Select a safe index to load from (0 if out of bounds).
+        # 2. Perform the load unconditionally.
+        # 3. Use `where` to replace the loaded value with a sentinel if the
+        #    original index was out of bounds.
+        safe_a_idx = jnp.where(is_a_safe, i - 1, 0)
+        a_val_loaded = pl.load(a, (safe_a_idx,))
+        a_val = jnp.where(is_a_safe, a_val_loaded, min_val)
+
+        safe_b_idx = jnp.where(is_b_safe, j, 0)
+        b_val_loaded = pl.load(b, (safe_b_idx,))
+        b_val = jnp.where(is_b_safe, b_val_loaded, max_val)
+
+        # The condition for a valid partition from `a`'s perspective.
+        # If `a[i-1] <= b[j]`, then `i` is a valid candidate, and we can
+        # potentially take even more from `a`. So, we search in `[i, high]`.
+        # Otherwise, `i` is too high, and we must search in `[low, i-1]`.
+        is_partition_valid = a_val <= b_val
+        new_low = jnp.where(is_partition_valid, i, low_i)
+        new_high = jnp.where(is_partition_valid, high_i, i - 1)
+        return new_low, new_high
+
+    # The loop terminates when low == high, and `final_low` is our desired `i`.
+    final_low, _ = jax.lax.while_loop(cond_fn, body_fn, (low, high))
+    return final_low, k - final_low
+
+
+def merge_parallel_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref):
+    """
+    Pallas kernel that merges two sorted arrays in parallel using the
+    Merge Path algorithm for block-level partitioning.
+    """
+    # Each block processes a fixed-size chunk of the output array.
+    BLOCK_SIZE = 256  # The number of output elements each block handles.
+    block_idx = pl.program_id(axis=0)
+
+    n, m = ak_ref.shape[0], bk_ref.shape[0]
+    total_len = n + m
+
+    # 1. Block-level Partitioning using Merge Path
+    # Determine the start and end of the output slice for this block.
+    k_start = block_idx * BLOCK_SIZE
+    k_end = jnp.minimum(k_start + BLOCK_SIZE, total_len)
+
+    # Use the binary search helper to find where this slice begins and ends
+    # in the input arrays. This is the "coarse-grained" partitioning.
+    a_start, b_start = binary_search_partition(k_start, ak_ref, bk_ref)
+    a_end, b_end = binary_search_partition(k_end, ak_ref, bk_ref)
+
+    # 2. Local Merge
+    # This block now performs a serial merge on the determined slices:
+    # ak_ref[a_start:a_end] and bk_ref[b_start:b_end].
+    # The logic is identical to `merge_indices_kernel_loop` but operates on
+    # these smaller, independent slices.
+
+    # State for the loops: (current_idx_a, current_idx_b, current_out_ptr)
+    initial_main_loop_state = (a_start, b_start, k_start)
+
+    def main_loop_cond(state):
+        idx_a, idx_b, _ = state
+        return jnp.logical_and(idx_a < a_end, idx_b < b_end)
+
+    def main_loop_body(state):
+        idx_a, idx_b, out_ptr = state
+        val_a = pl.load(ak_ref, (idx_a,))
+        val_b = pl.load(bk_ref, (idx_b,))
+        is_a_le_b = val_a <= val_b
+
+        # Store the smaller value and its original index.
+        key_to_store = jnp.where(is_a_le_b, val_a, val_b)
+        # The original index is offset by `n` if it comes from `bk`.
+        idx_to_store = jnp.where(is_a_le_b, idx_a, n + idx_b)
+
+        key_casted = key_to_store.astype(merged_keys_ref.dtype)
+        pl.store(merged_keys_ref, (out_ptr,), key_casted)
+        pl.store(merged_indices_ref, (out_ptr,), idx_to_store)
+
+        # Advance the index of the array from which the value was taken.
+        next_idx_a = jnp.where(is_a_le_b, idx_a + 1, idx_a)
+        next_idx_b = jnp.where(is_a_le_b, idx_b, idx_b + 1)
+        return next_idx_a, next_idx_b, out_ptr + 1
+
+    idx_a, idx_b, out_ptr = jax.lax.while_loop(
+        main_loop_cond, main_loop_body, initial_main_loop_state
+    )
+
+    # Cleanup loop for remaining elements from ak's slice.
+    initial_ak_loop_state = (idx_a, out_ptr)
+
+    def ak_loop_cond(state):
+        current_idx_a, _ = state
+        return current_idx_a < a_end
+
+    def ak_loop_body(state):
+        current_idx_a, current_out_ptr = state
+        val_to_store = pl.load(ak_ref, (current_idx_a,))
+        val_casted = val_to_store.astype(merged_keys_ref.dtype)
+        pl.store(merged_keys_ref, (current_out_ptr,), val_casted)
+        pl.store(merged_indices_ref, (current_out_ptr,), current_idx_a)
+        return current_idx_a + 1, current_out_ptr + 1
+
+    idx_a, out_ptr = jax.lax.while_loop(ak_loop_cond, ak_loop_body, initial_ak_loop_state)
+
+    # Cleanup loop for remaining elements from bk's slice.
+    initial_bk_loop_state = (idx_b, out_ptr)
+
+    def bk_loop_cond(state):
+        current_idx_b, _ = state
+        return current_idx_b < b_end
+
+    def bk_loop_body(state):
+        current_idx_b, current_out_ptr = state
+        val_to_store = pl.load(bk_ref, (current_idx_b,))
+        val_casted = val_to_store.astype(merged_keys_ref.dtype)
+        pl.store(merged_keys_ref, (current_out_ptr,), val_casted)
+        pl.store(merged_indices_ref, (current_out_ptr,), n + current_idx_b)
+        return current_idx_b + 1, current_out_ptr + 1
+
+    jax.lax.while_loop(bk_loop_cond, bk_loop_body, initial_bk_loop_state)
+
+
+@jax.jit
+def merge_arrays_parallel(ak: jax.Array, bk: jax.Array) -> Tuple[jax.Array, jax.Array]:
+    """
+    Merges two sorted JAX arrays using the parallel Merge Path Pallas kernel.
+    """
+    if ak.ndim != 1 or bk.ndim != 1:
+        raise ValueError("Input arrays ak and bk must be 1D.")
+
+    n, m = ak.shape[0], bk.shape[0]
+    total_len = n + m
+    if total_len == 0:
+        # Handle empty case to avoid grid computation errors.
+        key_dtype = jnp.result_type(ak.dtype, bk.dtype)
+        return jnp.array([], dtype=key_dtype), jnp.array([], dtype=jnp.int32)
+
+    # Determine the common dtype for keys by promoting types of ak and bk.
+    key_dtype = jnp.result_type(ak.dtype, bk.dtype)
+    out_keys_shape_dtype = jax.ShapeDtypeStruct((total_len,), key_dtype)
+    out_idx_shape_dtype = jax.ShapeDtypeStruct((total_len,), jnp.int32)
+
+    # Each block handles a fixed number of output elements.
+    BLOCK_SIZE = 256
+    # Grid size is the number of blocks needed to cover the whole output.
+    grid_size = (total_len + BLOCK_SIZE - 1) // BLOCK_SIZE
+
+    return pl.pallas_call(
+        merge_parallel_kernel,
+        grid=(grid_size,),
+        out_shape=(out_keys_shape_dtype, out_idx_shape_dtype),
+    )(ak, bk)
+
+
 if __name__ == "__main__":
     # Example from the original file for merge_sort_split_idx
     x_orig = jnp.array([1, 2, 3, 4, 5, 6, 7, 8])
@@ -482,54 +696,50 @@ if __name__ == "__main__":
             print(f"  Sorted bk: {bk_sorted}")
 
         # --- Correctness Verification ---
-        merged_keys_pallas, merged_indices_pallas = merge_arrays_indices_loop(ak_sorted, bk_sorted)
-        # Ensure computations are done before checking/timing
-        merged_keys_pallas.block_until_ready()
-        merged_indices_pallas.block_until_ready()
+        # Select implementation to test based on a condition, e.g., size
+        # For this example, let's test both and maybe a new parallel one.
+        implementations_to_test = {
+            "pallas_loop": merge_arrays_indices_loop,
+            "pallas_parallel": merge_arrays_parallel,
+        }
 
-        concatenated_inputs = jnp.concatenate([ak_sorted, bk_sorted])
-        # Reconstruct using indices to verify indices are correct
-        reconstructed_merged_from_indices_pallas = concatenated_inputs[merged_indices_pallas]
-        reconstructed_merged_from_indices_pallas.block_until_ready()
-
-        reference_merged_jax = jnp.sort(concatenated_inputs)
+        reference_merged_jax = jnp.sort(jnp.concatenate([ak_sorted, bk_sorted]))
         reference_merged_jax.block_until_ready()
+        concatenated_inputs = jnp.concatenate([ak_sorted, bk_sorted])
 
-        try:
-            # Verify merged keys directly
-            assert jnp.array_equal(merged_keys_pallas, reference_merged_jax)
-            # Verify reconstructed from indices
-            assert jnp.array_equal(reconstructed_merged_from_indices_pallas, reference_merged_jax)
-            print("  ✅ Correctness check PASSED (both keys and indices).")
-        except AssertionError:
-            print("  ❌ Correctness check FAILED.")
-            if size_ak < 20 and size_bk < 20:  # Print details for smaller failing arrays
-                print(f"    Pallas merged keys:   {merged_keys_pallas}")
-                print(
-                    f"    Pallas reconstructed (from indices): {reconstructed_merged_from_indices_pallas}"
-                )
-                print(f"    JAX reference sorted: {reference_merged_jax}")
-                print(f"    Pallas indices:       {merged_indices_pallas}")
+        all_passed = True
+        for name, merge_fn in implementations_to_test.items():
+            print(f"  Verifying implementation: {name}")
+            try:
+                merged_keys, merged_indices = merge_fn(ak_sorted, bk_sorted)
+                merged_keys.block_until_ready()
+                merged_indices.block_until_ready()
+
+                reconstructed = concatenated_inputs[merged_indices]
+                reconstructed.block_until_ready()
+
+                # Verify merged keys directly and via reconstructed indices
+                assert jnp.array_equal(merged_keys, reference_merged_jax)
+                assert jnp.array_equal(reconstructed, reference_merged_jax)
+                print("    ✅ Correctness check PASSED.")
+            except AssertionError as e:
+                all_passed = False
+                print(f"    ❌ Correctness check FAILED for {name}.")
+                if size_ak < 20 and size_bk < 20:
+                    print(f"      Pallas merged keys:   {merged_keys}")
+                    print(f"      Pallas reconstructed: {reconstructed}")
+                    print(f"      JAX reference sorted: {reference_merged_jax}")
+                    print(f"      Pallas indices:       {merged_indices}")
+                # Optional: raise e to stop on failure
+                print(f"    ❌ {e}")
+            except Exception as e:
+                all_passed = False
+                print(f"    ❌ An exception occurred during {name} execution: {e}")
 
         # --- Timing Comparison ---
-        # Pallas version timing (includes JIT compilation on first run for this shape/dtype)
-        # Warm-up run for Pallas
-        _keys, _indices = merge_arrays_indices_loop(ak_sorted, bk_sorted)
-        _keys.block_until_ready()
-        _indices.block_until_ready()
-
-        start_time_pallas = time.perf_counter()
-        for _ in range(10):  # Run a few times for more stable timing
-            # Re-assign to a new variable to ensure JAX doesn't
-            # optimize away repeated calls on the same var if it caches
-            pallas_keys_timing, pallas_indices_timing = merge_arrays_indices_loop(
-                ak_sorted, bk_sorted
-            )
-        pallas_keys_timing.block_until_ready()  # Ensure last call is finished
-        pallas_indices_timing.block_until_ready()
-        end_time_pallas = time.perf_counter()
-        pallas_time = (end_time_pallas - start_time_pallas) / 10
-        print(f"  ⏱️ Pallas merge_arrays_indices_loop avg time: {pallas_time*1000:.4f} ms")
+        if not all_passed:
+            print("  Skipping timing due to correctness failure.")
+            return
 
         # JAX baseline version timing (jnp.sort on concatenated array)
         # Warm-up run for JAX baseline
@@ -542,6 +752,22 @@ if __name__ == "__main__":
         end_time_jax = time.perf_counter()
         jax_time = (end_time_jax - start_time_jax) / 10
         print(f"  ⏱️ JAX jnp.sort(concatenate) avg time:      {jax_time*1000:.4f} ms")
+
+        # Pallas versions timing
+        for name, merge_fn in implementations_to_test.items():
+            # Warm-up run for Pallas
+            _keys, _indices = merge_fn(ak_sorted, bk_sorted)
+            _keys.block_until_ready()
+            _indices.block_until_ready()
+
+            start_time_pallas = time.perf_counter()
+            for _ in range(10):
+                pallas_keys_timing, pallas_indices_timing = merge_fn(ak_sorted, bk_sorted)
+            pallas_keys_timing.block_until_ready()
+            pallas_indices_timing.block_until_ready()
+            end_time_pallas = time.perf_counter()
+            pallas_time = (end_time_pallas - start_time_pallas) / 10
+            print(f"  ⏱️ Pallas '{name}' avg time: {pallas_time*1000:.4f} ms")
 
     # Run tests with different sizes and types
     master_key = jr.PRNGKey(42)
