@@ -6,13 +6,14 @@ from jax.experimental import pallas as pl
 
 from .common import binary_search_partition
 
+BLOCK_SIZE = 64
+
 
 def merge_parallel_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref):
     """
     Pallas kernel that merges two sorted arrays in parallel using the
     Merge Path algorithm for block-level partitioning.
     """
-    BLOCK_SIZE = 256
     block_idx = pl.program_id(axis=0)
 
     n, m = ak_ref.shape[0], bk_ref.shape[0]
@@ -102,7 +103,6 @@ def merge_arrays_parallel(ak: jax.Array, bk: jax.Array) -> Tuple[jax.Array, jax.
     out_keys_shape_dtype = jax.ShapeDtypeStruct((total_len,), key_dtype)
     out_idx_shape_dtype = jax.ShapeDtypeStruct((total_len,), jnp.int32)
 
-    BLOCK_SIZE = 32
     grid_size = (total_len + BLOCK_SIZE - 1) // BLOCK_SIZE
 
     return pl.pallas_call(
