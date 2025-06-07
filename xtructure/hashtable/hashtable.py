@@ -338,12 +338,6 @@ class HashTable:
 
         Returns:
             Tuple of (updated_table, updatable, unique_filled, idx, table_idx)
-
-        Note:
-            This implementation has a known issue with the search functionality
-            after parallel insertion. This should be fixed in future versions.
-
-        TODO: Fix search functionality after parallel insertion
         """
 
         # Get initial indices and byte representations
