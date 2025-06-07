@@ -1,7 +1,9 @@
 import time
+from functools import partial
 
 import jax.numpy as jnp
 import jax.random as jr
+from jax import jit
 
 from .merge_split import merge_arrays_indices_loop, merge_arrays_parallel
 
@@ -56,9 +58,9 @@ def run_correctness_tests():
     print("--- All correctness tests passed ---")
 
 
-def verify_and_time_merge(key, size_ak, size_bk, dtype=jnp.int32):
-    """Generates random data and benchmarks all merge implementations."""
-    print(f"\nTesting with ak_size={size_ak}, bk_size={size_bk}, dtype={dtype}")
+@partial(jit, static_argnums=(1, 2, 3))
+def generate_sorted_test_data(key, size_ak, size_bk, dtype):
+    """JIT-compiled function to generate and sort random test arrays."""
     key_ak, key_bk = jr.split(key)
 
     if jnp.issubdtype(dtype, jnp.integer):
@@ -76,6 +78,23 @@ def verify_and_time_merge(key, size_ak, size_bk, dtype=jnp.int32):
 
     ak_sorted = jnp.sort(ak_rand)
     bk_sorted = jnp.sort(bk_rand)
+    return ak_sorted, bk_sorted
+
+
+@jit
+def jax_baseline_merge(ak, bk):
+    """A JIT-compiled baseline merge implementation using standard JAX ops."""
+    return jnp.sort(jnp.concatenate([ak, bk]))
+
+
+def verify_and_time_merge(key, size_ak, size_bk, dtype=jnp.int32):
+    """Generates random data and benchmarks all merge implementations."""
+    print(f"\nTesting with ak_size={size_ak}, bk_size={size_bk}, dtype={dtype}")
+
+    # Use the JIT-compiled function for faster data generation
+    ak_sorted, bk_sorted = generate_sorted_test_data(key, size_ak, size_bk, dtype)
+    ak_sorted.block_until_ready()
+    bk_sorted.block_until_ready()
 
     if size_ak < 10 and size_bk < 10:
         print(f"  Sorted ak: {ak_sorted}")
@@ -122,14 +141,14 @@ def verify_and_time_merge(key, size_ak, size_bk, dtype=jnp.int32):
     print("\n  --- Timing Comparison ---")
 
     # JAX baseline
-    _ = jnp.sort(jnp.concatenate([ak_sorted, bk_sorted])).block_until_ready()
+    _ = jax_baseline_merge(ak_sorted, bk_sorted).block_until_ready()
     start_time_jax = time.perf_counter()
     for _ in range(10):
-        jax_output_timing = jnp.sort(jnp.concatenate([ak_sorted, bk_sorted]))
+        jax_output_timing = jax_baseline_merge(ak_sorted, bk_sorted)
     jax_output_timing.block_until_ready()
     end_time_jax = time.perf_counter()
     jax_time = (end_time_jax - start_time_jax) / 10
-    print(f"  ⏱️ JAX jnp.sort(concatenate) avg time:      {jax_time*1000:.4f} ms")
+    print(f"  ⏱️ JAX Baseline (JIT) avg time:             {jax_time*1000:.4f} ms")
 
     # Pallas versions
     for name, merge_fn in implementations_to_test.items():
@@ -152,7 +171,7 @@ if __name__ == "__main__":
     print("\n\n--- Running benchmarks with random values and timing ---")
     master_key = jr.PRNGKey(42)
 
-    sizes_to_test = [8, 200, 1000, 5000]
+    sizes_to_test = [8, 200, 1000, 5000, int(1e5)]
     dtypes_to_test = [jnp.int32, jnp.float32]
 
     for size in sizes_to_test:

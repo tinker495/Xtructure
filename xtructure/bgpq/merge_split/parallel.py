@@ -102,7 +102,7 @@ def merge_arrays_parallel(ak: jax.Array, bk: jax.Array) -> Tuple[jax.Array, jax.
     out_keys_shape_dtype = jax.ShapeDtypeStruct((total_len,), key_dtype)
     out_idx_shape_dtype = jax.ShapeDtypeStruct((total_len,), jnp.int32)
 
-    BLOCK_SIZE = 256
+    BLOCK_SIZE = 32
     grid_size = (total_len + BLOCK_SIZE - 1) // BLOCK_SIZE
 
     return pl.pallas_call(
