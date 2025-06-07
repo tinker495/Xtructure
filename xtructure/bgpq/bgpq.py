@@ -15,6 +15,7 @@ import jax
 import jax.numpy as jnp
 
 from ..core import Xtructurable
+from .merge_split import merge_arrays_parallel
 
 SORT_STABLE = True  # Use stable sorting to maintain insertion order for equal keys
 SIZE_DTYPE = jnp.uint32
@@ -42,13 +43,16 @@ def merge_sort_split(
             - Second half of corresponding values
     """
     n = ak.shape[-1]  # size of group
-    key = jnp.concatenate([ak, bk])
     val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), av, bv)
-    sorted_key, sorted_idx = jax.lax.sort_key_val(
-        key, jnp.arange(key.shape[0]), is_stable=SORT_STABLE
-    )
+    sorted_key, sorted_idx = merge_arrays_parallel(ak, bk)
     sorted_val = val[sorted_idx]
     return sorted_key[:n], sorted_val[:n], sorted_key[n:], sorted_val[n:]
+
+
+def sort_arrays(k: chex.Array, v: Xtructurable):
+    sorted_k, sorted_idx = jax.lax.sort_key_val(k, jnp.arange(k.shape[0]), is_stable=SORT_STABLE)
+    sorted_v = v[sorted_idx]
+    return sorted_k, sorted_v
 
 
 @jax.jit
@@ -173,13 +177,8 @@ class BGPQ:
         """
         n = blockk.shape[0]
         # Concatenate block and buffer
-        key = jnp.concatenate([blockk, heap.key_buffer])
+        sorted_key, sorted_idx = merge_arrays_parallel(blockk, heap.key_buffer)
         val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), blockv, heap.val_buffer)
-
-        # Sort concatenated arrays
-        sorted_key, sorted_idx = jax.lax.sort_key_val(
-            key, jnp.arange(key.shape[0]), is_stable=SORT_STABLE
-        )
         val = val[sorted_idx]
 
         # Check for active elements (non-infinity)
@@ -302,7 +301,7 @@ class BGPQ:
         Returns:
             Updated heap instance
         """
-
+        block_key, block_val = sort_arrays(block_key, block_val)
         # Merge with root node
         root_key, root_val, block_key, block_val = merge_sort_split(
             heap.key_store[0], heap.val_store[0], block_key, block_val
