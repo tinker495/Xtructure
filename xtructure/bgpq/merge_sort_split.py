@@ -542,7 +542,7 @@ def merge_arrays_parallel(ak: jax.Array, bk: jax.Array) -> Tuple[jax.Array, jax.
     out_idx_shape_dtype = jax.ShapeDtypeStruct((total_len,), jnp.int32)
 
     # Each block handles a fixed number of output elements.
-    BLOCK_SIZE = 256
+    BLOCK_SIZE = 32
     # Grid size is the number of blocks needed to cover the whole output.
     grid_size = (total_len + BLOCK_SIZE - 1) // BLOCK_SIZE
 
