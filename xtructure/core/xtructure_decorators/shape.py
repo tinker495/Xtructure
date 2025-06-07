@@ -50,11 +50,11 @@ def add_shape_dtype_len(cls: Type[T]) -> Type[T]:
                 # If the field is itself a xtructure_dataclass (nested shape_tuple)
                 if default_shape_field == ():
                     batch_shapes.append(shape.batch)
+                    shape = shape.__class__((), *shape[1:])
                 elif shape.batch[-len(default_shape_field) :] == default_shape_field:
                     batch_shapes.append(shape.batch[: -len(default_shape_field)])
                     cuted_batch_shape = shape.batch[-len(default_shape_field) :]
-                    cuted_shape = shape[2:]
-                    shape = shape_tuple(cuted_batch_shape, *cuted_shape)
+                    shape = shape.__class__(cuted_batch_shape, *shape[1:])
                 else:
                     batch_shapes.append(-1)
             else:
