@@ -15,7 +15,7 @@ import jax
 import jax.numpy as jnp
 
 from ..core import Xtructurable
-from .merge_sort_split import merge_arrays_parallel
+from .merge_split import merge_arrays_parallel
 
 SORT_STABLE = True  # Use stable sorting to maintain insertion order for equal keys
 SIZE_DTYPE = jnp.uint32
