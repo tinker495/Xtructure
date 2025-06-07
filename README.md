@@ -129,9 +129,9 @@ else:
     print("BGPQ: Heap is empty, cannot delete.")
 ```
 
-## Real-world Example
+## Working Example
 
-For a real-world application of `Xtructure`, see the [JAxtar](https://github.com/tinker495/JAxtar) repository. `JAxtar` utilizes `Xtructure` to implement a JAX-native, parallelizable A* and Q* solver for neural heuristic search research, demonstrating the library's capabilities in a high-performance computing context.
+For a fully functional example using `Xtructure`, check out the [JAxtar](https://github.com/tinker495/JAxtar) repository. `JAxtar` demonstrates how to use `Xtructure` to build a JAX-native, parallelizable A* and Q* solver for neural heuristic search research, showcasing the library in a real, high-performance computing workflow.
 
 ## Citation
 
