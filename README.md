@@ -4,9 +4,11 @@ A Python package providing JAX-optimized data structures, including a batched pr
 
 ## Features
 
-- Batched GPU Priority Queue (`BGPQ`)
-- Cuckoo Hash Table (`HashTable`)
-- Optimized for JAX
+- Stack (`Stack`): A LIFO (Last-In, First-Out) data structure.
+- Queue (`Queue`): A FIFO (First-In, First-Out) data structure.
+- Batched GPU Priority Queue (`BGPQ`): A batched priority queue optimized for GPU operations.
+- Cuckoo Hash Table (`HashTable`): A cuckoo hash table optimized for GPU operations.
+- Optimized for JAX.
 
 ## Installation
 
