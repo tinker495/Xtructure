@@ -22,8 +22,9 @@ Currently under active development, with frequent updates and potential bug fixe
 Detailed documentation on how to use Xtructure is available in the `doc/` directory:
 
 *   **[Core Concepts](./doc/core_concepts.md)**: Learn how to define custom data structures using `@xtructure_dataclass` and `FieldDescriptor`.
-*   **[HashTable Usage](./doc/hashtable.md)**: Guide to using the Cuckoo hash table.
+*   **[Stack Usage](./doc/stack.md)**: Guide to using the Stack data structure.
 *   **[BGPQ Usage](./doc/bgpq.md)**: Guide to using the Batched GPU Priority Queue.
+*   **[HashTable Usage](./doc/hashtable.md)**: Guide to using the Cuckoo hash table.
 
 Quick examples can still be found below for a brief overview.
 
@@ -77,19 +78,11 @@ else:
 # --- Batched GPU Priority Queue (BGPQ) Example ---
 print("\n--- BGPQ Example ---")
 
-
-# Define another custom data structure for the BGPQ values (can be the same or different)
-@xtructure_dataclass
-class MyHeapValue:
-    id: FieldDescriptor[jnp.int32]
-    data: FieldDescriptor[jnp.float32, (2,)]
-
-
 # 1. Build a BGPQ
 # BGPQ.build(max_size, batch_size, pytree_def_type_for_values_class)
 pq_max_size = 2000
 pq_batch_size = 64  # Items to insert/delete per operation
-priority_queue = BGPQ.build(pq_max_size, pq_batch_size, MyHeapValue)  # Pass the class for build
+priority_queue = BGPQ.build(pq_max_size, pq_batch_size, MyDataValue)  # Pass the class for build
 print(f"BGPQ: Built with max_size={priority_queue.max_size}, batch_size={priority_queue.batch_size}")
 
 # 2. Prepare keys and values to insert
@@ -97,7 +90,7 @@ num_items_to_insert_pq = 150
 prng_key = jax.random.PRNGKey(10)
 keys_for_pq = jax.random.uniform(prng_key, (num_items_to_insert_pq,)).astype(jnp.bfloat16)
 prng_key, subkey = jax.random.split(prng_key)
-values_for_pq = MyHeapValue.random((num_items_to_insert_pq,), key=subkey)
+values_for_pq = MyDataValue.random((num_items_to_insert_pq,), key=subkey)
 
 # 3. Insert data into BGPQ in batches
 print(f"BGPQ: Starting to insert {num_items_to_insert_pq} items.")

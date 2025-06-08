@@ -1,6 +1,7 @@
 from .bgpq import BGPQ
 from .core import FieldDescriptor, StructuredType, Xtructurable, xtructure_dataclass
 from .hashtable import HashTable
+from .stack import Stack
 
 __all__ = [
     # bgpq.py
@@ -9,6 +10,8 @@ __all__ = [
     "BGPQ",
     # hash.py
     "HashTable",
+    # stack.py
+    "Stack",
     # core.dataclass.py
     "Xtructurable",
     "xtructure_dataclass",
