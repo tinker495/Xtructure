@@ -33,7 +33,7 @@ def test_hash_table_insert():
 
     lookup = jax.jit(lambda table, sample: HashTable.lookup(table, sample))
     parallel_insert = jax.jit(
-        lambda table, sample, filled: HashTable.parallel_insert(table, sample, filled)
+        lambda table, sample, filled: table.parallel_insert(sample, filled)
     )
 
     # Check initial state
@@ -41,7 +41,8 @@ def test_hash_table_insert():
     assert not jnp.any(old_found)
 
     # Insert states
-    batched_sample, filled = HashTable.make_batched(XtructureValue, sample, batch)
+    batched_sample = sample.padding_as_batch((batch,))
+    filled = jnp.zeros((batch,), dtype=jnp.bool_).at[:count].set(True)
     table, inserted, _, _, _ = parallel_insert(table, batched_sample, filled)
 
     # Verify insertion
@@ -54,7 +55,7 @@ def test_same_state_insert_at_batch():
     batch = 5000
     table = HashTable.build(XtructureValue, 1, int(1e5))
     parallel_insert = jax.jit(
-        lambda table, sample, filled: HashTable.parallel_insert(table, sample, filled)
+        lambda table, sample: table.parallel_insert(sample)
     )
     lookup = jax.jit(lambda table, sample: HashTable.lookup(table, sample))
 
@@ -76,8 +77,7 @@ def test_same_state_insert_at_batch():
         # after this, some states are duplicated
         all_samples.append(samples)
 
-        batched_sample, filled = HashTable.make_batched(XtructureValue, samples, batch)
-        table, updatable, unique, idxs, table_idxs = parallel_insert(table, batched_sample, filled)
+        table, updatable, unique, idxs, table_idxs = parallel_insert(table, samples)
         counts += jnp.sum(updatable)
 
         # Verify uniqueness tracking

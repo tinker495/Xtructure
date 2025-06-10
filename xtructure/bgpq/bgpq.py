@@ -221,13 +221,8 @@ class BGPQ:
         """
         n = key.shape[0]
         # Pad arrays to match batch size
-        key_class = key.dtype
-        key = jnp.concatenate([key, jnp.full((batch_size - n,), jnp.inf, dtype=key_class)])
-        val = jax.tree_util.tree_map(
-            lambda x, y: jnp.concatenate([x, y]),
-            val,
-            val.default((batch_size - n,)),
-        )
+        key = jnp.pad(key, (0, batch_size - n), mode="constant", constant_values=jnp.inf)
+        val = val.padding_as_batch((batch_size,))
         return key, val
 
     @staticmethod

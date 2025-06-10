@@ -65,6 +65,9 @@ class Xtructurable(Protocol[T]):
     ) -> T:  # Ellipsis for default value
         ...
 
+    def padding_as_batch(self: T, batch_shape: TypingTuple[int, ...]) -> T:
+        ...
+
     # Methods and properties added by add_string_representation_methods
     def __str__(
         self,

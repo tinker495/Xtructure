@@ -59,15 +59,6 @@ else:
 
 # (Optional) Batching data for insertion if your data isn't already batched appropriately:
 # batch_size_for_insert = 50 # Example internal batch size if HashTable has one
-# batched_sample_data, filled_mask_for_batched = HashTable.make_batched(
-#     MyDataValue, # The class, not an instance
-#     sample_data,
-#     batch_size_for_insert
-# )
-# Then use batched_sample_data and filled_mask_for_batched in parallel_insert.
-# Note: The `parallel_insert` in the README example did not require pre-batching with `HashTable.make_batched`.
-# The provided `hash.py` also seems to handle arbitrary input sizes for `parallel_insert` with a `filled` mask.
-# `HashTable.make_batched` is available if manual batch control is needed.
 ```
 
 ## Key `HashTable` Details
@@ -84,7 +75,3 @@ else:
 *   **`HashTable.lookup(table, hash_func, item_to_lookup)`**:
     *   Returns `idx` (main table index), `table_idx` (Cuckoo slot index), and `found` (boolean).
     *   If `found` is true, the item can be retrieved from `table.table[idx, table_idx]`.
-*   **`HashTable.make_batched(dataclass, inputs, batch_size)`**: (Static method)
-    *   A helper to reshape and pad input data into fixed-size batches if needed for specific batch processing workflows, though `parallel_insert` itself can handle variable-sized inputs with a `filled_mask`.
-    *   `dataclass`: The class of your custom data structure.
-    *   Returns `batched_pytree, filled_mask_for_batched`.

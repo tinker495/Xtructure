@@ -203,7 +203,7 @@ class HashTable:
         )
         return idx, table_idx, found
 
-    def insert(table: "HashTable", input: Xtructurable):
+    def insert(table: "HashTable", input: Xtructurable) -> tuple["HashTable", bool, int, int]:
         """
         insert the state in the table
         """
@@ -217,33 +217,10 @@ class HashTable:
             return table
 
         idx, table_idx, found = HashTable.lookup(table, input)
-        return (
-            jax.lax.cond(
+        table = jax.lax.cond(
                 found, lambda _: table, lambda _: _update_table(table, input, idx, table_idx), None
-            ),
-            ~found,
-        )
-
-    @staticmethod
-    @partial(
-        jax.jit,
-        static_argnums=(
-            0,
-            2,
-        ),
-    )
-    def make_batched(statecls: Xtructurable, inputs: Xtructurable, batch_size: int):
-        """
-        make a batched version of the inputs
-        """
-        count = len(inputs)
-        batched = jax.tree_util.tree_map(
-            lambda x, y: jnp.concatenate([x, y]),
-            inputs,
-            statecls.default((batch_size - count,)),
-        )
-        filled = jnp.concatenate([jnp.ones(count), jnp.zeros(batch_size - count)], dtype=jnp.bool_)
-        return batched, filled
+            )
+        return table, ~found, idx, table_idx
 
     @staticmethod
     def _parallel_insert(
@@ -327,7 +304,7 @@ class HashTable:
         table.size += jnp.sum(updatable, dtype=SIZE_DTYPE)
         return table, idx, table_idx
 
-    def parallel_insert(table: "HashTable", inputs: Xtructurable, filled: chex.Array):
+    def parallel_insert(table: "HashTable", inputs: Xtructurable, filled: chex.Array = None):
         """
         Parallel insertion of multiple states into the hash table.
 
@@ -339,6 +316,8 @@ class HashTable:
         Returns:
             Tuple of (updated_table, updatable, unique_filled, idx, table_idx)
         """
+        if filled is None:
+            filled = jnp.ones((len(inputs),), dtype=jnp.bool_)
 
         # Get initial indices and byte representations
         initial_idx, bytes = jax.vmap(
