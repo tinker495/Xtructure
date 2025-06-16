@@ -73,7 +73,7 @@ def byterize_hash_func_builder(x: Xtructurable):
 
     if pad_len > 0:
 
-        def _to_uint32(bytes):
+        def _to_uint32_from_bytes(bytes):
             """Convert padded bytes to uint32 array."""
             x_padded = jnp.pad(bytes, (pad_len, 0), mode="constant", constant_values=0)
             x_reshaped = jnp.reshape(x_padded, (-1, 4))
@@ -83,38 +83,46 @@ def byterize_hash_func_builder(x: Xtructurable):
 
     else:
 
-        def _to_uint32(bytes):
+        def _to_uint32_from_bytes(bytes):
             """Convert bytes directly to uint32 array."""
             x_reshaped = jnp.reshape(bytes, (-1, 4))
             return jax.vmap(lambda x: jax.lax.bitcast_convert_type(x, jnp.uint32))(
                 x_reshaped
             ).reshape(-1)
 
-    def _h(x, seed=0):
-        """
-        Main hash function that converts state to bytes and applies xxhash.
-        Returns both hash value and byte representation.
-        """
-        bytes = x.bytes
-        uint32ed = _to_uint32(bytes)
-
+    def _to_uint32(x):
+        """Convert pytree to uint32 array."""
+        bytes = _byterize(x)
+        return _to_uint32_from_bytes(bytes)
+    
+    def _to_hash(uint32ed, seed):
+        """Convert uint32 array to hash value."""
         def scan_body(seed, x):
             result = xxhash(x, seed)
             return result, result
-
         hash_value, _ = jax.lax.scan(scan_body, seed, uint32ed)
-        return hash_value, bytes
+        return hash_value
 
-    return jax.jit(_byterize), jax.jit(_h)
+    def _h(x, seed=0):
+        """
+        Main hash function that converts state to bytes and applies xxhash.
+        Returns both hash value and its uint32 representation.
+        """
+        uint32ed = _to_uint32(x)
+        return _to_hash(uint32ed, seed), uint32ed
+
+    return jax.jit(_byterize), jax.jit(_to_uint32), jax.jit(_to_hash), jax.jit(_h)
 
 
 def hash_function_decorator(cls):
     """
     Decorator to add a hash function to a class.
     """
-    byterize, hash_func = byterize_hash_func_builder(cls)
+    _byterize, _to_uint32, _to_hash, _h = byterize_hash_func_builder(cls)
 
-    setattr(cls, "bytes", property(byterize))
-    setattr(cls, "hash", hash_func)
+    setattr(cls, "bytes", property(_byterize))
+    setattr(cls, "uint32ed", property(_to_uint32))
+    setattr(cls, "cls_hash", staticmethod(_to_hash))
+    setattr(cls, "hash", _h)
 
     return cls
