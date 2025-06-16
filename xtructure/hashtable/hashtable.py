@@ -301,9 +301,8 @@ class HashTable:
             overflowed = jnp.logical_and(
                 idxs.table_index >= table.cuckoo_table_n, unupdated
             )  # Overflowed index must be updated
-            # _idxs = jnp.where(updatable[:, jnp.newaxis], _idxs, jnp.full_like(_idxs, -1))
             idxs = jax.tree_util.tree_map(lambda x: jnp.where(updatable, x, -1), idxs)
-            idx_bytes = jax.vmap(lambda x: x.bytes)(idxs)
+            idx_bytes = jax.vmap(lambda x: x.uint32ed)(idxs)
             unique_idxs = jnp.unique(idx_bytes, axis=0, size=batch_len, return_index=True)[
                 1
             ]  # val = (unique_len, 2), unique_idxs = (unique_len,)
@@ -317,7 +316,7 @@ class HashTable:
 
         index = jax.tree_util.tree_map(lambda x: jnp.where(updatable, x, -1), index)
         # Use index_bytes for unique calculation instead of _idxs
-        hash_idx_bytes = jax.vmap(lambda x: x.bytes)(index)
+        hash_idx_bytes = jax.vmap(lambda x: x.uint32ed)(index)
         unique_idxs = jnp.unique(hash_idx_bytes, axis=0, size=batch_len, return_index=True)[1]
         not_uniques = (
             jnp.ones((batch_len,), dtype=jnp.bool_).at[unique_idxs].set(False)
