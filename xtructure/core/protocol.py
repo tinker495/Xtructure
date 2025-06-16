@@ -78,7 +78,8 @@ class Xtructurable(Protocol[T]):
         ...
 
     # Method added by add_indexing_methods
-    def at(self: T, index: Any) -> "AtIndexer":
+    @property
+    def at(self: T) -> "AtIndexer":
         ...
 
     @property
