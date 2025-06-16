@@ -1,6 +1,6 @@
 from .bgpq import BGPQ
 from .core import FieldDescriptor, StructuredType, Xtructurable, xtructure_dataclass
-from .hashtable import HashTable
+from .hashtable import HashIdx, HashTable
 from .queue import Queue
 from .stack import Stack
 
@@ -11,6 +11,7 @@ __all__ = [
     "BGPQ",
     # hash.py
     "HashTable",
+    "HashIdx",
     # queue.py
     "Queue",
     # stack.py

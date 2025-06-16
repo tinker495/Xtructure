@@ -1,3 +1,3 @@
-from .hashtable import HashTable
+from .hashtable import HashIdx, HashTable
 
-__all__ = ["HashTable"]
+__all__ = ["HashTable", "HashIdx"]

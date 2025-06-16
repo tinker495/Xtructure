@@ -16,10 +16,9 @@ def test_hash_table_lookup():
     table = HashTable.build(XtructureValue, 1, int(1e4))
 
     lookup = jax.jit(lambda table, sample: HashTable.lookup(table, sample))
-    idx, table_idx, found = jax.vmap(lookup, in_axes=(None, 0))(table, sample)
+    idx, found = jax.vmap(lookup, in_axes=(None, 0))(table, sample)
 
-    assert idx.shape == (count,)
-    assert table_idx.shape == (count,)
+    assert idx.shape.batch == (count,)
     assert found.shape == (count,)
     assert not jnp.any(found)  # Initially all should be not found
 
@@ -32,21 +31,19 @@ def test_hash_table_insert():
     sample = XtructureValue.random((count,))
 
     lookup = jax.jit(lambda table, sample: HashTable.lookup(table, sample))
-    parallel_insert = jax.jit(
-        lambda table, sample, filled: table.parallel_insert(sample, filled)
-    )
+    parallel_insert = jax.jit(lambda table, sample, filled: table.parallel_insert(sample, filled))
 
     # Check initial state
-    _, _, old_found = jax.vmap(lookup, in_axes=(None, 0))(table, sample)
+    _, old_found = jax.vmap(lookup, in_axes=(None, 0))(table, sample)
     assert not jnp.any(old_found)
 
     # Insert states
     batched_sample = sample.padding_as_batch((batch,))
     filled = jnp.zeros((batch,), dtype=jnp.bool_).at[:count].set(True)
-    table, inserted, _, _, _ = parallel_insert(table, batched_sample, filled)
+    table, inserted, _, _ = parallel_insert(table, batched_sample, filled)
 
     # Verify insertion
-    _, _, found = jax.vmap(lookup, in_axes=(None, 0))(table, sample)
+    _, found = jax.vmap(lookup, in_axes=(None, 0))(table, sample)
     assert jnp.all(found)  # All states should be found after insertion
     assert jnp.mean(inserted) > 0  # Some states should have been inserted
 
@@ -54,9 +51,7 @@ def test_hash_table_insert():
 def test_same_state_insert_at_batch():
     batch = 5000
     table = HashTable.build(XtructureValue, 1, int(1e5))
-    parallel_insert = jax.jit(
-        lambda table, sample: table.parallel_insert(sample)
-    )
+    parallel_insert = jax.jit(lambda table, sample: table.parallel_insert(sample))
     lookup = jax.jit(lambda table, sample: HashTable.lookup(table, sample))
 
     num = 10
@@ -77,11 +72,12 @@ def test_same_state_insert_at_batch():
         # after this, some states are duplicated
         all_samples.append(samples)
 
-        table, updatable, unique, idxs, table_idxs = parallel_insert(table, samples)
+        table, updatable, unique, idxs = parallel_insert(table, samples)
         counts += jnp.sum(updatable)
 
         # Verify uniqueness tracking
-        unique_idxs = jnp.unique(jnp.stack([idxs, table_idxs], axis=1), axis=0)
+        bytesed = jax.vmap(lambda x: x.bytes)(idxs)
+        unique_idxs = jnp.unique(bytesed, axis=0)
         assert (
             unique_idxs.shape[0] == unique_count
         ), f"unique_idxs.shape: {unique_idxs.shape}, unique_count: {unique_count}"
@@ -91,7 +87,7 @@ def test_same_state_insert_at_batch():
         ), "Duplicate indices in unique set"
 
         # Verify inserted states exist in table
-        _, _, found = jax.vmap(lookup, in_axes=(None, 0))(table, samples)
+        _, found = jax.vmap(lookup, in_axes=(None, 0))(table, samples)
         assert jnp.all(found), (
             "Inserted states not found in table\n",
             f"unique_count: {unique_count}\n",
@@ -106,9 +102,9 @@ def test_same_state_insert_at_batch():
 
     # Verify cross-batch duplicates
     for samples in all_samples:
-        idx, table_idx, found = jax.vmap(lookup, in_axes=(None, 0))(table, samples)
+        idx, found = jax.vmap(lookup, in_axes=(None, 0))(table, samples)
         assert jnp.all(found), "Cross-batch state missing"
-        contents = table.table[idx, table_idx]
+        contents = table.table[idx.index, idx.table_index]
         assert jnp.all(
             jax.vmap(lambda x, y: x == y)(contents, samples)
         ), "Inserted states not found in table"
@@ -136,7 +132,7 @@ def test_large_hash_table():
     inserted_count = 0
     for i in range(0, count, batch):
         batch_sample = sample[i : i + batch]
-        table, inserted, _, _, _ = parallel_insert(
+        table, inserted, _, _ = parallel_insert(
             table, batch_sample, jnp.ones(len(batch_sample), dtype=jnp.bool_)
         )
         inserted_count += jnp.sum(inserted)
@@ -146,5 +142,5 @@ def test_large_hash_table():
     ), f"inserted_count: {inserted_count}, unique_bytes_len: {unique_bytes_len}, unique_hash_len: {unique_hash_len}"
 
     # Verify all states can be found
-    _, _, found = jax.vmap(lookup, in_axes=(None, 0))(table, sample)
+    _, found = jax.vmap(lookup, in_axes=(None, 0))(table, sample)
     assert jnp.mean(found) == 1.0  # All states should be found

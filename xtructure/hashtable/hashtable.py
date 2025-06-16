@@ -10,12 +10,18 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from ..core import Xtructurable
+from ..core import FieldDescriptor, Xtructurable, xtructure_dataclass
 
 SIZE_DTYPE = jnp.uint32
 HASH_TABLE_IDX_DTYPE = jnp.uint8
 
 T = TypeVar("T")
+
+
+@xtructure_dataclass
+class HashIdx:
+    index: FieldDescriptor[SIZE_DTYPE]
+    table_index: FieldDescriptor[HASH_TABLE_IDX_DTYPE]
 
 
 @chex.dataclass
@@ -51,7 +57,7 @@ class HashTable:
         capacity: int,
         cuckoo_table_n: int = 2,
         hash_size_multiplier: int = 2,
-    ):
+    ) -> "HashTable":
         """
         Initialize a new hash table with specified parameters.
 
@@ -85,7 +91,7 @@ class HashTable:
         table: "HashTable",
         input_uint32ed: chex.Array,
         seed: int,
-    ):
+    ) -> int:
         """
         Calculate new index for input state using the hash function from its uint32ed representation.
         """
@@ -98,7 +104,7 @@ class HashTable:
         table: "HashTable",
         input: Xtructurable,
         seed: int,
-    ):
+    ) -> tuple[int]:
         """
         Calculate new index for input state using the hash function.
 
@@ -119,7 +125,7 @@ class HashTable:
         table: "HashTable",
         input: Xtructurable,
         seed: int,
-    ):
+    ) -> tuple[int, chex.Array]:
         """
         Calculate new index and return uint32ed representation of input state.
         Similar to get_new_idx but also returns the uint32ed representation for
@@ -134,11 +140,10 @@ class HashTable:
         table: "HashTable",
         input: Xtructurable,
         input_uint32ed: chex.Array,
-        idx: int,
-        table_idx: int,
+        idx: HashIdx,
         seed: int,
         found: bool,
-    ):
+    ) -> tuple[int, HashIdx, bool]:
         """
         Internal lookup method that searches for a state in the table.
         Uses cuckoo hashing technique to check multiple possible locations.
@@ -148,7 +153,6 @@ class HashTable:
             input: State to look up
             input_uint32ed: uint32ed representation of the state to look up
             idx: Initial index to check
-            table_idx: Which hash function to start with
             seed: Initial seed
             found: Whether the state has been found
 
@@ -156,47 +160,55 @@ class HashTable:
             Tuple of (seed, idx, table_idx, found)
         """
 
-        def _cond(val):
-            seed, idx, table_idx, found = val
-            filled_idx = table.table_idx[idx]
-            in_empty = table_idx >= filled_idx
+        def _cond(val: tuple[int, HashIdx, bool]):
+            seed, idx, found = val
+            filled_idx = table.table_idx[idx.index]
+            in_empty = idx.table_index >= filled_idx
             return jnp.logical_and(~found, ~in_empty)
 
-        def _while(val):
-            seed, idx, table_idx, found = val
+        def _while(val: tuple[int, HashIdx, bool]):
+            seed, idx, found = val
 
-            def get_new_idx_and_table_idx(seed, idx, table_idx):
-                next_table = table_idx >= (table.cuckoo_table_n - 1)
-                seed, idx, table_idx = jax.lax.cond(
+            def get_new_idx_and_table_idx(seed, idx):
+                next_table = idx.table_index >= (table.cuckoo_table_n - 1)
+                seed, idx = jax.lax.cond(
                     next_table,
                     lambda _: (
                         seed + 1,
-                        HashTable.get_new_idx_from_uint32ed(table, input_uint32ed, seed + 1),
-                        HASH_TABLE_IDX_DTYPE(0),
+                        HashIdx(
+                            index=HashTable.get_new_idx_from_uint32ed(
+                                table, input_uint32ed, seed + 1
+                            ),
+                            table_index=HASH_TABLE_IDX_DTYPE(0),
+                        ),
                     ),
-                    lambda _: (seed, idx, HASH_TABLE_IDX_DTYPE(table_idx + 1)),
+                    lambda _: (
+                        seed,
+                        HashIdx(
+                            index=idx.index,
+                            table_index=idx.table_index + 1,
+                        ),
+                    ),
                     None,
                 )
-                return seed, idx, table_idx
+                return seed, idx
 
-            state = table.table[idx, table_idx]
+            state = table.table[idx.index, idx.table_index]
             found = state == input
-            seed, idx, table_idx = jax.lax.cond(
+            seed, idx = jax.lax.cond(
                 found,
-                lambda _: (seed, idx, table_idx),
-                lambda _: get_new_idx_and_table_idx(seed, idx, table_idx),
+                lambda _: (seed, idx),
+                lambda _: get_new_idx_and_table_idx(seed, idx),
                 None,
             )
-            return seed, idx, table_idx, found
+            return seed, idx, found
 
-        state = table.table[idx, table_idx]
+        state = table.table[idx.index, idx.table_index]
         found = jnp.logical_or(found, state == input)
-        update_seed, idx, table_idx, found = jax.lax.while_loop(
-            _cond, _while, (seed, idx, table_idx, found)
-        )
-        return update_seed, idx, table_idx, found
+        update_seed, idx, found = jax.lax.while_loop(_cond, _while, (seed, idx, found))
+        return update_seed, idx, found
 
-    def lookup(table: "HashTable", input: Xtructurable):
+    def lookup(table: "HashTable", input: Xtructurable) -> tuple[HashIdx, bool]:
         """
         Finds the state in the hash table using Cuckoo hashing.
 
@@ -214,29 +226,28 @@ class HashTable:
         """
         _, input_uint32ed = input.hash(table.seed)
         index = HashTable.get_new_idx_from_uint32ed(table, input_uint32ed, table.seed)
-        _, idx, table_idx, found = HashTable._lookup(
-            table, input, input_uint32ed, index, HASH_TABLE_IDX_DTYPE(0), table.seed, False
-        )
-        return idx, table_idx, found
+        idx = HashIdx(index=index, table_index=HASH_TABLE_IDX_DTYPE(0))
+        _, idx, found = HashTable._lookup(table, input, input_uint32ed, idx, table.seed, False)
+        return idx, found
 
-    def insert(table: "HashTable", input: Xtructurable) -> tuple["HashTable", bool, int, int]:
+    def insert(table: "HashTable", input: Xtructurable) -> tuple["HashTable", bool, HashIdx]:
         """
         insert the state in the table
         """
 
-        def _update_table(table: "HashTable", input: Xtructurable, idx: int, table_idx: int):
+        def _update_table(table: "HashTable", input: Xtructurable, idx: HashIdx):
             """
             insert the state in the table
             """
-            table.table = table.table.at[idx, table_idx].set(input)
-            table.table_idx = table.table_idx.at[idx].add(1)
+            table.table = table.table.at[idx.index, idx.table_index].set(input)
+            table.table_idx = table.table_idx.at[idx.index].add(1)
             return table
 
-        idx, table_idx, found = HashTable.lookup(table, input)
+        idx, found = HashTable.lookup(table, input)
         table = jax.lax.cond(
-                found, lambda _: table, lambda _: _update_table(table, input, idx, table_idx), None
-            )
-        return table, ~found, idx, table_idx
+            found, lambda _: table, lambda _: _update_table(table, input, idx), None
+        )
+        return table, ~found, idx
 
     @staticmethod
     def _parallel_insert(
@@ -244,54 +255,56 @@ class HashTable:
         inputs: Xtructurable,
         inputs_uint32ed: chex.Array,
         seeds: chex.Array,
-        index: chex.Array,
+        index: HashIdx,
         updatable: chex.Array,
         batch_len: int,
     ):
-        def _next_idx(seeds, _idxs, unupdateds):
-            def get_new_idx_and_table_idx(seed, idx, table_idx, state_uint32ed):
-                next_table = table_idx >= (table.cuckoo_table_n - 1)
+        def _next_idx(seeds: chex.Array, idxs: HashIdx, unupdateds: chex.Array):
+            def get_new_idx_and_table_idx(seed, idx, state_uint32ed):
+                next_table = idx.table_index >= (table.cuckoo_table_n - 1)
 
                 def next_table_fn(seed, table):
                     next_idx = HashTable.get_new_idx_from_uint32ed(table, state_uint32ed, seed + 1)
                     seed = seed + 1
-                    return seed, next_idx, table.table_idx[next_idx].astype(jnp.uint32)
+                    return seed, HashIdx(index=next_idx, table_index=table.table_idx[next_idx])
 
-                seed, idx, table_idx = jax.lax.cond(
+                seed, idx = jax.lax.cond(
                     next_table,
                     next_table_fn,
-                    lambda seed, _: (seed, idx, table_idx + 1),
+                    lambda seed, _: (
+                        seed,
+                        HashIdx(index=idx.index, table_index=idx.table_index + 1),
+                    ),
                     seed,
                     table,
                 )
-                return seed, idx, table_idx
+                return seed, idx
 
-            idxs = _idxs[:, 0]
-            table_idxs = _idxs[:, 1]
-            seeds, idxs, table_idxs = jax.vmap(
-                lambda unupdated, seed, idx, table_idx, state_uint32ed: jax.lax.cond(
+            seeds, idxs = jax.vmap(
+                lambda unupdated, seed, idx, state_uint32ed: jax.lax.cond(
                     unupdated,
-                    lambda _: get_new_idx_and_table_idx(seed, idx, table_idx, state_uint32ed),
-                    lambda _: (seed, idx, table_idx),
+                    lambda _: get_new_idx_and_table_idx(seed, idx, state_uint32ed),
+                    lambda _: (seed, idx),
                     None,
                 )
-            )(unupdateds, seeds, idxs, table_idxs, inputs_uint32ed)
-            _idxs = jnp.stack((idxs, table_idxs), axis=1)
-            return seeds, _idxs
+            )(unupdateds, seeds, idxs, inputs_uint32ed)
+            return seeds, idxs
 
-        def _cond(val):
+        def _cond(val: tuple[chex.Array, HashIdx, chex.Array]):
             _, _, unupdated = val
             return jnp.any(unupdated)
 
-        def _while(val):
-            seeds, _idxs, unupdated = val
-            seeds, _idxs = _next_idx(seeds, _idxs, unupdated)
+        def _while(val: tuple[chex.Array, HashIdx, chex.Array]):
+            seeds, idxs, unupdated = val
+            seeds, idxs = _next_idx(seeds, idxs, unupdated)
 
             overflowed = jnp.logical_and(
-                _idxs[:, 1] >= table.cuckoo_table_n, unupdated
+                idxs.table_index >= table.cuckoo_table_n, unupdated
             )  # Overflowed index must be updated
-            _idxs = jnp.where(updatable[:, jnp.newaxis], _idxs, jnp.full_like(_idxs, -1))
-            unique_idxs = jnp.unique(_idxs, axis=0, size=batch_len, return_index=True)[
+            # _idxs = jnp.where(updatable[:, jnp.newaxis], _idxs, jnp.full_like(_idxs, -1))
+            idxs = jax.tree_util.tree_map(lambda x: jnp.where(updatable, x, -1), idxs)
+            idx_bytes = jax.vmap(lambda x: x.bytes)(idxs)
+            unique_idxs = jnp.unique(idx_bytes, axis=0, size=batch_len, return_index=True)[
                 1
             ]  # val = (unique_len, 2), unique_idxs = (unique_len,)
             not_uniques = (
@@ -300,26 +313,27 @@ class HashTable:
 
             unupdated = jnp.logical_and(updatable, not_uniques)
             unupdated = jnp.logical_or(unupdated, overflowed)
-            return seeds, _idxs, unupdated
+            return seeds, idxs, unupdated
 
-        _idxs = jnp.where(updatable[:, jnp.newaxis], index, jnp.full_like(index, -1))
-        unique_idxs = jnp.unique(_idxs, axis=0, size=batch_len, return_index=True)[
-            1
-        ]  # val = (unique_len, 2), unique_idxs = (unique_len,)
+        index = jax.tree_util.tree_map(lambda x: jnp.where(updatable, x, -1), index)
+        # Use index_bytes for unique calculation instead of _idxs
+        hash_idx_bytes = jax.vmap(lambda x: x.bytes)(index)
+        unique_idxs = jnp.unique(hash_idx_bytes, axis=0, size=batch_len, return_index=True)[1]
         not_uniques = (
             jnp.ones((batch_len,), dtype=jnp.bool_).at[unique_idxs].set(False)
-        )  # set the unique index to True
+        )  # set the unique index to False (i.e., mark uniques as False)
         unupdated = jnp.logical_and(
             updatable, not_uniques
         )  # remove the unique index from the unupdated index
 
-        seeds, index, _ = jax.lax.while_loop(_cond, _while, (seeds, _idxs, unupdated))
+        seeds, index, _ = jax.lax.while_loop(_cond, _while, (seeds, index, unupdated))
 
-        idx, table_idx = index[:, 0], index[:, 1].astype(HASH_TABLE_IDX_DTYPE)
-        table.table = table.table.at[idx, table_idx].set_as_condition(updatable, inputs)
-        table.table_idx = table.table_idx.at[idx].add(updatable)
+        table.table = table.table.at[index.index, index.table_index].set_as_condition(
+            updatable, inputs
+        )
+        table.table_idx = table.table_idx.at[index.index].add(updatable)
         table.size += jnp.sum(updatable, dtype=SIZE_DTYPE)
-        return table, idx, table_idx
+        return table, index
 
     def parallel_insert(table: "HashTable", inputs: Xtructurable, filled: chex.Array = None):
         """
@@ -349,21 +363,26 @@ class HashTable:
         unique_filled = jnp.logical_and(filled, unique)
 
         # Look up each state
-        seeds, idx, table_idx, found = jax.vmap(
-            partial(HashTable._lookup), in_axes=(None, 0, 0, 0, None, None, 0)
-        )(table, inputs, uint32eds, initial_idx, HASH_TABLE_IDX_DTYPE(0), table.seed, ~unique_filled)
+        idx = HashIdx(
+            index=initial_idx, table_index=jnp.zeros((batch_len,), dtype=HASH_TABLE_IDX_DTYPE)
+        )
+        seeds, idx, found = jax.vmap(partial(HashTable._lookup), in_axes=(None, 0, 0, 0, None, 0))(
+            table, inputs, uint32eds, idx, table.seed, ~unique_filled
+        )
 
-        idxs = jnp.stack([idx, table_idx], axis=1, dtype=SIZE_DTYPE)
         updatable = jnp.logical_and(~found, unique_filled)
 
         # Perform parallel insertion
-        table, idx, table_idx = HashTable._parallel_insert(
-            table, inputs, uint32eds, seeds, idxs, updatable, batch_len
+        table, idx = HashTable._parallel_insert(
+            table, inputs, uint32eds, seeds, idx, updatable, batch_len
         )
 
         # Get final indices
-        _, idx, table_idx, _ = jax.vmap(
-            partial(HashTable._lookup), in_axes=(None, 0, 0, 0, None, None, 0)
-        )(table, inputs, uint32eds, initial_idx, HASH_TABLE_IDX_DTYPE(0), table.seed, ~filled)
+        idx = HashIdx(
+            index=initial_idx, table_index=jnp.zeros((batch_len,), dtype=HASH_TABLE_IDX_DTYPE)
+        )
+        _, idx, _ = jax.vmap(partial(HashTable._lookup), in_axes=(None, 0, 0, 0, None, 0))(
+            table, inputs, uint32eds, idx, table.seed, ~filled
+        )
 
-        return table, updatable, unique_filled, idx, table_idx
+        return table, updatable, unique_filled, idx
