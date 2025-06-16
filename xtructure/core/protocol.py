@@ -1,4 +1,4 @@
-from typing import Any, Dict, Protocol
+from typing import Any, ClassVar, Dict, Protocol
 from typing import Tuple as TypingTuple
 from typing import Type, TypeVar
 
@@ -11,6 +11,17 @@ T = TypeVar("T")
 
 # Protocol defining the interface added by @xtructure_data
 class Xtructurable(Protocol[T]):
+    # A flag to indicate that the class has been processed by the xtructure_dataclass decorator.
+    is_xtructed: ClassVar[bool]
+
+    # The default shape of the structure, calculated at class creation time.
+    # This is a namedtuple whose fields mirror the class attributes.
+    default_shape: ClassVar[Any]
+
+    # The default dtype of the structure, calculated at class creation time.
+    # This is a namedtuple whose fields mirror the class attributes.
+    default_dtype: ClassVar[Any]
+
     # Fields from the original class that chex.dataclass would process
     # These are implicitly part of T. For the protocol to be complete,
     # it assumes T will have __annotations__.
@@ -20,11 +31,13 @@ class Xtructurable(Protocol[T]):
 
     # Methods and properties added by add_shape_dtype_len
     @property
-    def shape(self) -> Any:  # Actual type is a dynamically generated namedtuple
+    def shape(self) -> Any:
+        """The shape of the data in the object, as a dynamically-generated namedtuple."""
         ...
 
     @property
-    def dtype(self) -> Any:  # Actual type is a dynamically generated namedtuple
+    def dtype(self) -> Any:
+        """The dtype of the data in the object, as a dynamically-generated namedtuple."""
         ...
 
     # Method added by add_indexing_methods (responsible for __getitem__)
@@ -61,7 +74,7 @@ class Xtructurable(Protocol[T]):
 
     @classmethod
     def random(
-        cls: Type[T], shape: TypingTuple[int, ...] = ..., key: Any = ...
+        cls: Type[T], shape: TypingTuple[int, ...] = ..., key: chex.PRNGKey = ...
     ) -> T:  # Ellipsis for default value
         ...
 
@@ -87,6 +100,13 @@ class Xtructurable(Protocol[T]):
         ...
 
     def hash(self: T, seed: int = 0) -> TypingTuple[int, chex.Array]:
+        ...
+
+    # Method added by add_comparison_operators
+    def __eq__(self, other: Any) -> bool:
+        ...
+
+    def __ne__(self, other: Any) -> bool:
         ...
 
 
