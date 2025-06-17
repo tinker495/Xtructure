@@ -1,4 +1,4 @@
-from typing import Any, ClassVar, Dict, Protocol
+from typing import Any, ClassVar, Dict, NamedTuple, Protocol
 from typing import Tuple as TypingTuple
 from typing import Type, TypeVar
 
@@ -8,6 +8,12 @@ from .structuredtype import StructuredType
 
 T = TypeVar("T")
 
+class shape_tuple(NamedTuple):
+    batch: tuple[int, ...]
+    fields: Dict[str, Any]
+
+class dtype_tuple(NamedTuple):
+    fields: Dict[str, Any]
 
 # Protocol defining the interface added by @xtructure_data
 class Xtructurable(Protocol[T]):
@@ -31,12 +37,12 @@ class Xtructurable(Protocol[T]):
 
     # Methods and properties added by add_shape_dtype_len
     @property
-    def shape(self) -> Any:
+    def shape(self) -> shape_tuple:
         """The shape of the data in the object, as a dynamically-generated namedtuple."""
         ...
 
     @property
-    def dtype(self) -> Any:
+    def dtype(self) -> dtype_tuple:
         """The dtype of the data in the object, as a dynamically-generated namedtuple."""
         ...
 
