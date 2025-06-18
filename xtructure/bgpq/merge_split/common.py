@@ -68,11 +68,11 @@ def binary_search_partition(k, a, b):
         #    original index was out of bounds.
         safe_a_idx = jnp.where(is_a_safe, i - 1, 0)
         a_val_loaded = pl.load(a, (safe_a_idx,))
-        a_val = jnp.where(is_a_safe, a_val_loaded, min_val)
+        a_val = jnp.where(is_a_safe, a_val_loaded, jnp.full_like(a_val_loaded, min_val))
 
         safe_b_idx = jnp.where(is_b_safe, j, 0)
         b_val_loaded = pl.load(b, (safe_b_idx,))
-        b_val = jnp.where(is_b_safe, b_val_loaded, max_val)
+        b_val = jnp.where(is_b_safe, b_val_loaded, jnp.full_like(b_val_loaded, max_val))
 
         # The condition for a valid partition from `a`'s perspective.
         # If `a[i-1] <= b[j]`, then `i` is a valid candidate, and we can
