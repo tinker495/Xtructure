@@ -378,7 +378,7 @@ class HashTable:
 
         # Get initial indices and byte representations
         initial_idx, uint32eds = jax.vmap(
-            partial(HashTable.get_new_idx_byterized), in_axes=(None, 0, None)
+            HashTable.get_new_idx_byterized, in_axes=(None, 0, None)
         )(table, inputs, table.seed)
 
         batch_len = filled.shape[0]
@@ -392,7 +392,7 @@ class HashTable:
         idx = CuckooIdx(
             index=initial_idx, table_index=jnp.zeros((batch_len,), dtype=HASH_TABLE_IDX_DTYPE)
         )
-        seeds, idx, found = jax.vmap(partial(HashTable._lookup), in_axes=(None, 0, 0, 0, None, 0))(
+        seeds, idx, found = jax.vmap(HashTable._lookup, in_axes=(None, 0, 0, 0, None, 0))(
             table, inputs, uint32eds, idx, table.seed, ~unique_filled
         )
 
@@ -407,7 +407,7 @@ class HashTable:
         idx = CuckooIdx(
             index=initial_idx, table_index=jnp.zeros((batch_len,), dtype=HASH_TABLE_IDX_DTYPE)
         )
-        _, idx, _ = jax.vmap(partial(HashTable._lookup), in_axes=(None, 0, 0, 0, None, 0))(
+        _, idx, _ = jax.vmap(HashTable._lookup, in_axes=(None, 0, 0, 0, None, 0))(
             table, inputs, uint32eds, idx, table.seed, ~filled
         )
 
