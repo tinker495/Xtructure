@@ -15,11 +15,13 @@ import jax
 import jax.numpy as jnp
 
 from ..core import Xtructurable
-from .merge_split import merge_arrays_parallel
+from .merge_split import merge_arrays_parallel, merge_sort_split_idx
 
 SORT_STABLE = True  # Use stable sorting to maintain insertion order for equal keys
 SIZE_DTYPE = jnp.uint32
 
+# TODO: Make merge_arrays_parallel for TPU.
+merge_array_backend = merge_sort_split_idx if jax.default_backend() == "tpu" else merge_arrays_parallel
 
 @jax.jit
 def merge_sort_split(
@@ -44,7 +46,7 @@ def merge_sort_split(
     """
     n = ak.shape[-1]  # size of group
     val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), av, bv)
-    sorted_key, sorted_idx = merge_arrays_parallel(ak, bk)
+    sorted_key, sorted_idx = merge_array_backend(ak, bk)
     sorted_val = val[sorted_idx]
     return sorted_key[:n], sorted_val[:n], sorted_key[n:], sorted_val[n:]
 
