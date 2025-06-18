@@ -104,7 +104,7 @@ def test_same_state_insert_at_batch():
     for samples in all_samples:
         idx, found = jax.vmap(lookup, in_axes=(None, 0))(table, samples)
         assert jnp.all(found), "Cross-batch state missing"
-        contents = table.table[idx.index, idx.table_index]
+        contents = table.get(idx)
         assert jnp.all(
             jax.vmap(lambda x, y: x == y)(contents, samples)
         ), "Inserted states not found in table"
