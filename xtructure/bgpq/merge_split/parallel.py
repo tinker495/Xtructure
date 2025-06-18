@@ -41,8 +41,14 @@ def merge_parallel_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref):
         idx_to_store = jnp.where(is_a_le_b, idx_a, n + idx_b)
 
         key_casted = key_to_store.astype(merged_keys_ref.dtype)
-        pl.store(merged_keys_ref, (out_ptr,), key_casted)
-        pl.store(merged_indices_ref, (out_ptr,), idx_to_store)
+        pl.store(
+            merged_keys_ref, (pl.ds(out_ptr, 1),), jnp.expand_dims(key_casted, 0)
+        )
+        pl.store(
+            merged_indices_ref,
+            (pl.ds(out_ptr, 1),),
+            jnp.expand_dims(idx_to_store, 0),
+        )
 
         next_idx_a = jnp.where(is_a_le_b, idx_a + 1, idx_a)
         next_idx_b = jnp.where(is_a_le_b, idx_b, idx_b + 1)
@@ -62,8 +68,16 @@ def merge_parallel_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref):
         current_idx_a, current_out_ptr = state
         val_to_store = pl.load(ak_ref, (current_idx_a,))
         val_casted = val_to_store.astype(merged_keys_ref.dtype)
-        pl.store(merged_keys_ref, (current_out_ptr,), val_casted)
-        pl.store(merged_indices_ref, (current_out_ptr,), current_idx_a)
+        pl.store(
+            merged_keys_ref,
+            (pl.ds(current_out_ptr, 1),),
+            jnp.expand_dims(val_casted, 0),
+        )
+        pl.store(
+            merged_indices_ref,
+            (pl.ds(current_out_ptr, 1),),
+            jnp.expand_dims(current_idx_a, 0),
+        )
         return current_idx_a + 1, current_out_ptr + 1
 
     idx_a, out_ptr = jax.lax.while_loop(ak_loop_cond, ak_loop_body, initial_ak_loop_state)
@@ -78,8 +92,16 @@ def merge_parallel_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref):
         current_idx_b, current_out_ptr = state
         val_to_store = pl.load(bk_ref, (current_idx_b,))
         val_casted = val_to_store.astype(merged_keys_ref.dtype)
-        pl.store(merged_keys_ref, (current_out_ptr,), val_casted)
-        pl.store(merged_indices_ref, (current_out_ptr,), n + current_idx_b)
+        pl.store(
+            merged_keys_ref,
+            (pl.ds(current_out_ptr, 1),),
+            jnp.expand_dims(val_casted, 0),
+        )
+        pl.store(
+            merged_indices_ref,
+            (pl.ds(current_out_ptr, 1),),
+            jnp.expand_dims(n + current_idx_b, 0),
+        )
         return current_idx_b + 1, current_out_ptr + 1
 
     jax.lax.while_loop(bk_loop_cond, bk_loop_body, initial_bk_loop_state)
