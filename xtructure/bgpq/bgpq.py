@@ -179,7 +179,7 @@ class BGPQ:
         """
         n = blockk.shape[0]
         # Concatenate block and buffer
-        sorted_key, sorted_idx = merge_arrays_parallel(blockk, heap.key_buffer)
+        sorted_key, sorted_idx = merge_array_backend(blockk, heap.key_buffer)
         val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), blockv, heap.val_buffer)
         val = val[sorted_idx]
 
