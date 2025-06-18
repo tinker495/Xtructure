@@ -67,14 +67,19 @@ def binary_search_partition(k, a, b):
         #    if the original index was out of bounds. This avoids jnp.where,
         #    which can cause type verification issues on TPU.
         safe_a_idx = jnp.where(is_a_safe, i - 1, 0)
-        a_val_loaded = jnp.squeeze(pl.load(a, (safe_a_idx,)))
-        min_val_jax = jnp.array(min_val, dtype=a.dtype)
-        a_val = a_val_loaded * is_a_safe + min_val_jax * (1 - is_a_safe)
+        a_val_loaded = pl.load(a, (safe_a_idx,))
+
+        # Explicitly broadcast all terms to the same shape to avoid a compiler
+        # bug with implicit broadcasting on TPU.
+        is_a_safe_b = jnp.broadcast_to(is_a_safe, a_val_loaded.shape)
+        min_val_b = jnp.broadcast_to(jnp.array(min_val, dtype=a.dtype), a_val_loaded.shape)
+        a_val = a_val_loaded * is_a_safe_b + min_val_b * (1 - is_a_safe_b)
 
         safe_b_idx = jnp.where(is_b_safe, j, 0)
-        b_val_loaded = jnp.squeeze(pl.load(b, (safe_b_idx,)))
-        max_val_jax = jnp.array(max_val, dtype=a.dtype)
-        b_val = b_val_loaded * is_b_safe + max_val_jax * (1 - is_b_safe)
+        b_val_loaded = pl.load(b, (safe_b_idx,))
+        is_b_safe_b = jnp.broadcast_to(is_b_safe, b_val_loaded.shape)
+        max_val_b = jnp.broadcast_to(jnp.array(max_val, dtype=a.dtype), b_val_loaded.shape)
+        b_val = b_val_loaded * is_b_safe_b + max_val_b * (1 - is_b_safe_b)
 
         # The condition for a valid partition from `a`'s perspective.
         # If `a[i-1] <= b[j]`, then `i` is a valid candidate, and we can
