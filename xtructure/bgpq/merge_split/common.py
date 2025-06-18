@@ -8,7 +8,8 @@ def _get_sentinels(dtype):
     if jnp.issubdtype(dtype, jnp.integer):
         return jnp.iinfo(dtype).min, jnp.iinfo(dtype).max
     if jnp.issubdtype(dtype, jnp.floating):
-        return dtype.type(-jnp.inf), dtype.type(jnp.inf)
+        finfo = jnp.finfo(dtype)
+        return finfo.min, finfo.max
     raise TypeError(f"Unsupported dtype for sentinel values: {dtype}")
 
 
@@ -60,21 +61,18 @@ def binary_search_partition(k, a, b):
         is_a_safe = i > 0
         is_b_safe = j < m
 
-        # A more robust way to handle conditional loading in Pallas to avoid
-        # the `scf.yield` lowering error.
         # 1. Select a safe index to load from (0 if out of bounds).
         # 2. Perform the load unconditionally.
-        # 3. Use `where` to replace the loaded value with a sentinel if the
-        #    original index was out of bounds.
+        # 3. Use arithmetic to select between the loaded value and a sentinel
+        #    if the original index was out of bounds. This avoids jnp.where,
+        #    which can cause type verification issues on TPU.
         safe_a_idx = jnp.where(is_a_safe, i - 1, 0)
-        a_val_loaded = pl.load(a, (safe_a_idx,))
-        a_val_loaded_scalar = jnp.squeeze(a_val_loaded)
-        a_val = jnp.where(is_a_safe, a_val_loaded_scalar, min_val)
+        a_val_loaded = jnp.squeeze(pl.load(a, (safe_a_idx,)))
+        a_val = jnp.where(is_a_safe, a_val_loaded, min_val)
 
         safe_b_idx = jnp.where(is_b_safe, j, 0)
-        b_val_loaded = pl.load(b, (safe_b_idx,))
-        b_val_loaded_scalar = jnp.squeeze(b_val_loaded)
-        b_val = jnp.where(is_b_safe, b_val_loaded_scalar, max_val)
+        b_val_loaded = jnp.squeeze(pl.load(b, (safe_b_idx,)))
+        b_val = jnp.where(is_b_safe, b_val_loaded, max_val)
 
         # The condition for a valid partition from `a`'s perspective.
         # If `a[i-1] <= b[j]`, then `i` is a valid candidate, and we can
