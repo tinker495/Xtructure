@@ -5,12 +5,8 @@ from jax.experimental import pallas as pl
 
 def _get_sentinels(dtype):
     """Returns the min and max sentinel values for a given dtype."""
-    if jnp.issubdtype(dtype, jnp.integer):
-        return jnp.iinfo(dtype).min, jnp.iinfo(dtype).max
-    if jnp.issubdtype(dtype, jnp.floating):
-        finfo = jnp.finfo(dtype)
-        return finfo.min, finfo.max
-    raise TypeError(f"Unsupported dtype for sentinel values: {dtype}")
+    finfo = jnp.finfo(dtype)
+    return finfo.min, finfo.max
 
 
 def binary_search_partition(k, a, b):
@@ -61,25 +57,19 @@ def binary_search_partition(k, a, b):
         is_a_safe = i > 0
         is_b_safe = j < m
 
+        # A more robust way to handle conditional loading in Pallas to avoid
+        # the `scf.yield` lowering error.
         # 1. Select a safe index to load from (0 if out of bounds).
         # 2. Perform the load unconditionally.
-        # 3. Use arithmetic to select between the loaded value and a sentinel
-        #    if the original index was out of bounds. This avoids jnp.where,
-        #    which can cause type verification issues on TPU.
+        # 3. Use `where` to replace the loaded value with a sentinel if the
+        #    original index was out of bounds.
         safe_a_idx = jnp.where(is_a_safe, i - 1, 0)
         a_val_loaded = pl.load(a, (safe_a_idx,))
-
-        # Explicitly broadcast all terms to the same shape to avoid a compiler
-        # bug with implicit broadcasting on TPU.
-        is_a_safe_b = jnp.broadcast_to(is_a_safe, a_val_loaded.shape)
-        min_val_b = jnp.broadcast_to(jnp.array(min_val, dtype=a.dtype), a_val_loaded.shape)
-        a_val = a_val_loaded * is_a_safe_b + min_val_b * (1 - is_a_safe_b)
+        a_val = jnp.where(is_a_safe, a_val_loaded, min_val)
 
         safe_b_idx = jnp.where(is_b_safe, j, 0)
         b_val_loaded = pl.load(b, (safe_b_idx,))
-        is_b_safe_b = jnp.broadcast_to(is_b_safe, b_val_loaded.shape)
-        max_val_b = jnp.broadcast_to(jnp.array(max_val, dtype=a.dtype), b_val_loaded.shape)
-        b_val = b_val_loaded * is_b_safe_b + max_val_b * (1 - is_b_safe_b)
+        b_val = jnp.where(is_b_safe, b_val_loaded, max_val)
 
         # The condition for a valid partition from `a`'s perspective.
         # If `a[i-1] <= b[j]`, then `i` is a valid candidate, and we can
