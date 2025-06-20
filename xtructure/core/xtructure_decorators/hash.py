@@ -37,6 +37,17 @@ def xxhash(x, seed):
     return acc
 
 
+def uint32ed_to_hash(uint32ed, seed):
+    """Convert uint32 array to hash value."""
+
+    def scan_body(seed, x):
+        result = xxhash(x, seed)
+        return result, result
+
+    hash_value, _ = jax.lax.scan(scan_body, seed, uint32ed)
+    return hash_value
+
+
 def byterize_hash_func_builder(x: Xtructurable):
     """
     Build a hash function for the pytree.
@@ -94,35 +105,34 @@ def byterize_hash_func_builder(x: Xtructurable):
         """Convert pytree to uint32 array."""
         bytes = _byterize(x)
         return _to_uint32_from_bytes(bytes)
-    
-    def _to_hash(uint32ed, seed):
-        """Convert uint32 array to hash value."""
-        def scan_body(seed, x):
-            result = xxhash(x, seed)
-            return result, result
-        hash_value, _ = jax.lax.scan(scan_body, seed, uint32ed)
-        return hash_value
 
     def _h(x, seed=0):
         """
         Main hash function that converts state to bytes and applies xxhash.
         Returns both hash value and its uint32 representation.
         """
-        uint32ed = _to_uint32(x)
-        return _to_hash(uint32ed, seed), uint32ed
+        return uint32ed_to_hash(_to_uint32(x), seed)
 
-    return jax.jit(_byterize), jax.jit(_to_uint32), jax.jit(_to_hash), jax.jit(_h)
+    def _h_with_uint32ed(x, seed=0):
+        """
+        Main hash function that converts state to bytes and applies xxhash.
+        Returns both hash value and its uint32 representation.
+        """
+        uint32ed = _to_uint32(x)
+        return uint32ed_to_hash(uint32ed, seed), uint32ed
+
+    return jax.jit(_byterize), jax.jit(_to_uint32), jax.jit(_h), jax.jit(_h_with_uint32ed)
 
 
 def hash_function_decorator(cls):
     """
     Decorator to add a hash function to a class.
     """
-    _byterize, _to_uint32, _to_hash, _h = byterize_hash_func_builder(cls)
+    _byterize, _to_uint32, _h, _h_with_uint32ed = byterize_hash_func_builder(cls)
 
     setattr(cls, "bytes", property(_byterize))
     setattr(cls, "uint32ed", property(_to_uint32))
-    setattr(cls, "cls_hash", staticmethod(_to_hash))
     setattr(cls, "hash", _h)
+    setattr(cls, "hash_with_uint32ed", _h_with_uint32ed)
 
     return cls
