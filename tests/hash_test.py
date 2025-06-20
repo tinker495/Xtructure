@@ -67,7 +67,7 @@ def test_same_state_insert_at_batch():
 
         # Create deliberate duplicates within the batch
         samples = samples.at[new_clone_idx].set(samples[cloned_sample_idx])
-        h, bytesed = jax.vmap(lambda x: x.hash(0))(samples)
+        bytesed = jax.vmap(lambda x: x.bytes)(samples)
         unique_count = jnp.unique(bytesed, axis=0).shape[0]
         # after this, some states are duplicated
         all_samples.append(samples)
@@ -116,7 +116,7 @@ def test_large_hash_table():
     table = HashTable.build(XtructureValue, 1, count)
 
     sample = XtructureValue.random((count,))
-    hash, bytes = jax.vmap(lambda x: x.hash(0))(sample)
+    hash, bytes = jax.vmap(lambda x: x.hash_with_uint32ed(0))(sample)
     unique_bytes = jnp.unique(bytes, axis=0, return_index=True)[1]
     unique_bytes_len = unique_bytes.shape[0]
     unique_hash = jnp.unique(hash, axis=0, return_index=True)[1]
