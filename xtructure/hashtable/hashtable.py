@@ -183,7 +183,7 @@ class HashTable:
                         seed + 1,
                         CuckooIdx(
                             index=get_new_idx_from_uint32ed(
-                                table.table.cls_hash, input_uint32ed, table.capacity, seed + 1
+                                input.cls_hash, input_uint32ed, table.capacity, seed + 1
                             ),
                             table_index=HASH_TABLE_IDX_DTYPE(0),
                         ),
@@ -234,7 +234,7 @@ class HashTable:
         """
         _, input_uint32ed = input.hash(table.seed)
         index = get_new_idx_from_uint32ed(
-            table.table.cls_hash, input_uint32ed, table.capacity, table.seed
+            input.cls_hash, input_uint32ed, table.capacity, table.seed
         )
         idx = CuckooIdx(index=index, table_index=HASH_TABLE_IDX_DTYPE(0))
         _, idx, found = HashTable._lookup(table, input, input_uint32ed, idx, table.seed, False)
@@ -287,7 +287,7 @@ class HashTable:
                     seed, _, input_uint32ed = args
                     new_seed = seed + 1
                     new_idx_index = get_new_idx_from_uint32ed(
-                        table.table.cls_hash, input_uint32ed, table.capacity, new_seed
+                        inputs.cls_hash, input_uint32ed, table.capacity, new_seed
                     )
                     new_idx = CuckooIdx(index=new_idx_index, table_index=HASH_TABLE_IDX_DTYPE(0))
                     return new_seed, new_idx
@@ -353,7 +353,7 @@ class HashTable:
         """
         _, input_uint32eds = jax.vmap(lambda x: x.hash(table.seed))(inputs)
         initial_idx = jax.vmap(
-            lambda x: get_new_idx_from_uint32ed(table.table.cls_hash, x, table.capacity, table.seed)
+            lambda x: get_new_idx_from_uint32ed(inputs.cls_hash, x, table.capacity, table.seed)
         )(input_uint32eds)
 
         batch_size = jax.tree_util.tree_leaves(inputs)[0].shape[0]
@@ -406,7 +406,7 @@ class HashTable:
 
                 def next_table_fn(seed, table):
                     next_idx = get_new_idx_from_uint32ed(
-                        table.table.cls_hash, state_uint32ed, table.capacity, seed + 1
+                        inputs.cls_hash, state_uint32ed, table.capacity, seed + 1
                     )
                     seed = seed + 1
                     return seed, CuckooIdx(index=next_idx, table_index=table.table_idx[next_idx])
