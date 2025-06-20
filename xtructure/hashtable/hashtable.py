@@ -249,78 +249,9 @@ class HashTable:
         Uses cuckoo hashing technique to check multiple possible locations.
         """
 
-        def _cond(val):
-            _, _, _, still_searching = val
-            return jnp.any(still_searching)
-
-        def _while(val):
-            seeds, idxs, founds, still_searching = val
-
-            def get_new_idx_and_table_idx(seed, idx, input_uint32ed):
-                next_table = idx.table_index >= (table.cuckoo_table_n - 1)
-
-                def next_table_fn(args):
-                    seed, _, input_uint32ed = args
-                    new_seed = seed + 1
-                    new_idx_index = get_new_idx_from_uint32ed(
-                        input_uint32ed, table.capacity, new_seed
-                    )
-                    new_idx = CuckooIdx(index=new_idx_index, table_index=HASH_TABLE_IDX_DTYPE(0))
-                    return new_seed, new_idx
-
-                def not_next_table_fn(args):
-                    seed, idx, _ = args
-                    new_idx = CuckooIdx(index=idx.index, table_index=idx.table_index + 1)
-                    return seed, new_idx
-
-                return jax.lax.cond(
-                    next_table, next_table_fn, not_next_table_fn, (seed, idx, input_uint32ed)
-                )
-
-            next_seeds, next_idxs = jax.vmap(get_new_idx_and_table_idx)(
-                seeds, idxs, input_uint32eds
-            )
-
-            seeds = jnp.where(still_searching, next_seeds, seeds)
-
-            def where_func(current, next_val):
-                if current.ndim > 0 and still_searching.shape != current.shape:
-                    still_searching_b = jnp.expand_dims(
-                        still_searching, axis=tuple(range(1, current.ndim))
-                    )
-                    return jnp.where(still_searching_b, next_val, current)
-                return jnp.where(still_searching, next_val, current)
-
-            idxs = jax.tree_util.tree_map(where_func, idxs, next_idxs)
-
-            flat_indices = idxs.index * table.cuckoo_table_n + idxs.table_index
-            states = table.table[flat_indices]
-            newly_found = states == inputs
-
-            founds = jnp.logical_or(founds, jnp.logical_and(newly_found, still_searching))
-
-            table_indices_for_lookup = table.table_idx[idxs.index]
-            in_empty_slot = idxs.table_index >= table_indices_for_lookup
-
-            still_searching = jnp.logical_and(~founds, ~in_empty_slot)
-
-            return seeds, idxs, founds, still_searching
-
-        flat_indices = idxs.index * table.cuckoo_table_n + idxs.table_index
-        states = table.table[flat_indices]
-        newly_found = states == inputs
-
-        founds = jnp.logical_or(founds, newly_found)
-
-        table_indices_for_lookup = table.table_idx[idxs.index]
-        in_empty_slot = idxs.table_index >= table_indices_for_lookup
-
-        still_searching = jnp.logical_and(~founds, ~in_empty_slot)
-
-        seeds, idxs, founds, _ = jax.lax.while_loop(
-            _cond, _while, (seeds, idxs, founds, still_searching)
+        seeds, idxs, founds = jax.vmap(HashTable._lookup, in_axes=(None, 0, 0, 0, 0, 0))(
+            table, inputs, input_uint32eds, idxs, seeds, founds
         )
-
         return seeds, idxs, founds
 
     def lookup_parallel(table: "HashTable", inputs: Xtructurable) -> tuple[HashIdx, bool]:
@@ -331,13 +262,13 @@ class HashTable:
             inputs, table.capacity, table.seed
         )
 
-        batch_size = jax.tree_util.tree_leaves(inputs)[0].shape[0]
+        batch_size = inputs.shape.batch
 
         idxs = CuckooIdx(
-            index=initial_idx, table_index=jnp.zeros((batch_size,), dtype=HASH_TABLE_IDX_DTYPE)
+            index=initial_idx, table_index=jnp.zeros(batch_size, dtype=HASH_TABLE_IDX_DTYPE)
         )
-        seeds = jnp.full((batch_size,), table.seed, dtype=jnp.uint32)
-        founds = jnp.zeros((batch_size,), dtype=jnp.bool_)
+        seeds = jnp.full(batch_size, table.seed, dtype=jnp.uint32)
+        founds = jnp.zeros(batch_size, dtype=jnp.bool_)
 
         _, idx, found = HashTable._lookup_parallel(
             table, inputs, input_uint32eds, idxs, seeds, founds
