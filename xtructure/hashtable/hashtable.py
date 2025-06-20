@@ -195,6 +195,7 @@ class HashTable:
         update_seed, idx, found = jax.lax.while_loop(_cond, _while, (seed, idx, found))
         return update_seed, idx, found
 
+    @jax.jit
     def lookup_cuckoo(table: "HashTable", input: Xtructurable) -> tuple[CuckooIdx, bool]:
         """
         Finds the state in the hash table using Cuckoo hashing.
@@ -216,6 +217,7 @@ class HashTable:
         _, idx, found = HashTable._lookup(table, input, input_uint32ed, idx, table.seed, False)
         return idx, found
 
+    @jax.jit
     def lookup(table: "HashTable", input: Xtructurable) -> tuple[HashIdx, bool]:
         """
         Finds the state in the hash table using Cuckoo hashing.
@@ -249,11 +251,72 @@ class HashTable:
         Uses cuckoo hashing technique to check multiple possible locations.
         """
 
-        seeds, idxs, founds = jax.vmap(HashTable._lookup, in_axes=(None, 0, 0, 0, 0, 0))(
-            table, inputs, input_uint32eds, idxs, seeds, founds
+        def _lu(
+            input: Xtructurable,
+            input_uint32ed: chex.Array,
+            idx: CuckooIdx,
+            seed: int,
+            found: bool,
+        ) -> tuple[int, CuckooIdx, bool]:
+            # lookup but not copying the table
+            def _cond(val: tuple[int, CuckooIdx, bool]):
+                seed, idx, found = val
+                filled_idx = table.table_idx[idx.index]
+                in_empty = idx.table_index >= filled_idx
+                return jnp.logical_and(~found, ~in_empty)
+
+            def _while(val: tuple[int, CuckooIdx, bool]):
+                seed, idx, found = val
+
+                def get_new_idx_and_table_idx(seed, idx):
+                    next_table = idx.table_index >= (table.cuckoo_table_n - 1)
+                    seed, idx = jax.lax.cond(
+                        next_table,
+                        lambda _: (
+                            seed + 1,
+                            CuckooIdx(
+                                index=get_new_idx_from_uint32ed(
+                                    input_uint32ed, table.capacity, seed + 1
+                                ),
+                                table_index=HASH_TABLE_IDX_DTYPE(0),
+                            ),
+                        ),
+                        lambda _: (
+                            seed,
+                            CuckooIdx(
+                                index=idx.index,
+                                table_index=idx.table_index + 1,
+                            ),
+                        ),
+                        None,
+                    )
+                    return seed, idx
+
+                state = table.table[
+                    idx.index * table.cuckoo_table_n + idx.table_index
+                ]  # Modified indexing
+                found = state == input
+                seed, idx = jax.lax.cond(
+                    found,
+                    lambda _: (seed, idx),
+                    lambda _: get_new_idx_and_table_idx(seed, idx),
+                    None,
+                )
+                return seed, idx, found
+
+            state = table.table[
+                idx.index * table.cuckoo_table_n + idx.table_index
+            ]  # Modified indexing
+            found = jnp.logical_or(found, state == input)
+            update_seed, idx, found = jax.lax.while_loop(_cond, _while, (seed, idx, found))
+            return update_seed, idx, found
+
+        seeds, idxs, founds = jax.vmap(_lu, in_axes=(0, 0, 0, 0, 0))(
+            inputs, input_uint32eds, idxs, seeds, founds
         )
         return seeds, idxs, founds
 
+    @jax.jit
     def lookup_parallel(table: "HashTable", inputs: Xtructurable) -> tuple[HashIdx, bool]:
         """
         Finds the state in the hash table using Cuckoo hashing.
@@ -275,6 +338,7 @@ class HashTable:
         )
         return HashIdx(index=idx.index * table.cuckoo_table_n + idx.table_index), found
 
+    @jax.jit
     def insert(table: "HashTable", input: Xtructurable) -> tuple["HashTable", bool, HashIdx]:
         """
         insert the state in the table
@@ -380,6 +444,7 @@ class HashTable:
         table.size += jnp.sum(updatable, dtype=SIZE_DTYPE)
         return table, index
 
+    @jax.jit
     def parallel_insert(table: "HashTable", inputs: Xtructurable, filled: chex.Array = None):
         """
         Parallel insertion of multiple states into the hash table.
@@ -440,5 +505,6 @@ class HashTable:
             HashIdx(index=idx.index * table.cuckoo_table_n + idx.table_index),
         )
 
+    @jax.jit
     def get(self, idx: HashIdx) -> Xtructurable:
         return self.table[idx.index]
