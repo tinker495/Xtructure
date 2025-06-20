@@ -8,12 +8,15 @@ from .structuredtype import StructuredType
 
 T = TypeVar("T")
 
+
 class shape_tuple(NamedTuple):
     batch: tuple[int, ...]
     fields: Dict[str, Any]
 
+
 class dtype_tuple(NamedTuple):
     fields: Dict[str, Any]
+
 
 # Protocol defining the interface added by @xtructure_data
 class Xtructurable(Protocol[T]):
@@ -105,7 +108,14 @@ class Xtructurable(Protocol[T]):
     def bytes(self: T) -> chex.Array:
         ...
 
-    def hash(self: T, seed: int = 0) -> TypingTuple[int, chex.Array]:
+    @property
+    def uint32ed(self: T) -> chex.Array:
+        ...
+
+    def hash(self: T, seed: int = 0) -> int:
+        ...
+
+    def hash_with_uint32ed(self: T, seed: int = 0) -> TypingTuple[int, chex.Array]:
         ...
 
     # Method added by add_comparison_operators
