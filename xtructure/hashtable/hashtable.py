@@ -327,9 +327,9 @@ class HashTable:
         """
         Finds the state in the hash table using Cuckoo hashing.
         """
-        initial_idx, input_uint32eds = jax.vmap(
-            lambda x: get_new_idx_byterized(x, table.capacity, table.seed)
-        )(inputs)
+        initial_idx, input_uint32eds = jax.vmap(get_new_idx_byterized, in_axes=(0, None, None))(
+            inputs, table.capacity, table.seed
+        )
 
         batch_size = jax.tree_util.tree_leaves(inputs)[0].shape[0]
 
