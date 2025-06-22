@@ -54,16 +54,16 @@ print("--- HashTable Example ---")
 # Build a HashTable for a custom data structure
 key = jax.random.PRNGKey(0)
 key, subkey = jax.random.split(key)
-hash_table = HashTable.build(MyDataValue, 1, capacity=1000)
+hash_table: HashTable = HashTable.build(MyDataValue, 1, capacity=1000)
 
 # Insert random data
 items_to_insert = MyDataValue.random((100,), key=subkey)
-hash_table, inserted_mask, _, _, _ = HashTable.parallel_insert(hash_table, items_to_insert)
+hash_table, inserted_mask, _, _ = hash_table.parallel_insert(items_to_insert)
 print(f"HashTable: Inserted {jnp.sum(inserted_mask)} items. Current size: {hash_table.size}")
 
 # Lookup an item
 item_to_find = items_to_insert[0]
-_, _, found = HashTable.lookup(hash_table, item_to_find)
+_, found = hash_table.lookup(item_to_find)
 print(f"HashTable: Item found? {found}")
 
 
@@ -74,9 +74,9 @@ print("\n--- BGPQ Example ---")
 key = jax.random.PRNGKey(1)
 pq_batch_size = 64
 priority_queue = BGPQ.build(
-    max_size=2000,
-    batch_size=pq_batch_size,
-    pytree_def_type_for_values_class=MyDataValue,
+    2000,
+    pq_batch_size,
+    MyDataValue,
 )
 print(f"BGPQ: Built with max_size={priority_queue.max_size}, batch_size={priority_queue.batch_size}")
 
