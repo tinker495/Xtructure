@@ -365,7 +365,7 @@ class BGPQ:
             max_c = jnp.where(
                 jnp.any(finite_c),
                 jnp.max(jnp.where(finite_c, heap.key_store[c], -jnp.inf)),
-                jnp.inf,
+                -jnp.inf,
             )
 
             # Children are guaranteed to be sorted in ascending order.  Therefore,
@@ -381,11 +381,15 @@ class BGPQ:
             """Perform one step of heapification"""
             heap, current_node, left_child, right_child = var
 
-            # Child nodes: use the last element directly so that partially filled
-            # nodes (whose tail is +inf) are treated as having a very large
-            # maximum, ensuring they are pushed down in the heap.
-            max_left_child = heap.key_store[left_child][-1]
-            max_right_child = heap.key_store[right_child][-1]
+            # Child nodes: use finite maximum (ignore +inf padding). Treat an empty
+            # child (all +inf) as having max = -inf so it will be considered
+            # smaller and selected as `y`.
+            def _max(node):
+                f = jnp.isfinite(node)
+                return jnp.where(jnp.any(f), jnp.max(jnp.where(f, node, -jnp.inf)), -jnp.inf)
+
+            max_left_child = _max(heap.key_store[left_child])
+            max_right_child = _max(heap.key_store[right_child])
 
             # Choose child with smaller key
             x, y = jax.lax.cond(
