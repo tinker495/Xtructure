@@ -358,10 +358,15 @@ class BGPQ:
         def _cond(var):
             """Continue while heap property is violated"""
             heap, c, l, r = var
-            # Compute the largest FINITE key in the current node.  Infinity paddings
-            # should not participate in the heap-property comparison because they do
-            # not correspond to a real element.
-            max_c = jnp.max(jnp.where(jnp.isfinite(heap.key_store[c]), heap.key_store[c], -jnp.inf))
+            # Compute the largest FINITE key in the current node.  If the node is
+            # empty (all +inf), treat its max as +inf so that it is considered
+            # larger than any real key.
+            finite_c = jnp.isfinite(heap.key_store[c])
+            max_c = jnp.where(
+                jnp.any(finite_c),
+                jnp.max(jnp.where(finite_c, heap.key_store[c], -jnp.inf)),
+                jnp.inf,
+            )
 
             # Children are guaranteed to be sorted in ascending order.  Therefore,
             # their first element is the minimum finite value (or +inf when the
@@ -376,12 +381,21 @@ class BGPQ:
             """Perform one step of heapification"""
             heap, current_node, left_child, right_child = var
 
-            # Again, ignore +inf paddings when comparing child nodes.
-            max_left_child = jnp.max(
-                jnp.where(jnp.isfinite(heap.key_store[left_child]), heap.key_store[left_child], -jnp.inf)
+            # Again, ignore +inf paddings when comparing child nodes but treat empty
+            # child (all +inf) as having max = +inf.
+            finite_left = jnp.isfinite(heap.key_store[left_child])
+            finite_right = jnp.isfinite(heap.key_store[right_child])
+
+            max_left_child = jnp.where(
+                jnp.any(finite_left),
+                jnp.max(jnp.where(finite_left, heap.key_store[left_child], -jnp.inf)),
+                jnp.inf,
             )
-            max_right_child = jnp.max(
-                jnp.where(jnp.isfinite(heap.key_store[right_child]), heap.key_store[right_child], -jnp.inf)
+
+            max_right_child = jnp.where(
+                jnp.any(finite_right),
+                jnp.max(jnp.where(finite_right, heap.key_store[right_child], -jnp.inf)),
+                jnp.inf,
             )
 
             # Choose child with smaller key
