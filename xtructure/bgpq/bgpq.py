@@ -358,17 +358,31 @@ class BGPQ:
         def _cond(var):
             """Continue while heap property is violated"""
             heap, c, l, r = var
-            max_c = heap.key_store[c][-1]
+            # Compute the largest FINITE key in the current node.  Infinity paddings
+            # should not participate in the heap-property comparison because they do
+            # not correspond to a real element.
+            max_c = jnp.max(jnp.where(jnp.isfinite(heap.key_store[c]), heap.key_store[c], -jnp.inf))
+
+            # Children are guaranteed to be sorted in ascending order.  Therefore,
+            # their first element is the minimum finite value (or +inf when the
+            # child node is empty).
             min_l = heap.key_store[l][0]
             min_r = heap.key_store[r][0]
+
             min_lr = jnp.minimum(min_l, min_r)
             return max_c > min_lr
 
         def _f(var):
             """Perform one step of heapification"""
             heap, current_node, left_child, right_child = var
-            max_left_child = heap.key_store[left_child][-1]
-            max_right_child = heap.key_store[right_child][-1]
+
+            # Again, ignore +inf paddings when comparing child nodes.
+            max_left_child = jnp.max(
+                jnp.where(jnp.isfinite(heap.key_store[left_child]), heap.key_store[left_child], -jnp.inf)
+            )
+            max_right_child = jnp.max(
+                jnp.where(jnp.isfinite(heap.key_store[right_child]), heap.key_store[right_child], -jnp.inf)
+            )
 
             # Choose child with smaller key
             x, y = jax.lax.cond(
