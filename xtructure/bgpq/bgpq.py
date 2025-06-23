@@ -381,22 +381,11 @@ class BGPQ:
             """Perform one step of heapification"""
             heap, current_node, left_child, right_child = var
 
-            # Again, ignore +inf paddings when comparing child nodes but treat empty
-            # child (all +inf) as having max = +inf.
-            finite_left = jnp.isfinite(heap.key_store[left_child])
-            finite_right = jnp.isfinite(heap.key_store[right_child])
-
-            max_left_child = jnp.where(
-                jnp.any(finite_left),
-                jnp.max(jnp.where(finite_left, heap.key_store[left_child], -jnp.inf)),
-                jnp.inf,
-            )
-
-            max_right_child = jnp.where(
-                jnp.any(finite_right),
-                jnp.max(jnp.where(finite_right, heap.key_store[right_child], -jnp.inf)),
-                jnp.inf,
-            )
+            # Child nodes: use the last element directly so that partially filled
+            # nodes (whose tail is +inf) are treated as having a very large
+            # maximum, ensuring they are pushed down in the heap.
+            max_left_child = heap.key_store[left_child][-1]
+            max_right_child = heap.key_store[right_child][-1]
 
             # Choose child with smaller key
             x, y = jax.lax.cond(
