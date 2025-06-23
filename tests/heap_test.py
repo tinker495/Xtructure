@@ -21,7 +21,7 @@ class XtructureValue:
 
 @jax.jit
 def key_gen(x: XtructureValue) -> float:
-    uint32_hash, _ = x.hash()
+    uint32_hash = x.hash()
     key = uint32_hash % (2**12) / (2**8)
     return key.astype(jnp.float32)
 
