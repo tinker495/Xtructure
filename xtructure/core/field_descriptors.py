@@ -6,6 +6,33 @@ import jax.numpy as jnp
 DType = Any
 
 
+class Packed:
+    """
+    Represents a packed integer type with a specific number of bits.
+
+    This is a descriptor used within FieldDescriptor to specify that a field's
+    values should be bit-packed into a standard integer type (e.g., uint8, uint32).
+    For example, `Packed(2)` indicates that each value is 2 bits, and they can be
+    packed together into a larger integer type for storage.
+    """
+
+    def __init__(self, bits: int):
+        if not isinstance(bits, int) or bits <= 0:
+            raise ValueError("num_bits must be a positive integer.")
+        if bits > 64:
+            # JAX supports up to 64-bit integers.
+            raise ValueError("bits cannot exceed 64 for packing.")
+        self.bits = bits
+
+    def __repr__(self) -> str:
+        return f"Packed({self.bits})"
+
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, Packed):
+            return NotImplemented
+        return self.bits == other.bits
+
+
 class FieldDescriptor:
     """
     A descriptor for fields in an xtructure_dataclass.
@@ -29,6 +56,9 @@ class FieldDescriptor:
 
             # A nested xtructure_dataclass field
             d: FieldDescriptor[AnotherDataClass]
+
+            # A field of 2-bit values, to be packed.
+            e: FieldDescriptor[Packed(2), (10)]
         ```
 
     The FieldDescriptor can be used with type annotation syntax using square brackets
@@ -43,7 +73,7 @@ class FieldDescriptor:
         Initializes a FieldDescriptor.
 
         Args:
-            dtype: The JAX dtype of the field (e.g., jnp.int32, jnp.float32).
+            dtype: The JAX dtype of the field (e.g., jnp.int32, jnp.float32) or a Packed type.
             fill_value: The default value to fill the field's array with
                         (e.g., -1, 0.0).
             intrinsic_shape: The shape of the field itself, before any batching.
@@ -52,7 +82,11 @@ class FieldDescriptor:
         self.dtype: DType = dtype
         # Set default fill values based on dtype
         if fill_value is None:
-            if hasattr(dtype, "dataclass"):
+            if isinstance(self.dtype, Packed):
+                # For packed types, default to all bits set. This is equivalent to -1
+                # for an unsigned integer storage type, which will set all bits to 1.
+                self.fill_value = -1
+            elif hasattr(dtype, "dataclass"):
                 # Handle xtructure_dataclass types
                 self.fill_value = fill_value
             elif jnp.issubdtype(dtype, jnp.unsignedinteger):

@@ -11,6 +11,7 @@ from .ops import add_comparison_operators
 from .shape import add_shape_dtype_len
 from .string_format import add_string_representation_methods
 from .structure_util import add_structure_utilities
+from .base import dataclass_base
 
 T = TypeVar("T")
 
@@ -33,7 +34,7 @@ def xtructure_dataclass(cls: Type[T]) -> Type[Xtructurable[T]]:
     Returns:
         The decorated class with the aforementioned additional functionalities.
     """
-    cls = chex.dataclass(cls)
+    cls = dataclass_base(cls)
 
     # Ensure class has a default method for initialization
     cls = add_default_method(cls)
