@@ -21,7 +21,10 @@ SORT_STABLE = True  # Use stable sorting to maintain insertion order for equal k
 SIZE_DTYPE = jnp.uint32
 
 # TODO: Make merge_arrays_parallel for TPU.
-merge_array_backend = merge_sort_split_idx if jax.default_backend() == "tpu" else merge_arrays_parallel
+merge_array_backend = (
+    merge_sort_split_idx if jax.default_backend() == "tpu" else merge_arrays_parallel
+)
+
 
 @jax.jit
 def merge_sort_split(
@@ -62,6 +65,8 @@ def _next(current, target):
     """
     Calculate the next index in the heap traversal path.
     Uses leading zero count (clz) for efficient binary tree navigation.
+    This implementation handles the 0-indexed heap structure by temporarily
+    converting to 1-based indices for the underlying bitwise logic.
 
     Args:
         current: Current index in the heap
@@ -70,11 +75,15 @@ def _next(current, target):
     Returns:
         Next index in the path from current to target
     """
-    clz_current = jax.lax.clz(current)
-    clz_target = jax.lax.clz(target)
+    current_1based = current.astype(SIZE_DTYPE) + 1
+    target_1based = target.astype(SIZE_DTYPE) + 1
+
+    clz_current = jax.lax.clz(current_1based)
+    clz_target = jax.lax.clz(target_1based)
     shift_amount = clz_current - clz_target - 1
-    next_index = target.astype(SIZE_DTYPE) >> shift_amount
-    return next_index
+
+    next_index_1based = target_1based >> shift_amount
+    return next_index_1based - 1
 
 
 @chex.dataclass
