@@ -25,7 +25,7 @@ class MyHeapItem:
 
 ## `@xtructure_dataclass`
 
-This decorator transforms a Python class into a JAX-compatible structure (specifically, a `chex.dataclass`) and adds several helpful methods and properties:
+This decorator transforms a Python class into a JAX-compatible structure and adds several helpful methods and properties:
 
 *   **`shape`** (property): Returns a namedtuple showing the JAX shapes of all fields.
 *   **`dtype`** (property): Returns a namedtuple showing the JAX dtypes of all fields.

@@ -1,7 +1,6 @@
 from typing import Type, TypeVar
 
-import chex
-
+from xtructure.core.dataclass import base_dataclass
 from xtructure.core.protocol import Xtructurable
 
 from .default import add_default_method
@@ -17,7 +16,7 @@ T = TypeVar("T")
 
 def xtructure_dataclass(cls: Type[T]) -> Type[Xtructurable[T]]:
     """
-    Decorator that ensures the input class is a `chex.dataclass` (or converts
+    Decorator that ensures the input class is a `base_dataclass` (or converts
     it to one) and then augments it with additional functionality related to its
     structure, type, and operations like indexing, default instance creation,
     random instance generation, and string representation.
@@ -33,7 +32,7 @@ def xtructure_dataclass(cls: Type[T]) -> Type[Xtructurable[T]]:
     Returns:
         The decorated class with the aforementioned additional functionalities.
     """
-    cls = chex.dataclass(cls)
+    cls = base_dataclass(cls)
 
     # Ensure class has a default method for initialization
     cls = add_default_method(cls)

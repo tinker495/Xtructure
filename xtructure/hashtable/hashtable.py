@@ -10,7 +10,7 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from ..core import FieldDescriptor, Xtructurable, xtructure_dataclass
+from ..core import FieldDescriptor, Xtructurable, base_dataclass, xtructure_dataclass
 from ..core.xtructure_decorators.hash import uint32ed_to_hash
 
 SIZE_DTYPE = jnp.uint32
@@ -58,7 +58,7 @@ def get_new_idx_byterized(
     return idx, uint32ed
 
 
-@chex.dataclass
+@base_dataclass
 class HashTable:
     """
     Cuckoo Hash Table Implementation
@@ -506,5 +506,5 @@ class HashTable:
         )
 
     @jax.jit
-    def get(self, idx: HashIdx) -> Xtructurable:
+    def __getitem__(self, idx: HashIdx) -> Xtructurable:
         return self.table[idx.index]

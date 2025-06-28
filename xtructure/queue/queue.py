@@ -1,15 +1,14 @@
 from functools import partial
 
-import chex
 import jax
 import jax.numpy as jnp
 
-from ..core import Xtructurable
+from ..core import Xtructurable, base_dataclass
 
 SIZE_DTYPE = jnp.uint32
 
 
-@chex.dataclass
+@base_dataclass
 class Queue:
     """
     A JAX-compatible batched Queue data structure.

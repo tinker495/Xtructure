@@ -14,7 +14,7 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from ..core import Xtructurable
+from ..core import Xtructurable, base_dataclass
 from .merge_split import merge_arrays_parallel, merge_sort_split_idx
 
 SORT_STABLE = True  # Use stable sorting to maintain insertion order for equal keys
@@ -86,7 +86,7 @@ def _next(current, target):
     return next_index_1based - 1
 
 
-@chex.dataclass
+@base_dataclass
 class BGPQ:
     """
     Batched GPU Priority Queue implementation.

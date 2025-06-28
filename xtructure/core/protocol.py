@@ -31,7 +31,7 @@ class Xtructurable(Protocol[T]):
     # This is a namedtuple whose fields mirror the class attributes.
     default_dtype: ClassVar[Any]
 
-    # Fields from the original class that chex.dataclass would process
+    # Fields from the original class that base_dataclass would process
     # These are implicitly part of T. For the protocol to be complete,
     # it assumes T will have __annotations__.
     __annotations__: Dict[str, Any]

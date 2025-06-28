@@ -25,7 +25,7 @@ def add_string_representation_methods(cls: Type[T]) -> Type[T]:
     """
 
     # Capture the class's __str__ method as it exists *before* this decorator replaces it.
-    # This will typically be the __str__ provided by chex.dataclass (similar to its __repr__),
+    # This will typically be the __str__ provided by base_dataclass (similar to its __repr__),
     # or a user-defined __str__ if the user added one before @xtructure_data.
     _original_str_method = getattr(cls, "__str__", None)
 
