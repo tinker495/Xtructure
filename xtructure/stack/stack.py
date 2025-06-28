@@ -105,3 +105,11 @@ class Stack:
             indices = self.size - jnp.arange(num_items, 0, -1)
         peeked_items = self.val_store[indices]
         return peeked_items
+
+    @jax.jit
+    def __getitem__(self, idx: SIZE_DTYPE) -> Xtructurable:
+        """
+        Returns the item at the logical stack index (0-based, relative to bottom).
+        """
+        # Map logical stack index to actual storage index (bottom = 0, top = size-1)
+        return self.val_store[idx]

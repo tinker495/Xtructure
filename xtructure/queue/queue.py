@@ -92,3 +92,12 @@ class Queue:
         self.head = SIZE_DTYPE(0)
         self.tail = SIZE_DTYPE(0)
         return self
+
+    @jax.jit
+    def __getitem__(self, idx: SIZE_DTYPE) -> Xtructurable:
+        """
+        Returns the item at the logical queue index (0-based, relative to head).
+        """
+        # Map logical queue index to actual storage index
+        storage_idx = self.head + idx
+        return self.val_store[storage_idx]
