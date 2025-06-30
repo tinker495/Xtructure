@@ -1,7 +1,11 @@
+import dataclasses
+import unittest
+
 import jax
 import jax.numpy as jnp
 
 from xtructure import FieldDescriptor, StructuredType, xtructure_dataclass
+from xtructure.core.xtructure_decorators.indexing import add_indexing_methods
 
 
 # Test data structures
@@ -379,3 +383,101 @@ def test_at_set_nested_data():
 
     # Ensure original data is unchanged
     assert original_data.simple.id[0] != data_to_set_single_nested.simple.id
+
+
+# Create a separate test class for the indexing decorator
+@dataclasses.dataclass
+class IndexedData:
+    x: jnp.ndarray
+    y: jnp.ndarray
+
+
+IndexedData = add_indexing_methods(IndexedData)
+
+
+class TestIndexingDecorator(unittest.TestCase):
+    def test_set_as_condition_duplicate_indices(self):
+        """
+        Tests that `set_as_condition` with duplicate indices correctly applies the update
+        only for the True condition, and is not overwritten by a False condition.
+        """
+        instance = IndexedData(x=jnp.zeros(5), y=jnp.zeros(5))
+
+        # Indices [0, 0], conditions [True, False]. The update at index 0 should be applied.
+        indices = jnp.array([0, 0, 1])
+        condition = jnp.array([True, False, True])
+
+        updated_instance = instance.at[indices].set_as_condition(condition, 99)
+
+        # The update for index 0 (from the True condition) should persist.
+        # The update for index 1 should also be applied.
+        expected_x = jnp.array([99.0, 99.0, 0.0, 0.0, 0.0])
+        self.assertTrue(jnp.array_equal(updated_instance.x, expected_x))
+        self.assertTrue(jnp.array_equal(updated_instance.y, expected_x))
+
+    def test_set_as_condition_advanced_indexing_with_duplicates(self):
+        """
+        Tests `set_as_condition` with advanced indexing (tuple of arrays) and duplicate indices.
+        """
+        instance = IndexedData(x=jnp.zeros((5, 5)), y=jnp.zeros((5, 5)))
+
+        # Indices targeting (0,0), (0,0), and (1,1). Conditions are True, False, True.
+        rows = jnp.array([0, 0, 1])
+        cols = jnp.array([0, 0, 1])
+        indices = (rows, cols)
+        condition = jnp.array([True, False, True])
+
+        updated_instance = instance.at[indices].set_as_condition(condition, 88)
+
+        expected_x = jnp.zeros((5, 5)).at[indices].set(jnp.array([88.0, 0.0, 88.0]))
+        # The above line would fail with the old logic. Let's build the expected result manually.
+        expected_x = jnp.zeros((5, 5))
+        expected_x = expected_x.at[0, 0].set(88)  # From the True condition
+        expected_x = expected_x.at[1, 1].set(88)  # From the other True condition
+
+        self.assertTrue(jnp.array_equal(updated_instance.x, expected_x))
+        self.assertTrue(jnp.array_equal(updated_instance.y, expected_x))
+
+    def test_set_as_condition_with_scalar_value_broadcast(self):
+        """
+        Tests that a scalar value is correctly broadcasted across all `True` conditions.
+        """
+        instance = IndexedData(x=jnp.arange(10), y=jnp.arange(10))
+
+        indices = jnp.array([1, 3, 5, 7])
+        condition = jnp.array([True, False, True, False])
+
+        updated_instance = instance.at[indices].set_as_condition(condition, -1)
+
+        # Only indices 1 and 5 should be updated to -1.
+        expected_x = jnp.array([0, -1, 2, 3, 4, -1, 6, 7, 8, 9])
+        self.assertTrue(jnp.array_equal(updated_instance.x, expected_x))
+        self.assertTrue(jnp.array_equal(updated_instance.y, expected_x))
+
+    def test_set_as_condition_with_array_values(self):
+        """
+        Tests conditional set with an array of values, ensuring only values
+        corresponding to True conditions are used.
+        """
+        instance = IndexedData(x=jnp.zeros(4), y=jnp.zeros(4))
+
+        indices = jnp.array([0, 1, 0, 2])  # Duplicate index 0
+        condition = jnp.array([True, True, False, True])
+        values_to_set = jnp.array([10, 20, 30, 40])
+
+        updated_instance = instance.at[indices].set_as_condition(condition, values_to_set)
+
+        # Expected:
+        # Index 0 gets value 10 (from first True)
+        # Index 1 gets value 20 (from second True)
+        # Index 0 update with 30 is skipped (False)
+        # Index 2 gets value 40 (from third True)
+        # The duplicate index 0 was updated with 10 and not overwritten.
+        expected_x = jnp.array([10.0, 20.0, 40.0, 0.0])
+
+        self.assertTrue(jnp.array_equal(updated_instance.x, expected_x))
+        self.assertTrue(jnp.array_equal(updated_instance.y, expected_x))
+
+
+if __name__ == "__main__":
+    unittest.main()
