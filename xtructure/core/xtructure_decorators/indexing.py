@@ -2,6 +2,9 @@ from typing import Any, Type, TypeVar
 
 import jax.numpy as jnp
 
+from ..protocol import Xtructurable
+from ..xtructure_numpy.set_as_cond import set_as_condition_on_array
+
 T = TypeVar("T")
 
 
@@ -21,7 +24,7 @@ class _Updater:
             )
 
         for field_name in self.cls.__dataclass_fields__:
-            current_field_value = getattr(self.obj_instance, field_name)
+            current_field_value: Xtructurable = getattr(self.obj_instance, field_name)
 
             try:
                 updater_ref = current_field_value.at[self.indices]
@@ -68,7 +71,7 @@ class _Updater:
             )
 
         for field_name in self.cls.__dataclass_fields__:
-            original_field_value = getattr(self.obj_instance, field_name)
+            original_field_value: Xtructurable = getattr(self.obj_instance, field_name)
 
             update_val_for_this_field_if_true = None
             if isinstance(value_to_conditionally_set, self.cls):
@@ -97,12 +100,11 @@ class _Updater:
                         num_new_axes = data_rank - condition_rank
                         reshaped_cond = cond_array.reshape(cond_array.shape + (1,) * num_new_axes)
                     # If condition_rank >= data_rank, jnp.where will handle broadcasting or error appropriately.
-
-                    conditionally_updated_slice = jnp.where(
-                        reshaped_cond, update_val_for_this_field_if_true, original_slice_of_field
-                    )
-                    new_field_data[field_name] = original_field_value.at[self.indices].set(
-                        conditionally_updated_slice
+                    new_field_data[field_name] = set_as_condition_on_array(
+                        original_field_value,
+                        self.indices,
+                        reshaped_cond,
+                        update_val_for_this_field_if_true,
                     )
                 else:
                     new_field_data[field_name] = original_field_value

@@ -3,6 +3,7 @@ import unittest
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 from xtructure import FieldDescriptor, StructuredType, xtructure_dataclass
 from xtructure.core.xtructure_decorators.indexing import add_indexing_methods
@@ -477,6 +478,103 @@ class TestIndexingDecorator(unittest.TestCase):
 
         self.assertTrue(jnp.array_equal(updated_instance.x, expected_x))
         self.assertTrue(jnp.array_equal(updated_instance.y, expected_x))
+
+    def test_set_as_condition_extreme_randomized(self):
+        """
+        Tests `set_as_condition` with a large number of random updates,
+        including duplicate indices and mixed conditions, to ensure robustness.
+        """
+        key = jax.random.PRNGKey(42)
+        data_size = 1000
+        num_updates = 5000  # More updates than data size to ensure many duplicates
+
+        instance = IndexedData(
+            x=jnp.zeros(data_size, dtype=jnp.float32),
+            y=jnp.zeros(data_size, dtype=jnp.float32),
+        )
+
+        # Generate random indices, conditions, and values
+        key, subkey1, subkey2, subkey3 = jax.random.split(key, 4)
+        indices = jax.random.randint(subkey1, (num_updates,), 0, data_size)
+        condition = jax.random.choice(subkey2, jnp.array([True, False]), (num_updates,))
+        values_to_set = jax.random.normal(subkey3, (num_updates,), dtype=jnp.float32)
+
+        # --- Calculate expected result using a clear, sequential logic ---
+        # We use a standard Python dictionary and NumPy array to avoid JAX's
+        # parallel execution nuances, establishing a ground truth.
+        # The logic is "last True condition wins" which is JAX-idiomatic.
+        expected_x = np.zeros(data_size, dtype=np.float32)
+
+        # This dictionary will hold the final value for each index.
+        # We find the *last* update where the condition is True.
+        updates_to_apply = {}
+        for i in range(len(indices)):
+            idx = indices[i].item()
+            if condition[i]:
+                updates_to_apply[idx] = values_to_set[i].item()
+
+        # Apply the determined updates to the numpy array
+        for idx, value in updates_to_apply.items():
+            expected_x[idx] = value
+
+        # --- Perform the actual operation using the method under test ---
+        updated_instance = instance.at[indices].set_as_condition(condition, values_to_set)
+
+        # --- Compare results ---
+        self.assertTrue(
+            jnp.array_equal(updated_instance.x, jnp.array(expected_x)),
+            "Randomized test with array of values failed for field 'x'",
+        )
+        self.assertTrue(
+            jnp.array_equal(updated_instance.y, jnp.array(expected_x)),
+            "Randomized test with array of values failed for field 'y'",
+        )
+
+    def test_set_as_condition_extreme_randomized_scalar(self):
+        """
+        Tests `set_as_condition` with a large number of random updates
+        and a single scalar value to ensure correct broadcasting.
+        """
+        key = jax.random.PRNGKey(84)
+        data_size = 1000
+        num_updates = 5000
+        scalar_value = 99.0
+
+        instance = IndexedData(
+            x=jnp.zeros(data_size, dtype=jnp.float32),
+            y=jnp.zeros(data_size, dtype=jnp.float32),
+        )
+
+        # Generate random indices and conditions
+        key, subkey1, subkey2 = jax.random.split(key, 3)
+        indices = jax.random.randint(subkey1, (num_updates,), 0, data_size)
+        condition = jax.random.choice(subkey2, jnp.array([True, False]), (num_updates,))
+
+        # --- Calculate expected result ---
+        expected_x = np.zeros(data_size, dtype=np.float32)
+
+        # Find all unique indices that have at least one True condition
+        updated_indices = set()
+        for i in range(len(indices)):
+            if condition[i]:
+                updated_indices.add(indices[i].item())
+
+        # Apply the scalar value to these indices
+        for idx in updated_indices:
+            expected_x[idx] = scalar_value
+
+        # --- Perform the actual operation ---
+        updated_instance = instance.at[indices].set_as_condition(condition, scalar_value)
+
+        # --- Compare results ---
+        self.assertTrue(
+            jnp.array_equal(updated_instance.x, jnp.array(expected_x)),
+            "Randomized test with scalar value failed for field 'x'",
+        )
+        self.assertTrue(
+            jnp.array_equal(updated_instance.y, jnp.array(expected_x)),
+            "Randomized test with scalar value failed for field 'y'",
+        )
 
 
 if __name__ == "__main__":
