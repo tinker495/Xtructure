@@ -133,3 +133,45 @@ def test_large_hash_table():
     # Verify all states can be found
     _, found = table.lookup_parallel(sample)
     assert jnp.mean(found) == 1.0  # All states should be found
+
+
+def test_default_value_insertion():
+    """Test that default values can be inserted and found correctly."""
+    table: HashTable = HashTable.build(XtructureValue, 1, int(1e4))
+
+    # Create a default value instance
+    default_value = XtructureValue.default()
+
+    # Insert the default value
+    table, inserted, idx = table.insert(default_value)
+
+    # Assert that the insertion was successful
+    assert inserted, "Default value should be inserted successfully"
+
+    # Look up the inserted default value
+    lookup_idx, found = table.lookup(default_value)
+
+    # Assert that the lookup is successful
+    assert found, "Default value should be found after insertion"
+
+    # Verify the retrieved value matches the inserted value
+    retrieved_value = table[lookup_idx]
+    assert (
+        retrieved_value == default_value
+    ), "Retrieved value should match the inserted default value"
+
+    # Test with parallel operations as well - use a fresh table
+    fresh_table: HashTable = HashTable.build(XtructureValue, 1, int(1e4))
+    default_batch = XtructureValue.default((5,))  # Create a batch of default values
+
+    # Insert batch of default values
+    fresh_table, updatable, unique_filled, batch_idx = fresh_table.parallel_insert(default_batch)
+
+    # At least one should be updatable (the first unique default value)
+    assert jnp.any(updatable), "At least one default value should be updatable in batch"
+
+    # Look up the batch
+    batch_lookup_idx, batch_found = fresh_table.lookup_parallel(default_batch)
+
+    # All should be found
+    assert jnp.all(batch_found), "All default values should be found after batch insertion"

@@ -181,7 +181,8 @@ class HashTable:
             state = table.table[
                 idx.index * table.cuckoo_table_n + idx.table_index
             ]  # Modified indexing
-            found = state == input
+            is_filled = idx.table_index < table.table_idx[idx.index]
+            found = jnp.logical_and(is_filled, state == input)
             seed, idx = jax.lax.cond(
                 found,
                 lambda _: (seed, idx),
@@ -191,7 +192,8 @@ class HashTable:
             return seed, idx, found
 
         state = table.table[idx.index * table.cuckoo_table_n + idx.table_index]  # Modified indexing
-        found = jnp.logical_or(found, state == input)
+        is_filled = idx.table_index < table.table_idx[idx.index]
+        found = jnp.logical_or(found, jnp.logical_and(is_filled, state == input))
         update_seed, idx, found = jax.lax.while_loop(_cond, _while, (seed, idx, found))
         return update_seed, idx, found
 
@@ -295,7 +297,8 @@ class HashTable:
                 state = table.table[
                     idx.index * table.cuckoo_table_n + idx.table_index
                 ]  # Modified indexing
-                found = state == input
+                is_filled = idx.table_index < table.table_idx[idx.index]
+                found = jnp.logical_and(is_filled, state == input)
                 seed, idx = jax.lax.cond(
                     found,
                     lambda _: (seed, idx),
@@ -307,7 +310,8 @@ class HashTable:
             state = table.table[
                 idx.index * table.cuckoo_table_n + idx.table_index
             ]  # Modified indexing
-            found = jnp.logical_or(found, state == input)
+            is_filled = idx.table_index < table.table_idx[idx.index]
+            found = jnp.logical_or(found, jnp.logical_and(is_filled, state == input))
             update_seed, idx, found = jax.lax.while_loop(_cond, _while, (seed, idx, found))
             return update_seed, idx, found
 
