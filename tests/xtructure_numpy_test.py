@@ -183,8 +183,26 @@ def test_pad_batched_axis_0():
     
     assert result.structured_type.name == 'BATCHED'
     assert result.shape.batch == (5,)
-    assert jnp.array_equal(result.id, jnp.array([1, 2, 3, 0, 0]))
-    assert jnp.array_equal(result.value, jnp.array([1.0, 2.0, 3.0, 0.0, 0.0]))
+    # Use the actual default fill values: uint32 max value and float32 inf
+    expected_id = jnp.array([1, 2, 3, 4294967295, 4294967295], dtype=jnp.uint32)
+    expected_value = jnp.array([1.0, 2.0, 3.0, jnp.inf, jnp.inf], dtype=jnp.float32)
+    assert jnp.array_equal(result.id, expected_id)
+    assert jnp.array_equal(result.value, expected_value)
+
+
+def test_pad_uses_existing_padding_as_batch():
+    """Test that pad function uses the existing padding_as_batch method when appropriate."""
+    data = SimpleData.default(shape=(2,))
+    data = data.replace(id=jnp.array([1, 2]), value=jnp.array([1.0, 2.0]))
+    
+    # This should use the existing padding_as_batch method
+    result_xnp = xnp.pad(data, target_size=4)
+    result_builtin = data.padding_as_batch((4,))
+    
+    # Results should be identical
+    assert jnp.array_equal(result_xnp.id, result_builtin.id)
+    assert jnp.array_equal(result_xnp.value, result_builtin.value)
+    assert result_xnp.shape.batch == result_builtin.shape.batch
 
 
 def test_pad_batched_with_constant_values():
@@ -195,8 +213,8 @@ def test_pad_batched_with_constant_values():
     result = xnp.pad(data, target_size=4, constant_values=99)
     
     assert result.shape.batch == (4,)
-    assert jnp.array_equal(result.id, jnp.array([1, 2, 99, 99]))
-    assert jnp.array_equal(result.value, jnp.array([1.0, 2.0, 99.0, 99.0]))
+    assert jnp.array_equal(result.id, jnp.array([1, 2, 99, 99], dtype=jnp.uint32))
+    assert jnp.array_equal(result.value, jnp.array([1.0, 2.0, 99.0, 99.0], dtype=jnp.float32))
 
 
 def test_pad_batched_target_shape():
@@ -297,4 +315,39 @@ def test_stack_incompatible_batch_shapes():
     data2 = SimpleData.default(shape=(3,))
     
     with pytest.raises(ValueError, match="All dataclasses must have the same batch shape"):
-        xnp.stack([data1, data2]) 
+        xnp.stack([data1, data2])
+
+
+# Tests for reshape wrapper function
+def test_reshape_wrapper():
+    """Test that the reshape wrapper function works like the built-in method."""
+    data = SimpleData.default(shape=(6,))
+    data = data.replace(id=jnp.arange(6), value=jnp.arange(6, dtype=jnp.float32))
+    
+    # Test both the wrapper and built-in method
+    result_wrapper = xnp.reshape(data, (2, 3))
+    result_builtin = data.reshape((2, 3))
+    
+    # Results should be identical
+    assert jnp.array_equal(result_wrapper.id, result_builtin.id)
+    assert jnp.array_equal(result_wrapper.value, result_builtin.value)
+    assert result_wrapper.shape.batch == result_builtin.shape.batch == (2, 3)
+
+
+# Tests for flatten wrapper function  
+def test_flatten_wrapper():
+    """Test that the flatten wrapper function works like the built-in method."""
+    data = SimpleData.default(shape=(2, 3))
+    data = data.replace(
+        id=jnp.arange(6).reshape(2, 3), 
+        value=jnp.arange(6, dtype=jnp.float32).reshape(2, 3)
+    )
+    
+    # Test both the wrapper and built-in method
+    result_wrapper = xnp.flatten(data)
+    result_builtin = data.flatten()
+    
+    # Results should be identical
+    assert jnp.array_equal(result_wrapper.id, result_builtin.id)
+    assert jnp.array_equal(result_wrapper.value, result_builtin.value)
+    assert result_wrapper.shape.batch == result_builtin.shape.batch == (6,) 
