@@ -2,6 +2,9 @@ from typing import Any, Type, TypeVar
 
 import jax.numpy as jnp
 
+from ..protocol import Xtructurable
+from ..xtructure_numpy.set_as_cond import set_as_condition_on_array
+
 T = TypeVar("T")
 
 
@@ -21,7 +24,7 @@ class _Updater:
             )
 
         for field_name in self.cls.__dataclass_fields__:
-            current_field_value = getattr(self.obj_instance, field_name)
+            current_field_value: Xtructurable = getattr(self.obj_instance, field_name)
 
             try:
                 updater_ref = current_field_value.at[self.indices]
@@ -68,7 +71,7 @@ class _Updater:
             )
 
         for field_name in self.cls.__dataclass_fields__:
-            original_field_value = getattr(self.obj_instance, field_name)
+            original_field_value: Xtructurable = getattr(self.obj_instance, field_name)
 
             update_val_for_this_field_if_true = None
             if isinstance(value_to_conditionally_set, self.cls):
@@ -77,32 +80,21 @@ class _Updater:
                 update_val_for_this_field_if_true = value_to_conditionally_set
 
             try:
+                # Check if the field itself supports recursive .at.set_as_condition
                 if isinstance(getattr(original_field_value, "at", None), AtIndexer):
                     nested_updater = original_field_value.at[self.indices]
                     new_field_data[field_name] = nested_updater.set_as_condition(
                         condition, update_val_for_this_field_if_true
                     )
+                # Check if it's a standard JAX array that can be updated
                 elif hasattr(original_field_value, "at") and hasattr(
                     original_field_value.at[self.indices], "set"
                 ):
-                    original_slice_of_field = original_field_value[self.indices]
-
-                    # Ensure condition is a JAX array to get its ndim property
-                    cond_array = jnp.asarray(condition)
-                    data_rank = original_slice_of_field.ndim
-                    condition_rank = cond_array.ndim
-
-                    reshaped_cond = cond_array
-                    if data_rank > condition_rank:
-                        num_new_axes = data_rank - condition_rank
-                        reshaped_cond = cond_array.reshape(cond_array.shape + (1,) * num_new_axes)
-                    # If condition_rank >= data_rank, jnp.where will handle broadcasting or error appropriately.
-
-                    conditionally_updated_slice = jnp.where(
-                        reshaped_cond, update_val_for_this_field_if_true, original_slice_of_field
-                    )
-                    new_field_data[field_name] = original_field_value.at[self.indices].set(
-                        conditionally_updated_slice
+                    new_field_data[field_name] = set_as_condition_on_array(
+                        original_field_value,
+                        self.indices,
+                        condition,
+                        update_val_for_this_field_if_true,
                     )
                 else:
                     new_field_data[field_name] = original_field_value
