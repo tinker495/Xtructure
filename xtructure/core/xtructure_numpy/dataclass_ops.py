@@ -4,10 +4,11 @@ This module provides operations that complement the existing structure utilities
 in xtructure_decorators.structure_util, reusing existing methods where possible.
 """
 
-from typing import List, TypeVar, Union
+from typing import List, TypeVar, Union, Any, Tuple
 import jax
 import jax.numpy as jnp
 from xtructure.core.structuredtype import StructuredType
+from ..xtructure_decorators import Xtructurable
 
 T = TypeVar("T")
 
@@ -286,4 +287,40 @@ def flatten(dataclass_instance: T) -> T:
     This is a wrapper around the existing flatten method for consistency
     with the xtructure_numpy API.
     """
-    return dataclass_instance.flatten() 
+    return dataclass_instance.flatten()
+
+
+def where(condition: jnp.ndarray, x: Xtructurable, y: Union[Xtructurable, Any]) -> Xtructurable:
+    """
+    Apply jnp.where to each field of a dataclass.
+    
+    This function is equivalent to:
+    jax.tree_util.tree_map(lambda field: jnp.where(condition, field, y_field), x)
+    
+    Args:
+        condition: Boolean array condition for selection
+        x: Xtructurable to select from when condition is True
+        y: Xtructurable or scalar to select from when condition is False
+        
+    Returns:
+        Xtructurable with fields selected based on condition
+        
+    Examples:
+        >>> condition = jnp.array([True, False, True])
+        >>> result = xnp.where(condition, dataclass_a, dataclass_b)
+        >>> # Equivalent to:
+        >>> # jax.tree_util.tree_map(lambda a, b: jnp.where(condition, a, b), dataclass_a, dataclass_b)
+        
+        >>> # With scalar fallback
+        >>> result = xnp.where(condition, dataclass_a, -1)
+        >>> # Equivalent to:
+        >>> # jax.tree_util.tree_map(lambda a: jnp.where(condition, a, -1), dataclass_a)
+    """
+    # Check if y is a pytree (dataclass) by checking if it has multiple leaves
+    y_leaves = jax.tree_util.tree_leaves(y)
+    if len(y_leaves) > 1 or (len(y_leaves) == 1 and hasattr(y, '__dataclass_fields__')):
+        # y is a dataclass with tree structure
+        return jax.tree_util.tree_map(lambda x_field, y_field: jnp.where(condition, x_field, y_field), x, y)
+    else:
+        # y is a scalar value
+        return jax.tree_util.tree_map(lambda x_field: jnp.where(condition, x_field, y), x) 

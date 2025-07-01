@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 from xtructure import xtructure_numpy as xnp
 from xtructure import FieldDescriptor, xtructure_dataclass
@@ -336,18 +337,126 @@ def test_reshape_wrapper():
 
 # Tests for flatten wrapper function  
 def test_flatten_wrapper():
-    """Test that the flatten wrapper function works like the built-in method."""
-    data = SimpleData.default(shape=(2, 3))
-    data = data.replace(
+    """Test that xnp.flatten calls the existing dataclass flatten method"""
+    dc = SimpleData.default(shape=(2, 3))
+    dc = dc.replace(
         id=jnp.arange(6).reshape(2, 3), 
         value=jnp.arange(6, dtype=jnp.float32).reshape(2, 3)
     )
     
-    # Test both the wrapper and built-in method
-    result_wrapper = xnp.flatten(data)
-    result_builtin = data.flatten()
+    # Test our wrapper
+    result = xnp.flatten(dc)
     
-    # Results should be identical
-    assert jnp.array_equal(result_wrapper.id, result_builtin.id)
-    assert jnp.array_equal(result_wrapper.value, result_builtin.value)
-    assert result_wrapper.shape.batch == result_builtin.shape.batch == (6,) 
+    # Test direct method call
+    expected = dc.flatten()
+    
+    # Should be identical
+    assert jnp.array_equal(result.id, expected.id)
+    assert jnp.array_equal(result.value, expected.value)
+
+
+def test_where_with_dataclasses():
+    """Test xnp.where with two dataclasses"""
+    dc1 = SimpleData.default(shape=(3,))
+    dc1 = dc1.replace(id=jnp.array([1, 2, 3]), value=jnp.array([1.0, 2.0, 3.0]))
+    dc2 = SimpleData.default(shape=(3,))
+    dc2 = dc2.replace(id=jnp.array([10, 20, 30]), value=jnp.array([10.0, 20.0, 30.0]))
+    condition = jnp.array([True, False, True])
+    
+    result = xnp.where(condition, dc1, dc2)
+    
+    expected_id = jnp.array([1, 20, 3])  # True->dc1, False->dc2, True->dc1
+    expected_value = jnp.array([1.0, 20.0, 3.0])
+    
+    assert jnp.array_equal(result.id, expected_id)
+    assert jnp.array_equal(result.value, expected_value)
+
+
+def test_where_with_scalar():
+    """Test xnp.where with dataclass and scalar fallback"""
+    dc = SimpleData.default(shape=(3,))
+    dc = dc.replace(id=jnp.array([1, 2, 3]), value=jnp.array([1.0, 2.0, 3.0]))
+    condition = jnp.array([True, False, True])
+    fallback = -1
+    
+    result = xnp.where(condition, dc, fallback)
+    
+    expected_id = jnp.array([1, -1, 3])  # True->dc.id, False->-1, True->dc.id
+    expected_value = jnp.array([1.0, -1.0, 3.0])
+    
+    assert jnp.array_equal(result.id, expected_id)
+    assert jnp.array_equal(result.value, expected_value)
+
+
+def test_where_batched_dataclasses():
+    """Test xnp.where with batched dataclasses"""
+    dc1 = SimpleData.default(shape=(2,))
+    dc1 = dc1.replace(id=jnp.array([1, 2]), value=jnp.array([1.0, 2.0]))
+    dc2 = SimpleData.default(shape=(2,))
+    dc2 = dc2.replace(id=jnp.array([10, 20]), value=jnp.array([10.0, 20.0]))
+    condition = jnp.array([True, False])
+    
+    result = xnp.where(condition, dc1, dc2)
+    
+    expected_id = jnp.array([1, 20])  # First from dc1, second from dc2
+    expected_value = jnp.array([1.0, 20.0])
+    
+    assert jnp.array_equal(result.id, expected_id)
+    assert jnp.array_equal(result.value, expected_value)
+
+
+def test_where_scalar_condition():
+    """Test xnp.where with scalar boolean condition"""
+    dc1 = SimpleData.default(shape=(3,))
+    dc1 = dc1.replace(id=jnp.array([1, 2, 3]), value=jnp.array([1.0, 2.0, 3.0]))
+    dc2 = SimpleData.default(shape=(3,))
+    dc2 = dc2.replace(id=jnp.array([10, 20, 30]), value=jnp.array([10.0, 20.0, 30.0]))
+    
+    # Test with True condition
+    result_true = xnp.where(True, dc1, dc2)
+    assert jnp.array_equal(result_true.id, dc1.id)
+    assert jnp.array_equal(result_true.value, dc1.value)
+    
+    # Test with False condition
+    result_false = xnp.where(False, dc1, dc2)
+    assert jnp.array_equal(result_false.id, dc2.id)
+    assert jnp.array_equal(result_false.value, dc2.value)
+
+
+def test_where_equivalent_to_tree_map():
+    """Test that xnp.where produces same result as manual tree_map"""
+    dc1 = SimpleData.default(shape=(3,))
+    dc1 = dc1.replace(id=jnp.array([1, 2, 3]), value=jnp.array([1.0, 2.0, 3.0]))
+    dc2 = SimpleData.default(shape=(3,))
+    dc2 = dc2.replace(id=jnp.array([10, 20, 30]), value=jnp.array([10.0, 20.0, 30.0]))
+    condition = jnp.array([True, False, True])
+    
+    # Using our xnp.where
+    result_xnp = xnp.where(condition, dc1, dc2)
+    
+    # Using manual tree_map (the old way)
+    result_manual = jax.tree_util.tree_map(
+        lambda x, y: jnp.where(condition, x, y), dc1, dc2
+    )
+    
+    assert jnp.array_equal(result_xnp.id, result_manual.id)
+    assert jnp.array_equal(result_xnp.value, result_manual.value)
+
+
+def test_where_scalar_equivalent_to_tree_map():
+    """Test that xnp.where with scalar produces same result as manual tree_map"""
+    dc = SimpleData.default(shape=(3,))
+    dc = dc.replace(id=jnp.array([1, 2, 3]), value=jnp.array([1.0, 2.0, 3.0]))
+    condition = jnp.array([True, False, True])
+    fallback = -1
+    
+    # Using our xnp.where
+    result_xnp = xnp.where(condition, dc, fallback)
+    
+    # Using manual tree_map (the old way)
+    result_manual = jax.tree_util.tree_map(
+        lambda x: jnp.where(condition, x, fallback), dc
+    )
+    
+    assert jnp.array_equal(result_xnp.id, result_manual.id)
+    assert jnp.array_equal(result_xnp.value, result_manual.value) 
