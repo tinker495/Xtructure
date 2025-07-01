@@ -1,5 +1,5 @@
 from .bgpq import BGPQ
-from .core import FieldDescriptor, StructuredType, Xtructurable, xtructure_dataclass
+from .core import FieldDescriptor, StructuredType, Xtructurable, xtructure_dataclass, xtructure_numpy
 from .hashtable import HashIdx, HashTable
 from .queue import Queue
 from .stack import Stack
@@ -22,4 +22,6 @@ __all__ = [
     "StructuredType",
     # core.field_descriptors.py
     "FieldDescriptor",
+    # core.xtructure_numpy.py
+    "xtructure_numpy",
 ]
