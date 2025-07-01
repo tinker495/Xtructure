@@ -49,7 +49,7 @@ def merge_sort_split(
             - Second half of corresponding values
     """
     n = ak.shape[-1]  # size of group
-    val = xnp.concat([av, bv], axis=0)
+    val = xnp.concatenate([av, bv], axis=0)
     sorted_key, sorted_idx = merge_array_backend(ak, bk)
     sorted_val = val[sorted_idx]
     return sorted_key[:n], sorted_val[:n], sorted_key[n:], sorted_val[n:]
@@ -190,7 +190,7 @@ class BGPQ:
         n = blockk.shape[0]
         # Concatenate block and buffer
         sorted_key, sorted_idx = merge_array_backend(blockk, heap.key_buffer)
-        val = xnp.concat([blockv, heap.val_buffer], axis=0)
+        val = xnp.concatenate([blockv, heap.val_buffer], axis=0)
         val = val[sorted_idx]
 
         # Check for active elements (non-infinity)

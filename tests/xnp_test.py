@@ -94,7 +94,7 @@ def test_concat_single_dataclasses():
     data3 = SimpleData.default()
     data3 = data3.replace(id=jnp.array(3), value=jnp.array(3.0))
 
-    result = xnp.concat([data1, data2, data3])
+    result = xnp.concatenate([data1, data2, data3])
 
     assert result.structured_type.name == "BATCHED"
     assert result.shape.batch == (3,)
@@ -109,7 +109,7 @@ def test_concat_batched_dataclasses():
     data2 = SimpleData.default(shape=(3,))
     data2 = data2.replace(id=jnp.array([3, 4, 5]), value=jnp.array([3.0, 4.0, 5.0]))
 
-    result = xnp.concat([data1, data2])
+    result = xnp.concatenate([data1, data2])
 
     assert result.structured_type.name == "BATCHED"
     assert result.shape.batch == (5,)
@@ -129,7 +129,7 @@ def test_concat_vector_dataclasses():
         position=jnp.array([[7.0, 8.0, 9.0]]), velocity=jnp.array([[0.7, 0.8, 0.9]])
     )
 
-    result = xnp.concat([data1, data2])
+    result = xnp.concatenate([data1, data2])
 
     assert result.structured_type.name == "BATCHED"
     assert result.shape.batch == (3,)
@@ -142,13 +142,13 @@ def test_concat_vector_dataclasses():
 def test_concat_empty_list():
     """Test that concatenating empty list raises ValueError."""
     with pytest.raises(ValueError, match="Cannot concatenate empty list"):
-        xnp.concat([])
+        xnp.concatenate([])
 
 
 def test_concat_single_item():
     """Test that concatenating single item returns the item itself."""
     data = SimpleData.default()
-    result = xnp.concat([data])
+    result = xnp.concatenate([data])
     assert result is data
 
 
@@ -158,7 +158,7 @@ def test_concat_incompatible_types():
     vector_data = VectorData.default()
 
     with pytest.raises(ValueError, match="All dataclasses must be of the same type"):
-        xnp.concat([simple_data, vector_data])
+        xnp.concatenate([simple_data, vector_data])
 
 
 # Tests for pad function
