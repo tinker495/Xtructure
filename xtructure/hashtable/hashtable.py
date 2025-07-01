@@ -11,6 +11,7 @@ import jax
 import jax.numpy as jnp
 
 from ..core import FieldDescriptor, Xtructurable, base_dataclass, xtructure_dataclass
+from ..core import xtructure_numpy as xnp
 from ..core.xtructure_decorators.hash import uint32ed_to_hash
 
 SIZE_DTYPE = jnp.uint32
@@ -416,7 +417,7 @@ class HashTable:
             overflowed = jnp.logical_and(
                 idxs.table_index >= table.cuckoo_table_n, unupdated
             )  # Overflowed index must be updated
-            idxs = jax.tree_util.tree_map(lambda x: jnp.where(updatable, x, -1), idxs)
+            idxs = xnp.where(updatable, idxs, -1)
             idx_bytes = jax.vmap(lambda x: x.uint32ed)(idxs)
             unique_idxs = jnp.unique(idx_bytes, axis=0, size=batch_len, return_index=True)[
                 1
@@ -429,7 +430,7 @@ class HashTable:
             unupdated = jnp.logical_or(unupdated, overflowed)
             return seeds, idxs, unupdated
 
-        index = jax.tree_util.tree_map(lambda x: jnp.where(updatable, x, -1), index)
+        index = xnp.where(updatable, index, -1)
         # Use index_bytes for unique calculation instead of _idxs
         hash_idx_bytes = jax.vmap(lambda x: x.uint32ed)(index)
         unique_idxs = jnp.unique(hash_idx_bytes, axis=0, size=batch_len, return_index=True)[1]

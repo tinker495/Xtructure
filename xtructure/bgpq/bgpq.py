@@ -15,6 +15,7 @@ import jax
 import jax.numpy as jnp
 
 from ..core import Xtructurable, base_dataclass
+from ..core import xtructure_numpy as xnp
 from .merge_split import merge_arrays_parallel, merge_sort_split_idx
 
 SORT_STABLE = True  # Use stable sorting to maintain insertion order for equal keys
@@ -48,7 +49,7 @@ def merge_sort_split(
             - Second half of corresponding values
     """
     n = ak.shape[-1]  # size of group
-    val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), av, bv)
+    val = xnp.concatenate([av, bv], axis=0)
     sorted_key, sorted_idx = merge_array_backend(ak, bk)
     sorted_val = val[sorted_idx]
     return sorted_key[:n], sorted_val[:n], sorted_key[n:], sorted_val[n:]
@@ -189,7 +190,7 @@ class BGPQ:
         n = blockk.shape[0]
         # Concatenate block and buffer
         sorted_key, sorted_idx = merge_array_backend(blockk, heap.key_buffer)
-        val = jax.tree_util.tree_map(lambda a, b: jnp.concatenate([a, b]), blockv, heap.val_buffer)
+        val = xnp.concatenate([blockv, heap.val_buffer], axis=0)
         val = val[sorted_idx]
 
         # Check for active elements (non-infinity)
