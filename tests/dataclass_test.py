@@ -400,19 +400,20 @@ class TestIndexingDecorator(unittest.TestCase):
     def test_set_as_condition_duplicate_indices(self):
         """
         Tests that `set_as_condition` with duplicate indices correctly applies the update
-        only for the True condition, and is not overwritten by a False condition.
+        based on the last condition for that index.
         """
         instance = IndexedData(x=jnp.zeros(5), y=jnp.zeros(5))
 
-        # Indices [0, 0], conditions [True, False]. The update at index 0 should be applied.
+        # Indices [0, 0], conditions [True, False]. The last update for index 0 is False,
+        # so the update should NOT be applied.
         indices = jnp.array([0, 0, 1])
         condition = jnp.array([True, False, True])
 
         updated_instance = instance.at[indices].set_as_condition(condition, 99)
 
-        # The update for index 0 (from the True condition) should persist.
-        # The update for index 1 should also be applied.
-        expected_x = jnp.array([99.0, 99.0, 0.0, 0.0, 0.0])
+        # The update for index 0 is ultimately False, so it remains 0.
+        # The update for index 1 is True.
+        expected_x = jnp.array([0.0, 99.0, 0.0, 0.0, 0.0])
         self.assertTrue(jnp.array_equal(updated_instance.x, expected_x))
         self.assertTrue(jnp.array_equal(updated_instance.y, expected_x))
 
@@ -430,10 +431,9 @@ class TestIndexingDecorator(unittest.TestCase):
 
         updated_instance = instance.at[indices].set_as_condition(condition, 88)
 
-        expected_x = jnp.zeros((5, 5)).at[indices].set(jnp.array([88.0, 0.0, 88.0]))
-        # The above line would fail with the old logic. Let's build the expected result manually.
+        # last condition for (0,0) is False, so it's not updated.
+        # condition for (1,1) is True.
         expected_x = jnp.zeros((5, 5))
-        expected_x = expected_x.at[0, 0].set(88)  # From the True condition
         expected_x = expected_x.at[1, 1].set(88)  # From the other True condition
 
         self.assertTrue(jnp.array_equal(updated_instance.x, expected_x))
@@ -457,8 +457,8 @@ class TestIndexingDecorator(unittest.TestCase):
 
     def test_set_as_condition_with_array_values(self):
         """
-        Tests conditional set with an array of values, ensuring only values
-        corresponding to True conditions are used.
+        Tests conditional set with an array of values, ensuring the last
+        update for an index is the one that takes effect.
         """
         instance = IndexedData(x=jnp.zeros(4), y=jnp.zeros(4))
 
@@ -469,12 +469,10 @@ class TestIndexingDecorator(unittest.TestCase):
         updated_instance = instance.at[indices].set_as_condition(condition, values_to_set)
 
         # Expected:
-        # Index 0 gets value 10 (from first True)
-        # Index 1 gets value 20 (from second True)
-        # Index 0 update with 30 is skipped (False)
-        # Index 2 gets value 40 (from third True)
-        # The duplicate index 0 was updated with 10 and not overwritten.
-        expected_x = jnp.array([10.0, 20.0, 40.0, 0.0])
+        # Index 0 gets value 10 (True), but last update is with condition False -> remains 0.
+        # Index 1 gets value 20 (True).
+        # Index 2 gets value 40 (True).
+        expected_x = jnp.array([0.0, 20.0, 40.0, 0.0])
 
         self.assertTrue(jnp.array_equal(updated_instance.x, expected_x))
         self.assertTrue(jnp.array_equal(updated_instance.y, expected_x))
@@ -505,13 +503,16 @@ class TestIndexingDecorator(unittest.TestCase):
         # The logic is "last True condition wins" which is JAX-idiomatic.
         expected_x = np.zeros(data_size, dtype=np.float32)
 
-        # This dictionary will hold the final value for each index.
-        # We find the *last* update where the condition is True.
+        # This dictionary will hold the final value for each index based on the last update rule.
         updates_to_apply = {}
         for i in range(len(indices)):
             idx = indices[i].item()
             if condition[i]:
                 updates_to_apply[idx] = values_to_set[i].item()
+            else:
+                # If the last update is False, it effectively removes a pending update
+                if idx in updates_to_apply:
+                    del updates_to_apply[idx]
 
         # Apply the determined updates to the numpy array
         for idx, value in updates_to_apply.items():
@@ -553,15 +554,19 @@ class TestIndexingDecorator(unittest.TestCase):
         # --- Calculate expected result ---
         expected_x = np.zeros(data_size, dtype=np.float32)
 
-        # Find all unique indices that have at least one True condition
-        updated_indices = set()
+        # Find all unique indices where the LAST condition is True
+        updates_to_apply = {}
         for i in range(len(indices)):
+            idx = indices[i].item()
             if condition[i]:
-                updated_indices.add(indices[i].item())
+                updates_to_apply[idx] = scalar_value
+            else:
+                if idx in updates_to_apply:
+                    del updates_to_apply[idx]
 
         # Apply the scalar value to these indices
-        for idx in updated_indices:
-            expected_x[idx] = scalar_value
+        for idx, value in updates_to_apply.items():
+            expected_x[idx] = value
 
         # --- Perform the actual operation ---
         updated_instance = instance.at[indices].set_as_condition(condition, scalar_value)
