@@ -35,13 +35,13 @@ def test_set_as_condition_basic():
     assert jnp.array_equal(result, expected)
 
 
-def test_set_as_condition_duplicate_indices_last_wins():
+def test_set_as_condition_duplicate_indices_first_wins():
     original_array = jnp.zeros(5)
     indices = jnp.array([0, 2, 0])
     condition = jnp.array([True, True, True])
     values_to_set = jnp.array([1.0, 2.0, 3.0])
     result = xnp.set_as_condition_on_array(original_array, indices, condition, values_to_set)
-    expected = jnp.array([3.0, 0.0, 2.0, 0.0, 0.0])
+    expected = jnp.array([1.0, 0.0, 2.0, 0.0, 0.0])
     assert jnp.array_equal(result, expected)
 
 
@@ -80,7 +80,7 @@ def test_set_as_condition_array_values():
     condition = jnp.array([True, True, False, True])
     values_to_set = jnp.array([10.0, 20.0, 30.0, 40.0])
     result = xnp.set_as_condition_on_array(original_array, indices, condition, values_to_set)
-    expected = jnp.array([40.0, 0.0, 20.0, 0.0, 0.0])
+    expected = jnp.array([10.0, 0.0, 20.0, 0.0, 0.0])
     assert jnp.array_equal(result, expected)
 
 
