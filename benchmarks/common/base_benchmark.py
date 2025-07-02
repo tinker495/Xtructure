@@ -47,6 +47,7 @@ class BaseBenchmark(ABC):
     def time_operation(self, func: Callable, *args, **kwargs) -> float:
         """
         Time a function call and return elapsed time in milliseconds.
+        Uses jax.block_until_ready() for accurate JAX operation timing.
         
         Args:
             func: Function to time
@@ -58,10 +59,13 @@ class BaseBenchmark(ABC):
         """
         times = []
         
-        # Warmup runs
+        # Warmup runs with proper synchronization
         for _ in range(min(2, self.num_iterations)):
             try:
-                func(*args, **kwargs)
+                result = func(*args, **kwargs)
+                # Use jax.block_until_ready for proper synchronization during warmup
+                # This ensures JIT compilation completes before actual timing
+                result = jax.block_until_ready(result)
             except Exception:
                 pass  # Ignore warmup errors
         
@@ -70,13 +74,9 @@ class BaseBenchmark(ABC):
             start = time.perf_counter()
             result = func(*args, **kwargs)
             
-            # For JAX operations, block until completion
-            if hasattr(result, 'block_until_ready'):
-                result.block_until_ready()
-            elif isinstance(result, tuple) and len(result) > 0:
-                for r in result:
-                    if hasattr(r, 'block_until_ready'):
-                        r.block_until_ready()
+            # Use jax.block_until_ready for proper synchronization
+            # This handles both single arrays and pytrees correctly
+            result = jax.block_until_ready(result)
             
             end = time.perf_counter()
             times.append((end - start) * 1000)  # Convert to ms
