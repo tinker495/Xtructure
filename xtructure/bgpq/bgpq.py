@@ -234,7 +234,7 @@ class BGPQ:
         n = key.shape[0]
         # Pad arrays to match batch size
         key = jnp.pad(key, (0, batch_size - n), mode="constant", constant_values=jnp.inf)
-        val = val.padding_as_batch((batch_size,))
+        val = xnp.pad(val, (0, batch_size - n))
         return key, val
 
     @staticmethod
