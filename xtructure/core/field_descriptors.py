@@ -56,8 +56,9 @@ class FieldDescriptor:
                 # Handle xtructure_dataclass types
                 self.fill_value = fill_value
             elif jnp.issubdtype(dtype, jnp.unsignedinteger):
-                # For unsigned integers, use -1 (which wraps to max value)
-                self.fill_value = -1
+                # For unsigned integers, use the maximum value for the specific dtype
+                # This ensures proper typing and avoids JAX scatter warnings
+                self.fill_value = jnp.iinfo(dtype).max
             elif jnp.issubdtype(dtype, jnp.integer) or jnp.issubdtype(dtype, jnp.floating):
                 # For signed integers and floats, use infinity
                 self.fill_value = jnp.inf

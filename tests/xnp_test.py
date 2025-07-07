@@ -178,7 +178,7 @@ def test_pad_single_to_batched():
 def test_pad_batched_axis_0():
     """Test padding a BATCHED dataclass along axis 0."""
     data = SimpleData.default(shape=(3,))
-    data = data.replace(id=jnp.array([1, 2, 3]), value=jnp.array([1.0, 2.0, 3.0]))
+    data = data.replace(id=jnp.array([1, 2, 3], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 3.0]))
 
     result = xnp.pad(data, (0, 2))
 
@@ -194,7 +194,7 @@ def test_pad_batched_axis_0():
 def test_pad_uses_existing_padding_as_batch():
     """Test that pad function uses the existing padding_as_batch method when appropriate."""
     data = SimpleData.default(shape=(2,))
-    data = data.replace(id=jnp.array([1, 2]), value=jnp.array([1.0, 2.0]))
+    data = data.replace(id=jnp.array([1, 2], dtype=jnp.uint32), value=jnp.array([1.0, 2.0]))
 
     # This should use the existing padding_as_batch method
     result_xnp = xnp.pad(data, (0, 2))
