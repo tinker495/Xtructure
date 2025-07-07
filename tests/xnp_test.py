@@ -167,7 +167,7 @@ def test_pad_single_to_batched():
     data = SimpleData.default()
     data = data.replace(id=jnp.array(42), value=jnp.array(3.14))
 
-    result = xnp.pad(data, target_size=5)
+    result = xnp.pad(data, (0, 4))
 
     assert result.structured_type.name == "BATCHED"
     assert result.shape.batch == (5,)
@@ -180,7 +180,7 @@ def test_pad_batched_axis_0():
     data = SimpleData.default(shape=(3,))
     data = data.replace(id=jnp.array([1, 2, 3]), value=jnp.array([1.0, 2.0, 3.0]))
 
-    result = xnp.pad(data, target_size=5, axis=0)
+    result = xnp.pad(data, (0, 2))
 
     assert result.structured_type.name == "BATCHED"
     assert result.shape.batch == (5,)
@@ -197,7 +197,7 @@ def test_pad_uses_existing_padding_as_batch():
     data = data.replace(id=jnp.array([1, 2]), value=jnp.array([1.0, 2.0]))
 
     # This should use the existing padding_as_batch method
-    result_xnp = xnp.pad(data, target_size=4)
+    result_xnp = xnp.pad(data, (0, 2))
     result_builtin = data.padding_as_batch((4,))
 
     # Results should be identical
@@ -211,7 +211,7 @@ def test_pad_batched_with_constant_values():
     data = SimpleData.default(shape=(2,))
     data = data.replace(id=jnp.array([1, 2]), value=jnp.array([1.0, 2.0]))
 
-    result = xnp.pad(data, target_size=4, constant_values=99)
+    result = xnp.pad(data, (0, 2), constant_values=99)
 
     assert result.shape.batch == (4,)
     assert jnp.array_equal(result.id, jnp.array([1, 2, 99, 99], dtype=jnp.uint32))
@@ -222,24 +222,27 @@ def test_pad_batched_target_shape():
     """Test padding to a target batch shape."""
     data = SimpleData.default(shape=(2, 3))
 
-    result = xnp.pad(data, target_size=(4, 5))
+    result = xnp.pad(data, [(0, 2), (0, 2)])
 
     assert result.shape.batch == (4, 5)
 
 
 def test_pad_no_change_needed():
-    """Test that padding to current size returns the same instance."""
+    """Test that padding with zero padding returns the same instance."""
     data = SimpleData.default(shape=(3,))
-    result = xnp.pad(data, target_size=3)
+    result = xnp.pad(data, (0, 0))
     assert result is data
 
 
-def test_pad_target_smaller_than_current():
-    """Test that padding to smaller size raises ValueError."""
-    data = SimpleData.default(shape=(5,))
+def test_pad_invalid_pad_width():
+    """Test that invalid pad_width raises ValueError."""
+    data = SimpleData.default(shape=(3,))
 
-    with pytest.raises(ValueError, match="Target size 3 is smaller than current size 5"):
-        xnp.pad(data, target_size=3)
+    # Test with invalid pad_width format
+    with pytest.raises(
+        ValueError, match="pad_width must be int, sequence of int, or sequence of pairs"
+    ):
+        xnp.pad(data, "invalid")
 
 
 # Tests for stack function

@@ -43,8 +43,8 @@ print(f"IDs: {result.id}")  # [1, 2, 3]
 stacked = xnp.stack([data1, data2])
 print(f"Stacked batch shape: {stacked.shape.batch}")  # (2,)
 
-# 3. Pad dataclasses to target size
-padded = xnp.pad(result, target_size=5)
+# 3. Pad dataclasses with specified padding
+padded = xnp.pad(result, (0, 2))
 print(f"Padded batch shape: {padded.shape.batch}")  # (5,)
 
 # 4. Conditional selection with where
@@ -71,10 +71,10 @@ data = SimpleData.default(shape=(3,))
 data = data.replace(id=jnp.array([1, 2, 3]), value=jnp.array([1.0, 2.0, 3.0]))
 
 # Constant padding (default)
-padded_const = xnp.pad(data, target_size=5, constant_values=99)
+padded_const = xnp.pad(data, (0, 2), constant_values=99)
 
 # Edge padding (repeat edge values)
-padded_edge = xnp.pad(data, target_size=5, mode="edge")
+padded_edge = xnp.pad(data, (0, 2), mode="edge")
 
 # 8. Reshape and flatten (wrappers for dataclass methods)
 batched_data = SimpleData.default(shape=(6,))
@@ -105,20 +105,22 @@ flattened = xnp.flatten(reshaped)
 *   **Output**: A batched dataclass with an additional dimension.
 *   **Error**: Raises `ValueError` for empty lists or incompatible batch shapes.
 
-### **`xnp.pad(dataclass, target_size, axis=0, mode='constant', **kwargs)`**
-*   Pads a dataclass to reach a target size along the specified axis.
+### **`xnp.pad(dataclass, pad_width, mode='constant', **kwargs)`**
+*   Pads a dataclass with specified padding widths, following jnp.pad interface.
 *   **Input**: An `@xtructure_dataclass` instance.
 *   **Parameters**:
-    *   `target_size`: Target size (int) or shape (tuple).
-    *   `axis`: Axis to pad along (default: 0).
+    *   `pad_width`: Padding width specification following jnp.pad convention:
+        - int: Same padding (before, after) for all axes
+        - sequence of int: Padding for each axis (before, after)
+        - sequence of pairs: (before, after) padding for each axis
     *   `mode`: Padding mode (default: 'constant'). Supports all `jnp.pad` modes: 'constant', 'edge', 'linear_ramp', 'maximum', 'mean', 'median', 'minimum', 'reflect', 'symmetric', 'wrap'.
     *   `**kwargs`: Additional arguments passed to `jnp.pad` (e.g., `constant_values` for 'constant' mode).
 *   **Output**: Padded dataclass instance.
 *   **Behavior**:
-    *   For single dataclasses: Creates batched version by replicating the value (mode='constant') or expanding and padding.
+    *   For single dataclasses: Creates batched version by applying padding to create new batch dimension.
     *   For batched dataclasses: Uses existing `padding_as_batch` method when possible, otherwise applies general padding.
     *   Automatically detects optimal padding strategy based on parameters.
-*   **Error**: Raises `ValueError` if target size is smaller than current size.
+*   **Error**: Raises `ValueError` if pad_width is incompatible with dataclass structure.
 
 ### **`xnp.where(condition, x, y)`**
 *   Conditional selection for dataclasses, similar to `jnp.where`.
@@ -195,7 +197,7 @@ singles = [SimpleData.default() for _ in range(10)]
 batched = xnp.concatenate(singles)
 
 # Pad to fixed size for uniform batching
-padded_batched = xnp.pad(batched, target_size=16)
+padded_batched = xnp.pad(batched, (0, 6))  # Assuming batched has size 10
 ```
 
 ### **Conditional Processing**
