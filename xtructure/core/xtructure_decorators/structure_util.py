@@ -2,6 +2,7 @@ from typing import Any, Type, TypeVar
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 from xtructure.core.field_descriptors import FieldDescriptor
 from xtructure.core.structuredtype import StructuredType
@@ -96,8 +97,8 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
 
     def reshape(self, new_shape: tuple[int, ...]) -> T:
         if self.structured_type == StructuredType.BATCHED:
-            total_length = jnp.prod(jnp.array(self.shape.batch))
-            new_total_length = jnp.prod(jnp.array(new_shape))
+            total_length = np.prod(self.shape.batch)
+            new_total_length = np.prod(new_shape)
             batch_dim = len(self.shape.batch)
             if total_length != new_total_length:
                 raise ValueError(
@@ -120,9 +121,9 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
             )
 
         current_batch_shape = self.shape.batch
-        # jnp.prod of an empty tuple array is 1, which is correct for total_length
+        # np.prod of an empty tuple array is 1, which is correct for total_length
         # if current_batch_shape is ().
-        total_length = jnp.prod(jnp.array(current_batch_shape))
+        total_length = np.prod(np.array(current_batch_shape))
         len_current_batch_shape = len(current_batch_shape)
 
         return jax.tree_util.tree_map(
@@ -189,14 +190,16 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
     def padding_as_batch(self, batch_shape: tuple[int, ...]):
         if self.structured_type != StructuredType.BATCHED or len(self.shape.batch) > 1:
             raise ValueError(
-                f"Padding as batch operation is only supported for BATCHED structured types with at most 1 batch dimension. "
-                f"Current type: {self.structured_type}, Current batch shape: {self.shape.batch}"
+                "Padding as batch operation is only supported for BATCHED structured types "
+                "with at most 1 batch dimension. "
+                f"Current type: {self.structured_type}, "
+                f"Current batch shape: {self.shape.batch}"
             )
         if self.shape.batch == batch_shape:
             return self
 
         new_default_state = self.default(batch_shape)
-        new_default_state = new_default_state.at[:self.shape.batch[0]].set(self)
+        new_default_state = new_default_state.at[: self.shape.batch[0]].set(self)
         return new_default_state
 
     # add method based on default state

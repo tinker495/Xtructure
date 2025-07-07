@@ -1,6 +1,7 @@
 from typing import Type, TypeVar
 
 import jax.numpy as jnp
+import numpy as np
 from tabulate import tabulate
 
 from xtructure.core.structuredtype import StructuredType
@@ -60,7 +61,7 @@ def add_string_representation_methods(cls: Type[T]) -> Type[T]:
         elif structured_type == StructuredType.BATCHED:
             batch_shape = self.shape.batch
             batch_len_val = (
-                jnp.prod(jnp.array(batch_shape)) if len(batch_shape) != 1 else batch_shape[0]
+                np.prod(np.array(batch_shape)) if len(batch_shape) != 1 else batch_shape[0]
             )
             py_batch_len = int(batch_len_val)
 
