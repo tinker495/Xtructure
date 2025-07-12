@@ -125,6 +125,14 @@ class Xtructurable(Protocol[T]):
     def __ne__(self, other: Any) -> bool:
         ...
 
+    # Methods added by add_io_methods
+    def save(self: T, path: str) -> None:
+        ...
+
+    @classmethod
+    def load(cls: Type[T], path: str) -> T:
+        ...
+
 
 class AtIndexer(Protocol[T]):
     def __getitem__(self: T, index: Any) -> "Updater":

@@ -6,6 +6,7 @@ from xtructure.core.protocol import Xtructurable
 from .default import add_default_method
 from .hash import hash_function_decorator
 from .indexing import add_indexing_methods
+from .io import add_io_methods
 from .ops import add_comparison_operators
 from .shape import add_shape_dtype_len
 from .string_format import add_string_representation_methods
@@ -57,6 +58,9 @@ def xtructure_dataclass(cls: Type[T]) -> Type[Xtructurable[T]]:
 
     # add comparison operators
     cls = add_comparison_operators(cls)
+
+    # add io methods
+    cls = add_io_methods(cls)
 
     setattr(cls, "is_xtructed", True)
 
