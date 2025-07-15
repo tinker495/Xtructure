@@ -159,7 +159,7 @@ class HashTable:
                 next_table = idx.table_index >= (table.cuckoo_table_n - 1)
                 seed, idx = jax.lax.cond(
                     next_table,
-                    lambda _: (
+                    lambda: (
                         seed + 1,
                         CuckooIdx(
                             index=get_new_idx_from_uint32ed(
@@ -168,14 +168,13 @@ class HashTable:
                             table_index=HASH_TABLE_IDX_DTYPE(0),
                         ),
                     ),
-                    lambda _: (
+                    lambda: (
                         seed,
                         CuckooIdx(
                             index=idx.index,
                             table_index=idx.table_index + 1,
                         ),
                     ),
-                    None,
                 )
                 return seed, idx
 
@@ -186,9 +185,8 @@ class HashTable:
             found = jnp.logical_and(is_filled, state == input)
             seed, idx = jax.lax.cond(
                 found,
-                lambda _: (seed, idx),
-                lambda _: get_new_idx_and_table_idx(seed, idx),
-                None,
+                lambda: (seed, idx),
+                lambda: get_new_idx_and_table_idx(seed, idx),
             )
             return seed, idx, found
 
@@ -275,7 +273,7 @@ class HashTable:
                     next_table = idx.table_index >= (table.cuckoo_table_n - 1)
                     seed, idx = jax.lax.cond(
                         next_table,
-                        lambda _: (
+                        lambda: (
                             seed + 1,
                             CuckooIdx(
                                 index=get_new_idx_from_uint32ed(
@@ -284,14 +282,13 @@ class HashTable:
                                 table_index=HASH_TABLE_IDX_DTYPE(0),
                             ),
                         ),
-                        lambda _: (
+                        lambda: (
                             seed,
                             CuckooIdx(
                                 index=idx.index,
                                 table_index=idx.table_index + 1,
                             ),
                         ),
-                        None,
                     )
                     return seed, idx
 
@@ -302,9 +299,8 @@ class HashTable:
                 found = jnp.logical_and(is_filled, state == input)
                 seed, idx = jax.lax.cond(
                     found,
-                    lambda _: (seed, idx),
-                    lambda _: get_new_idx_and_table_idx(seed, idx),
-                    None,
+                    lambda: (seed, idx),
+                    lambda: get_new_idx_and_table_idx(seed, idx),
                 )
                 return seed, idx, found
 
@@ -361,7 +357,7 @@ class HashTable:
 
         idx, found = HashTable.lookup_cuckoo(table, input)
         table = jax.lax.cond(
-            found, lambda _: table, lambda _: _update_table(table, input, idx), None
+            found, lambda: table, lambda: _update_table(table, input, idx)
         )
         return table, ~found, HashIdx(index=idx.index * table.cuckoo_table_n + idx.table_index)
 
@@ -399,9 +395,8 @@ class HashTable:
             seeds, idxs = jax.vmap(
                 lambda unupdated, seed, idx, state_uint32ed: jax.lax.cond(
                     unupdated,
-                    lambda _: get_new_idx_and_table_idx(seed, idx, state_uint32ed),
-                    lambda _: (seed, idx),
-                    None,
+                    lambda: get_new_idx_and_table_idx(seed, idx, state_uint32ed),
+                    lambda: (seed, idx),
                 )
             )(unupdateds, seeds, idxs, inputs_uint32ed)
             return seeds, idxs

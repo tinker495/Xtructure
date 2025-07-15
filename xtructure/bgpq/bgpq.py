@@ -383,9 +383,8 @@ class BGPQ:
             # Choose child with smaller key
             x, y = jax.lax.cond(
                 max_left_child > max_right_child,
-                lambda _: (left_child, right_child),
-                lambda _: (right_child, left_child),
-                None,
+                lambda: (left_child, right_child),
+                lambda: (right_child, left_child),
             )
 
             # Merge and swap nodes
