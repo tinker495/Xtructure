@@ -18,6 +18,7 @@ setuptools.setup(
         "chex>=0.1.0",
         "tabulate>=0.9.0",
         "numpy>=2.2.0",
+        "rich>=13.0.0",
     ],
     extras_require={
         "dev": [

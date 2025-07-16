@@ -80,7 +80,7 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
                     cfg["bits_gen_dtype"] = actual_dtype  # Generate bits of this same unsigned type
                     cfg["view_as_signed"] = False
                 else:  # It's a signed integer
-                    unsigned_equivalent_str = f"uint{actual_dtype.itemsize * 8}"
+                    unsigned_equivalent_str = f"uint{np.dtype(actual_dtype).itemsize * 8}"
                     cfg["bits_gen_dtype"] = jnp.dtype(
                         unsigned_equivalent_str
                     )  # Generate bits of corresponding unsigned type

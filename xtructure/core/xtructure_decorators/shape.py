@@ -1,6 +1,8 @@
 from collections import namedtuple
 from typing import Type, TypeVar
 
+import jax.numpy as jnp
+
 from xtructure.core.field_descriptors import FieldDescriptor
 from xtructure.core.protocol import StructuredType
 
@@ -40,7 +42,13 @@ def add_shape_dtype_len(cls: Type[T]) -> Type[T]:
         field_shapes = []
         batch_shapes = []
         for field_name in cls.__annotations__.keys():
-            shape = getattr(self, field_name).shape
+            field_value = getattr(self, field_name)
+            # Check if the field is a nested xtructure instance before attempting to convert to array
+            if hasattr(field_value, "is_xtructed"):
+                shape = field_value.shape
+            else:
+                shape = jnp.asarray(field_value).shape
+
             default_shape_field = getattr(default_shape, field_name)
             if (
                 isinstance(shape, tuple)
