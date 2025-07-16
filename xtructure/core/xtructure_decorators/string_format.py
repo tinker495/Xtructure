@@ -121,8 +121,8 @@ def add_string_representation_methods(cls: Type[T]) -> Type[T]:
 
             panel = Panel(
                 table,
-                title=f"Batched {cls.__name__}",
-                subtitle=f"shape: {batch_shape}",
+                title=f"[yellow bold]Batched {cls.__name__}[/yellow bold]",
+                subtitle=f"[green bold]shape: {batch_shape}[/green bold]",
                 expand=False,
             )
             console.print(panel)

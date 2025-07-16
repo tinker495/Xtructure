@@ -18,7 +18,7 @@ setuptools.setup(
         "chex>=0.1.0",
         "tabulate>=0.9.0",
         "numpy>=2.2.0",
-        "rich>=13.0.0",
+        "rich @ git+https://github.com/tinker495/rich.git",  # for now debugging
     ],
     extras_require={
         "dev": [
