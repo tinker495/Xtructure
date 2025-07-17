@@ -54,9 +54,11 @@ def add_string_representation_methods(cls: Type[T]) -> Type[T]:
 
             def get_slice_str(current_state_slice):
                 if use_kwargs:
-                    return _single_item_formatter(current_state_slice, **kwargs)
+                    return Text.from_ansi(
+                        _single_item_formatter(current_state_slice, **kwargs)
+                    )
                 else:
-                    return _single_item_formatter(current_state_slice)
+                    return Text.from_ansi(_single_item_formatter(current_state_slice))
 
             table = Table(show_header=False, show_edge=False, box=None)
 
