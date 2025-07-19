@@ -9,6 +9,17 @@ from rich.table import Table
 from xtructure import FieldDescriptor, xtructure_dataclass
 
 
+def human_format(num):
+    num = float("{:.3g}".format(num))
+    magnitude = 0
+    while abs(num) >= 1000:
+        magnitude += 1
+        num /= 1000.0
+    return "{}{}".format(
+        "{:f}".format(num).rstrip("0").rstrip("."), ["", "K", "M", "B", "T"][magnitude]
+    )
+
+
 @xtructure_dataclass
 class BenchmarkValue:
     """
@@ -90,11 +101,13 @@ def print_results_table(results: Dict[str, Any], title: str):
 
             # Add row for xtructure
             xtructure_perf = xtructure_results.get(op, [])[i]
-            table.add_row(f"{size:,}", op_name, "xtructure", f"{xtructure_perf:,.2f}")
+            table.add_row(f"{size:,}", op_name, "xtructure", human_format(xtructure_perf))
 
             # Add row for python
             python_perf = python_results.get(op, [])[i]
-            table.add_row("", op_name, "python", f"{python_perf:,.2f}")  # Don't repeat batch size
+            table.add_row(
+                "", op_name, "python", human_format(python_perf)
+            )  # Don't repeat batch size
         if i < len(batch_sizes) - 1:
             table.add_row("", "", "", "", end_section=True)
 

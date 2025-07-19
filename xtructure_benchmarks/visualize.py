@@ -3,8 +3,20 @@ from pathlib import Path
 
 import matplotlib
 import matplotlib.pyplot as plt
+from matplotlib.ticker import FuncFormatter
 
 matplotlib.use("Agg")
+
+
+def human_format(num, pos=None):  # Add pos=None for FuncFormatter
+    num = float("{:.3g}".format(num))
+    magnitude = 0
+    while abs(num) >= 1000:
+        magnitude += 1
+        num /= 1000.0
+    return "{}{}".format(
+        "{:f}".format(num).rstrip("0").rstrip("."), ["", "K", "M", "B", "T"][magnitude]
+    )
 
 
 def plot_performance(results_path: Path):
@@ -25,6 +37,7 @@ def plot_performance(results_path: Path):
 
     for op in operations:
         plt.figure(figsize=(10, 6))
+        ax = plt.gca()  # Get current axes
 
         op_name = op.replace("_ops_per_sec", "").capitalize()
         title = f"{data_structure_name} {op_name} Performance"
@@ -35,8 +48,11 @@ def plot_performance(results_path: Path):
         plt.xscale("log", base=2)
         plt.yscale("log")
 
+        # Apply human-readable format to the y-axis
+        ax.yaxis.set_major_formatter(FuncFormatter(human_format))
+
         plt.xlabel("Batch Size (log scale)")
-        plt.ylabel("Operations per Second (log scale)")
+        plt.ylabel("Operations per Second")
         plt.title(title)
         plt.legend()
         plt.grid(True, which="both", ls="--")

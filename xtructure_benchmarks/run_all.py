@@ -4,6 +4,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from common import human_format
 from rich.console import Console
 from rich.table import Table
 
@@ -53,8 +54,8 @@ def display_summary_table():
             table.add_row(
                 data_structure if i == 0 else "",
                 op_name,
-                f"{xtructure_perf:,.2f}",
-                f"{python_perf:,.2f}",
+                f"{human_format(xtructure_perf)}",
+                f"{human_format(python_perf)}",
                 f"[{ratio_style}]{ratio:.2f}x[/{ratio_style}]",
             )
 
