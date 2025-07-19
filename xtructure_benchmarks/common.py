@@ -29,7 +29,7 @@ class BenchmarkValue:
     """
 
     id: FieldDescriptor[jnp.uint32]
-    timestamp: FieldDescriptor[jnp.uint64]
+    timestamp: FieldDescriptor[jnp.uint32]
     position: FieldDescriptor[jnp.float32, (3,)]
     embedding: FieldDescriptor[jnp.float16, (128,)]
 
