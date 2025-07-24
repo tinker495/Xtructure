@@ -1,6 +1,5 @@
-"""JAX/dm-tree friendly dataclass implementation reusing Python dataclasses."""
+"""A JAX/dm-tree friendly dataclass implementation based on chex's dataclass, with unnecessary features removed."""
 
-import collections
 import dataclasses
 import functools
 import sys
