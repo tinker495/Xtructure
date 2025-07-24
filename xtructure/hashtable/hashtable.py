@@ -356,9 +356,7 @@ class HashTable:
             return table
 
         idx, found = HashTable.lookup_cuckoo(table, input)
-        table = jax.lax.cond(
-            found, lambda: table, lambda: _update_table(table, input, idx)
-        )
+        table = jax.lax.cond(found, lambda: table, lambda: _update_table(table, input, idx))
         return table, ~found, HashIdx(index=idx.index * table.cuckoo_table_n + idx.table_index)
 
     @staticmethod

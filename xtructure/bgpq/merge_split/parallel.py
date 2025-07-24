@@ -41,9 +41,7 @@ def merge_parallel_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref):
         idx_to_store = jnp.where(is_a_le_b, idx_a, n + idx_b)
 
         key_casted = key_to_store.astype(merged_keys_ref.dtype)
-        pl.store(
-            merged_keys_ref, (pl.ds(out_ptr, 1),), jnp.expand_dims(key_casted, 0)
-        )
+        pl.store(merged_keys_ref, (pl.ds(out_ptr, 1),), jnp.expand_dims(key_casted, 0))
         pl.store(
             merged_indices_ref,
             (pl.ds(out_ptr, 1),),

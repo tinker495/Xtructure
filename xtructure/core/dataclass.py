@@ -46,9 +46,7 @@ def base_dataclass(
 
     def dcls(cls):
         # Make sure to create a separate _Dataclass instance for each `cls`.
-        return _Dataclass(init, repr, eq, order, unsafe_hash, frozen, kw_only)(
-            cls
-        )
+        return _Dataclass(init, repr, eq, order, unsafe_hash, frozen, kw_only)(cls)
 
     if cls is None:
         return dcls
