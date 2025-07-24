@@ -4,6 +4,7 @@ from .core import (
     FieldDescriptor,
     StructuredType,
     Xtructurable,
+    base_dataclass,
     xtructure_dataclass,
     xtructure_numpy,
 )
