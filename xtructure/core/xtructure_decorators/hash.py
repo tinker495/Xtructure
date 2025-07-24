@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 
-from .. import Xtructurable
+from ..protocol import Xtructurable
 
 
 def rotl(x, n):
