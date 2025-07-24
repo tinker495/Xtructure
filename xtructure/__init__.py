@@ -25,6 +25,7 @@ __all__ = [
     "Stack",
     # core.dataclass.py
     "Xtructurable",
+    "base_dataclass",
     "xtructure_dataclass",
     "StructuredType",
     # core.field_descriptors.py
