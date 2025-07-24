@@ -13,69 +13,6 @@ FrozenInstanceError = dataclasses.FrozenInstanceError
 _RESERVED_DCLS_FIELD_NAMES = frozenset(("from_tuple", "replace", "to_tuple"))
 
 
-def mappable_dataclass(cls):
-    """Exposes dataclass as ``collections.abc.Mapping`` descendent.
-
-    Allows to traverse dataclasses in methods from `dm-tree` library.
-
-    NOTE: changes dataclasses constructor to dict-type
-    (i.e. positional args aren't supported; however can use generators/iterables).
-
-    Args:
-        cls: A dataclass to mutate.
-
-    Returns:
-        Mutated dataclass implementing ``collections.abc.Mapping`` interface.
-    """
-    if not dataclasses.is_dataclass(cls):
-        raise ValueError(f"Expected dataclass, got {cls} (change wrappers order?).")
-
-    # Define methods for compatibility with `collections.abc.Mapping`.
-    setattr(cls, "__getitem__", lambda self, x: self.__dict__[x])
-    setattr(cls, "__len__", lambda self: len(self.__dict__))
-    setattr(cls, "__iter__", lambda self: iter(self.__dict__))
-    # Override the default `collections.abc.Mapping` method implementation for
-    # cleaner visualization. Without this change x.keys() shows the full repr(x)
-    # instead of only the dict_keys present. The same goes for values and items.
-    setattr(cls, "keys", lambda self: self.__dict__.keys())
-    setattr(cls, "values", lambda self: self.__dict__.values())
-    setattr(cls, "items", lambda self: self.__dict__.items())
-
-    # Update constructor.
-    orig_init = cls.__init__
-    all_fields = set(f.name for f in cls.__dataclass_fields__.values())
-    init_fields = [f.name for f in cls.__dataclass_fields__.values() if f.init]
-
-    @functools.wraps(orig_init)
-    def new_init(self, *orig_args, **orig_kwargs):
-        if (orig_args and orig_kwargs) or len(orig_args) > 1:
-            raise ValueError(
-                "Mappable dataclass constructor doesn't support positional args."
-                "(it has the same constructor as python dict)"
-            )
-        all_kwargs = dict(*orig_args, **orig_kwargs)
-        unknown_kwargs = set(all_kwargs.keys()) - all_fields
-        if unknown_kwargs:
-            raise ValueError(f"__init__() got unexpected kwargs: {unknown_kwargs}.")
-
-        # Pass only arguments corresponding to fields with `init=True`.
-        valid_kwargs = {k: v for k, v in all_kwargs.items() if k in init_fields}
-        orig_init(self, **valid_kwargs)
-
-    cls.__init__ = new_init
-
-    # Update base class to derive from Mapping
-    dct = dict(cls.__dict__)
-    if "__dict__" in dct:
-        dct.pop("__dict__")  # Avoid self-references.
-
-    # Remove object from the sequence of base classes. Deriving from both Mapping
-    # and object will cause a failure to create a MRO for the updated class
-    bases = tuple(b for b in cls.__bases__ if b != object)
-    cls = type(cls.__name__, bases + (collections.abc.Mapping,), dct)
-    return cls
-
-
 @dataclass_transform()
 def base_dataclass(
     cls=None,
@@ -87,7 +24,6 @@ def base_dataclass(
     unsafe_hash=False,
     frozen=False,
     kw_only: bool = False,
-    mappable_dataclass=False,  # pylint: disable=redefined-outer-name
 ):
     """JAX-friendly wrapper for :py:func:`dataclasses.dataclass`.
 
@@ -104,16 +40,6 @@ def base_dataclass(
         unsafe_hash: See :py:func:`dataclasses.dataclass`.
         frozen: See :py:func:`dataclasses.dataclass`.
         kw_only: See :py:func:`dataclasses.dataclass`.
-        mappable_dataclass: If True (the default), methods to make the class
-            implement the :py:class:`collections.abc.Mapping` interface will be
-            generated and the class will include :py:class:`collections.abc.Mapping`
-            in its base classes.
-            `True` is the default, because being an instance of `Mapping` makes
-            `base_dataclass` compatible with e.g. `jax.tree_util.tree_*` methods, the
-            `tree` library, or methods related to tensorflow/python/utils/nest.py.
-            As a side-effect, e.g. `np.testing.assert_array_equal` will only check
-            the field names are equal and not the content. Use `chex.assert_tree_*`
-            instead.
 
     Returns:
         A JAX-friendly dataclass.
@@ -121,7 +47,7 @@ def base_dataclass(
 
     def dcls(cls):
         # Make sure to create a separate _Dataclass instance for each `cls`.
-        return _Dataclass(init, repr, eq, order, unsafe_hash, frozen, kw_only, mappable_dataclass)(
+        return _Dataclass(init, repr, eq, order, unsafe_hash, frozen, kw_only)(
             cls
         )
 
@@ -142,7 +68,6 @@ class _Dataclass:
         unsafe_hash=False,
         frozen=False,
         kw_only=False,
-        mappable_dataclass=True,  # pylint: disable=redefined-outer-name
     ):
         self.init = init
         self.repr = repr  # pylint: disable=redefined-builtin
@@ -151,7 +76,6 @@ class _Dataclass:
         self.unsafe_hash = unsafe_hash
         self.frozen = frozen
         self.kw_only = kw_only
-        self.mappable_dataclass = mappable_dataclass
 
     def __call__(self, cls):
         """Forwards class to dataclasses's wrapper and registers it with JAX."""
@@ -189,9 +113,6 @@ class _Dataclass:
             raise ValueError(
                 f"The following dataclass fields are disallowed: " f"{invalid_fields} ({dcls})."
             )
-
-        if self.mappable_dataclass:
-            dcls = mappable_dataclass(dcls)
 
         def _from_tuple(args):
             return dcls(zip(dcls.__dataclass_fields__.keys(), args))
