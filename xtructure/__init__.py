@@ -4,6 +4,7 @@ from .core import (
     FieldDescriptor,
     StructuredType,
     Xtructurable,
+    base_dataclass,
     xtructure_dataclass,
     xtructure_numpy,
 )
@@ -25,6 +26,7 @@ __all__ = [
     "Stack",
     # core.dataclass.py
     "Xtructurable",
+    "base_dataclass",
     "xtructure_dataclass",
     "StructuredType",
     # core.field_descriptors.py

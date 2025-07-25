@@ -1,9 +1,11 @@
+import random
+
 import jax
 import jax.numpy as jnp
 import pytest
-import random
 
 from xtructure import BGPQ, FieldDescriptor, xtructure_dataclass
+
 
 @xtructure_dataclass
 class XtructureValue:
@@ -43,7 +45,10 @@ def test_heap_initialization(heap_setup):
     assert heap.size == 0
     assert heap.batch_size == batch_size
 
-@pytest.mark.parametrize("N", [128, 256, 311, 512, 707] + [random.randint(1, 700) for _ in range(5)])
+
+@pytest.mark.parametrize(
+    "N", [128, 256, 311, 512, 707] + [random.randint(1, 700) for _ in range(5)]
+)
 def test_heap_insert_and_delete_batch_size(heap_setup, N):
     heap, batch_size, max_size, _key_gen = heap_setup
     rnd_key = jax.random.PRNGKey(random.randint(0, 1000000))
@@ -115,7 +120,9 @@ def test_heap_insert_and_delete_batch_size(heap_setup, N):
     )
 
 
-@pytest.mark.parametrize("N", [128, 256, 311, 512, 707] + [random.randint(1, 700) for _ in range(5)])
+@pytest.mark.parametrize(
+    "N", [128, 256, 311, 512, 707] + [random.randint(1, 700) for _ in range(5)]
+)
 def test_heap_insert_and_delete_random_size(heap_setup, N):
     heap, batch_size, max_size, _key_gen = heap_setup
     rnd_key = jax.random.PRNGKey(random.randint(0, 1000000))
@@ -124,9 +131,7 @@ def test_heap_insert_and_delete_random_size(heap_setup, N):
     total_size = 0
     for i in range(0, N, 1):
         rnd_key, seed1, seed2 = jax.random.split(rnd_key, 3)
-        size = jax.random.randint(
-            seed1, minval=1, maxval=8, shape=()
-        ) * batch_size // 8
+        size = jax.random.randint(seed1, minval=1, maxval=8, shape=()) * batch_size // 8
         value = XtructureValue.random(shape=(size,), key=seed2)
         key = _key_gen(value)
         key, value = BGPQ.make_batched(key, value, batch_size)
