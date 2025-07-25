@@ -466,7 +466,9 @@ class HashTable:
         batch_len = filled.shape[0]
 
         # Find unique states to avoid duplicates
-        unique_uint32eds_idx = jnp.unique(uint32eds, axis=0, size=batch_len, return_index=True)[1]
+        _, unique_uint32eds_idx, inverse_indices = jnp.unique(
+            uint32eds, axis=0, size=batch_len, return_index=True, return_inverse=True
+        )
         unique = jnp.zeros((batch_len,), dtype=jnp.bool_).at[unique_uint32eds_idx].set(True)
         unique_filled = jnp.logical_and(filled, unique)
 
@@ -484,23 +486,31 @@ class HashTable:
         updatable = jnp.logical_and(~found, unique_filled)
 
         # Perform parallel insertion
-        table, idx = HashTable._parallel_insert(
+        table, inserted_idx = HashTable._parallel_insert(
             table, inputs, uint32eds, seeds, idx, updatable, batch_len
         )
 
-        # Get final indices
-        idx = CuckooIdx(
-            index=initial_idx, table_index=jnp.zeros((batch_len,), dtype=HASH_TABLE_IDX_DTYPE)
-        )
+        # Provisional index: found -> idx, inserted -> inserted_idx
+        provisional_index = jnp.where(found, idx.index, inserted_idx.index)
+        provisional_table_index = jnp.where(found, idx.table_index, inserted_idx.table_index)
+        provisional_idx = CuckooIdx(index=provisional_index, table_index=provisional_table_index)
 
-        seeds = jnp.full((batch_len,), table.seed, dtype=jnp.uint32)
-        _, idx, _ = HashTable._lookup_parallel(table, inputs, uint32eds, idx, seeds, ~filled)
+        # Only keep indices for unique elements
+        correct_indices_for_uniques = CuckooIdx(
+            index=provisional_idx.index[unique_uint32eds_idx],
+            table_index=provisional_idx.table_index[unique_uint32eds_idx],
+        )
+        # Broadcast to all batch elements using inverse_indices
+        final_idx = CuckooIdx(
+            index=correct_indices_for_uniques.index[inverse_indices],
+            table_index=correct_indices_for_uniques.table_index[inverse_indices],
+        )
 
         return (
             table,
             updatable,
             unique_filled,
-            HashIdx(index=idx.index * table.cuckoo_table_n + idx.table_index),
+            HashIdx(index=final_idx.index * table.cuckoo_table_n + final_idx.table_index),
         )
 
     @jax.jit
