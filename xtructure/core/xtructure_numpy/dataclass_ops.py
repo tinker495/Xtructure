@@ -361,8 +361,12 @@ def where(condition: jnp.ndarray, x: Xtructurable, y: Union[Xtructurable, Any]) 
 
 
 def unique_mask(
-    val: Xtructurable, key: jnp.ndarray | None = None, batch_len: int | None = None
-) -> jnp.ndarray:
+    val: Xtructurable,
+    key: jnp.ndarray | None = None,
+    batch_len: int | None = None,
+    return_index: bool = False,
+    return_inverse: bool = False,
+) -> Union[jnp.ndarray, tuple]:
     """
     Creates a boolean mask identifying unique values in a batched Xtructurable tensor,
     keeping only the entry with the minimum cost for each unique state.
@@ -374,9 +378,12 @@ def unique_mask(
         key (jnp.ndarray | None): The cost/priority values used for tie-breaking when multiple
             entries have the same unique identifier. If None, returns mask for first occurrence.
         batch_len (int | None): The length of the batch. If None, inferred from val.shape.batch[0].
+        return_index (bool): Whether to return the indices of the unique values.
+        return_inverse (bool): Whether to return the inverse indices of the unique values.
 
     Returns:
-        jnp.ndarray: Boolean mask where True indicates the single, cheapest unique value.
+        - jnp.ndarray: Boolean mask if all return flags are False.
+        - tuple: A tuple containing the mask and other requested arrays (index, inverse).
 
     Raises:
         ValueError: If val doesn't have the required uint32ed attribute.
@@ -385,8 +392,11 @@ def unique_mask(
         >>> # Simple unique filtering without cost consideration
         >>> mask = unique_mask(batched_states)
 
+        >>> # With return values
+        >>> mask, index, inverse = unique_mask(batched_states, return_index=True, return_inverse=True)
+
         >>> # Unique filtering with cost-based selection
-        >>> mask = unique_mask(batched_states, costs)
+        >>> mask, index = unique_mask(batched_states, costs, return_index=True)
         >>> unique_states = jax.tree_util.tree_map(lambda x: x[mask], batched_states)
     """
     # Verify that val has the required uint32ed attribute first
@@ -401,41 +411,62 @@ def unique_mask(
     # Validate key array if provided
     if key is not None and len(key) != batch_len:
         raise ValueError(f"key length {len(key)} must match batch_len {batch_len}")
+
     # 2. Group by Hash
     # The size argument is crucial for JIT compilation
-    _unique_hashes, inv = jnp.unique(hash_bytes, axis=0, size=batch_len, return_inverse=True)
-    if key is None:
-        # Find the first occurrence of each unique group
-        # inv[i] tells us which group item i belongs to
-        # We want the first index for each group
-        batch_idx = jnp.arange(batch_len, dtype=jnp.int32)
-        first_occurrence_per_group = jnp.full((batch_len,), batch_len, dtype=jnp.int32)
-        first_occurrence_per_group = first_occurrence_per_group.at[inv].min(batch_idx)
-        first_occurrence_for_each_item = first_occurrence_per_group[inv]
-        return batch_idx == first_occurrence_for_each_item
+    _, unique_indices, inv = jnp.unique(
+        hash_bytes,
+        axis=0,
+        size=batch_len,
+        return_index=True,
+        return_inverse=True,
+    )
 
-    # 1. Isolate Keys
     batch_idx = jnp.arange(batch_len, dtype=jnp.int32)
 
-    # 3. Find Minimum Cost per Group
-    min_costs_per_group = jnp.full((batch_len,), jnp.inf, dtype=key.dtype)
-    min_costs_per_group = min_costs_per_group.at[inv].min(key)
+    if key is None:
+        # Find the first occurrence of each unique group
+        final_mask = jnp.zeros(batch_len, dtype=jnp.bool_).at[unique_indices].set(True)
+    else:
+        # 1. Isolate Keys
+        # 3. Find Minimum Cost per Group
+        min_costs_per_group = jnp.full((batch_len,), jnp.inf, dtype=key.dtype)
+        min_costs_per_group = min_costs_per_group.at[inv].min(key)
 
-    # 4. Primary Mask (Cost Criterion)
-    min_cost_for_each_item = min_costs_per_group[inv]
-    is_min_cost = key == min_cost_for_each_item
+        # 4. Primary Mask (Cost Criterion)
+        min_cost_for_each_item = min_costs_per_group[inv]
+        is_min_cost = key == min_cost_for_each_item
 
-    # 5. Tie-Breaking (Index Criterion)
-    indices_to_consider = jnp.where(is_min_cost, batch_idx, batch_len)
-    winning_indices_per_group = jnp.full((batch_len,), batch_len, dtype=jnp.int32)
-    winning_indices_per_group = winning_indices_per_group.at[inv].min(indices_to_consider)
+        # 5. Tie-Breaking (Index Criterion)
+        indices_to_consider = jnp.where(is_min_cost, batch_idx, batch_len)
+        winning_indices_per_group = jnp.full((batch_len,), batch_len, dtype=jnp.int32)
+        winning_indices_per_group = winning_indices_per_group.at[inv].min(indices_to_consider)
 
-    # 6. Final Mask
-    winning_index_for_each_item = winning_indices_per_group[inv]
-    final_mask = batch_idx == winning_index_for_each_item
+        # 6. Final Mask
+        winning_index_for_each_item = winning_indices_per_group[inv]
+        final_mask = batch_idx == winning_index_for_each_item
 
-    # Ensure that invalid (padding) entries with infinite cost are not selected.
-    is_valid = key < jnp.inf
-    final_mask = jnp.logical_and(final_mask, is_valid)
+        # Ensure that invalid (padding) entries with infinite cost are not selected.
+        is_valid = key < jnp.inf
+        final_mask = jnp.logical_and(final_mask, is_valid)
 
-    return final_mask
+        if return_index:
+            unique_indices = winning_indices_per_group[
+                jnp.where(
+                    jnp.arange(batch_len) < len(jnp.unique(inv, size=batch_len)[0]),
+                    jnp.unique(inv, size=batch_len)[0],
+                    0,
+                )
+            ]
+
+    # Prepare return values
+    if not return_index and not return_inverse:
+        return final_mask
+
+    returns = (final_mask,)
+    if return_index:
+        returns += (unique_indices,)
+    if return_inverse:
+        returns += (inv,)
+
+    return returns

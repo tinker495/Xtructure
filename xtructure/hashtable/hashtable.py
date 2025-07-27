@@ -367,7 +367,6 @@ class HashTable:
         seeds: chex.Array,
         index: CuckooIdx,
         updatable: chex.Array,
-        batch_len: int,
     ):
         def _next_idx(seeds: chex.Array, idxs: CuckooIdx, unupdateds: chex.Array):
             def get_new_idx_and_table_idx(seed, idx, state_uint32ed):
@@ -410,26 +409,13 @@ class HashTable:
             overflowed = jnp.logical_and(
                 idxs.table_index >= table.cuckoo_table_n, unupdated
             )  # Overflowed index must be updated
-            idxs = xnp.where(updatable, idxs, -1)
-            idx_bytes = jax.vmap(lambda x: x.uint32ed)(idxs)
-            unique_idxs = jnp.unique(idx_bytes, axis=0, size=batch_len, return_index=True)[
-                1
-            ]  # val = (unique_len, 2), unique_idxs = (unique_len,)
-            not_uniques = (
-                jnp.ones((batch_len,), dtype=jnp.bool_).at[unique_idxs].set(False)
-            )  # set the unique index to True
+            not_uniques = jnp.logical_not(xnp.unique_mask(idxs))
 
             unupdated = jnp.logical_and(updatable, not_uniques)
             unupdated = jnp.logical_or(unupdated, overflowed)
             return seeds, idxs, unupdated
 
-        index = xnp.where(updatable, index, -1)
-        # Use index_bytes for unique calculation instead of _idxs
-        hash_idx_bytes = jax.vmap(lambda x: x.uint32ed)(index)
-        unique_idxs = jnp.unique(hash_idx_bytes, axis=0, size=batch_len, return_index=True)[1]
-        not_uniques = (
-            jnp.ones((batch_len,), dtype=jnp.bool_).at[unique_idxs].set(False)
-        )  # set the unique index to False (i.e., mark uniques as False)
+        not_uniques = jnp.logical_not(xnp.unique_mask(index))
         unupdated = jnp.logical_and(
             updatable, not_uniques
         )  # remove the unique index from the unupdated index
@@ -465,11 +451,10 @@ class HashTable:
 
         batch_len = filled.shape[0]
 
-        # Find unique states to avoid duplicates
-        _, unique_uint32eds_idx, inverse_indices = jnp.unique(
-            uint32eds, axis=0, size=batch_len, return_index=True, return_inverse=True
+        # Find unique states to avoid duplicates using enhanced unique_mask
+        unique, unique_uint32eds_idx, inverse_indices = xnp.unique_mask(
+            val=inputs, batch_len=batch_len, return_index=True, return_inverse=True
         )
-        unique = jnp.zeros((batch_len,), dtype=jnp.bool_).at[unique_uint32eds_idx].set(True)
         unique_filled = jnp.logical_and(filled, unique)
 
         # Look up each state
@@ -487,7 +472,7 @@ class HashTable:
 
         # Perform parallel insertion
         table, inserted_idx = HashTable._parallel_insert(
-            table, inputs, uint32eds, seeds, idx, updatable, batch_len
+            table, inputs, uint32eds, seeds, idx, updatable
         )
 
         # Provisional index: found -> idx, inserted -> inserted_idx
