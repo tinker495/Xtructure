@@ -49,20 +49,9 @@ def concat(dataclasses: List[T], axis: int = 0) -> T:
     if not all(dc.structured_type == first_structured_type for dc in dataclasses):
         raise ValueError("All dataclasses must have the same structured type")
 
-    # For SINGLE structured type, convert to batched first
+    # For SINGLE structured type, this operation is equivalent to stacking
     if first_structured_type == StructuredType.SINGLE:
-        # Convert each single instance to a batch of size 1
-        batched_dataclasses = []
-        for dc in dataclasses:
-            # Create a batched version by adding a batch dimension
-            batched_dc = jax.tree_util.tree_map(lambda x: jnp.expand_dims(x, axis=0), dc)
-            batched_dataclasses.append(batched_dc)
-
-        # Concatenate the batched versions
-        result = jax.tree_util.tree_map(
-            lambda *arrays: jnp.concatenate(arrays, axis=axis), *batched_dataclasses
-        )
-        return result
+        return stack(dataclasses, axis=axis)
 
     # For BATCHED structured type, concatenate directly
     elif first_structured_type == StructuredType.BATCHED:
@@ -162,6 +151,25 @@ def pad(
         else:
             raise ValueError("pad_width must be int, sequence of int, or sequence of pairs")
 
+    # Check for no-op case (zero padding)
+    if structured_type == StructuredType.SINGLE:
+        if isinstance(pad_width, int) and pad_width == 0:
+            return dataclass_instance
+        elif isinstance(pad_width, (list, tuple)):
+            if len(pad_width) == 1:
+                if isinstance(pad_width[0], (list, tuple)) and len(pad_width[0]) == 2:
+                    if pad_width[0] == (0, 0):
+                        return dataclass_instance
+                elif pad_width[0] == 0:
+                    return dataclass_instance
+            elif len(pad_width) == 2 and pad_width == (0, 0):
+                return dataclass_instance
+    elif structured_type == StructuredType.BATCHED:
+        batch_ndim = len(dataclass_instance.shape.batch)
+        normalized_pad_width = _normalize_pad_width(pad_width, batch_ndim)
+        if all(before == 0 and after == 0 for before, after in normalized_pad_width):
+            return dataclass_instance
+
     if structured_type == StructuredType.SINGLE:
         # For SINGLE type, create a batch dimension and pad it
         if isinstance(pad_width, int):
@@ -217,7 +225,7 @@ def pad(
             batch_ndim == 1
             and len(normalized_pad_width) == 1
             and mode == "constant"
-            and kwargs.get("constant_values", 0) == 0
+            and "constant_values" not in kwargs
         ):
             pad_before, pad_after = normalized_pad_width[0]
             target_size = batch_shape[0] + pad_before + pad_after
@@ -242,14 +250,32 @@ def pad(
         # General case: create pad_width specification for jnp.pad
         pad_width_spec = normalized_pad_width
 
-        # Apply padding to each field
-        result = jax.tree_util.tree_map(
-            lambda x: jnp.pad(
-                x, pad_width_spec + [(0, 0)] * (x.ndim - batch_ndim), mode=mode, **kwargs
-            ),
-            dataclass_instance,
-        )
-        return result
+        # For constant mode without explicit constant_values, use field-specific defaults
+        if mode == "constant" and "constant_values" not in kwargs:
+            # Create a default instance to get field-specific default values
+            default_instance = type(dataclass_instance).default()
+
+            # Apply padding with field-specific constant values
+            result = jax.tree_util.tree_map(
+                lambda x, default_val: jnp.pad(
+                    x,
+                    pad_width_spec + [(0, 0)] * (x.ndim - batch_ndim),
+                    mode=mode,
+                    constant_values=default_val,
+                ),
+                dataclass_instance,
+                default_instance,
+            )
+            return result
+        else:
+            # Apply padding to each field with provided kwargs
+            result = jax.tree_util.tree_map(
+                lambda x: jnp.pad(
+                    x, pad_width_spec + [(0, 0)] * (x.ndim - batch_ndim), mode=mode, **kwargs
+                ),
+                dataclass_instance,
+            )
+            return result
 
     else:
         raise ValueError(f"Padding not supported for structured type: {structured_type}")
@@ -451,13 +477,8 @@ def unique_mask(
         final_mask = jnp.logical_and(final_mask, is_valid)
 
         if return_index:
-            unique_indices = winning_indices_per_group[
-                jnp.where(
-                    jnp.arange(batch_len) < len(jnp.unique(inv, size=batch_len)[0]),
-                    jnp.unique(inv, size=batch_len)[0],
-                    0,
-                )
-            ]
+            unique_group_ids, _ = jnp.unique(inv, size=batch_len, return_index=True)
+            unique_indices = winning_indices_per_group[unique_group_ids]
 
     # Prepare return values
     if not return_index and not return_inverse:
