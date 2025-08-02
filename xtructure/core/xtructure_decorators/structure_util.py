@@ -98,6 +98,37 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
     def reshape(self, new_shape: tuple[int, ...]) -> T:
         if self.structured_type == StructuredType.BATCHED:
             total_length = np.prod(self.shape.batch)
+
+            # Handle -1 in new_shape by calculating the missing dimension
+            new_shape_list = list(new_shape)
+            if -1 in new_shape_list:
+                # Count how many -1s are in the shape
+                minus_one_count = new_shape_list.count(-1)
+                if minus_one_count > 1:
+                    raise ValueError("Only one -1 is allowed in new_shape")
+
+                # Calculate the product of all non-negative values in new_shape
+                non_negative_product = 1
+                for dim in new_shape_list:
+                    if dim != -1:
+                        non_negative_product *= dim
+
+                # Calculate what the -1 should be
+                if non_negative_product == 0:
+                    raise ValueError("Cannot infer -1 dimension when other dimensions are 0")
+
+                inferred_dim = total_length // non_negative_product
+                if total_length % non_negative_product != 0:
+                    raise ValueError(
+                        f"Total length {total_length} is not divisible by the product of "
+                        f"other dimensions {non_negative_product}"
+                    )
+
+                # Replace -1 with the calculated dimension
+                minus_one_index = new_shape_list.index(-1)
+                new_shape_list[minus_one_index] = inferred_dim
+                new_shape = tuple(new_shape_list)
+
             new_total_length = np.prod(new_shape)
             batch_dim = len(self.shape.batch)
             if total_length != new_total_length:

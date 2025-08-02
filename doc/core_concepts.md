@@ -60,6 +60,13 @@ This decorator transforms a Python class into a JAX-compatible structure and add
 *   `at[index_or_slice]` (property): Provides access to an updater object for out-of-place modifications of the instance's fields at the given `index_or_slice`.
     *   `set(values_to_set)`: Returns a new instance with the fields at the specified `index_or_slice` updated with `values_to_set`. If `values_to_set` is an instance of the same dataclass, corresponding fields are used for the update; otherwise, `values_to_set` is applied to all selected field slices.
     *   `set_as_condition(condition, value_to_conditionally_set)`: Returns a new instance where fields at the specified `index_or_slice` are updated based on a JAX boolean `condition`. If an element in `condition` is true, the corresponding element in the field slice is updated with `value_to_conditionally_set`.
+*   `save(self, path)`: Saves the instance to a file.
+    *   `path`: File path where the instance will be saved (typically with `.npz` extension).
+    *   The instance is serialized and saved using the xtructure IO module.
+*   `load(cls, path)` (classmethod): Loads an instance from a file.
+    *   `path`: File path from which to load the instance.
+    *   Returns an instance of the class loaded from the specified file.
+    *   Raises a `TypeError` if the loaded instance is not of the expected class type.
 
 ## `FieldDescriptor`
 

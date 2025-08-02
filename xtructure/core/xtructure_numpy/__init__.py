@@ -1,10 +1,17 @@
 from .dataclass_ops import concat
 from .dataclass_ops import concat as concatenate
-from .dataclass_ops import flatten, pad, reshape, stack, unique_mask, where
-from .set_as_cond import set_as_condition_on_array
+from .dataclass_ops import (
+    flatten,
+    pad,
+    reshape,
+    stack,
+    take,
+    unique_mask,
+    update_on_condition,
+    where,
+)
 
 __all__ = [
-    "set_as_condition_on_array",
     "concat",
     "concatenate",
     "pad",
@@ -12,5 +19,7 @@ __all__ = [
     "reshape",
     "flatten",
     "where",
+    "take",
     "unique_mask",
+    "update_on_condition",
 ]

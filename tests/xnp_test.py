@@ -2,8 +2,9 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from xtructure import FieldDescriptor, xtructure_dataclass
-from xtructure import xtructure_numpy as xnp
+from xtructure import FieldDescriptor
+from xtructure import numpy as xnp
+from xtructure import xtructure_dataclass
 
 
 # Test dataclasses for the new operations
@@ -25,63 +26,281 @@ class NestedData:
     vector: FieldDescriptor[VectorData]
 
 
-def test_set_as_condition_basic():
-    original_array = jnp.zeros(5)
+def test_update_on_condition_basic():
+    """Test update_on_condition with a simple dataclass."""
+    original = SimpleData.default((5,))
+    original = original.replace(
+        id=jnp.zeros(5, dtype=jnp.uint32), value=jnp.zeros(5, dtype=jnp.float32)
+    )
     indices = jnp.array([0, 2, 4])
     condition = jnp.array([True, True, True])
     values_to_set = 1.0
-    result = xnp.set_as_condition_on_array(original_array, indices, condition, values_to_set)
-    expected = jnp.array([1.0, 0.0, 1.0, 0.0, 1.0])
-    assert jnp.array_equal(result, expected)
+
+    result = xnp.update_on_condition(original, indices, condition, values_to_set)
+
+    expected_id = jnp.array([1, 0, 1, 0, 1], dtype=jnp.uint32)
+    expected_value = jnp.array([1.0, 0.0, 1.0, 0.0, 1.0], dtype=jnp.float32)
+    assert jnp.array_equal(result.id, expected_id)
+    assert jnp.array_equal(result.value, expected_value)
 
 
-def test_set_as_condition_duplicate_indices_first_wins():
-    original_array = jnp.zeros(5)
+def test_update_on_condition_duplicate_indices_first_wins():
+    """Test update_on_condition with duplicate indices - first True wins."""
+    original = SimpleData.default((5,))
+    original = original.replace(
+        id=jnp.zeros(5, dtype=jnp.uint32), value=jnp.zeros(5, dtype=jnp.float32)
+    )
     indices = jnp.array([0, 2, 0])
     condition = jnp.array([True, True, True])
     values_to_set = jnp.array([1.0, 2.0, 3.0])
-    result = xnp.set_as_condition_on_array(original_array, indices, condition, values_to_set)
-    expected = jnp.array([1.0, 0.0, 2.0, 0.0, 0.0])
-    assert jnp.array_equal(result, expected)
+
+    result = xnp.update_on_condition(original, indices, condition, values_to_set)
+
+    expected_id = jnp.array([1, 0, 2, 0, 0], dtype=jnp.uint32)
+    expected_value = jnp.array([1.0, 0.0, 2.0, 0.0, 0.0], dtype=jnp.float32)
+    assert jnp.array_equal(result.id, expected_id)
+    assert jnp.array_equal(result.value, expected_value)
 
 
-def test_set_as_condition_advanced_indexing():
-    original_array = jnp.zeros((2, 3))
+def test_update_on_condition_advanced_indexing():
+    """Test update_on_condition with advanced indexing."""
+    original = VectorData.default((2, 3))
+    original = original.replace(
+        position=jnp.zeros((2, 3, 3), dtype=jnp.float32),
+        velocity=jnp.zeros((2, 3, 3), dtype=jnp.float32),
+    )
     indices = (jnp.array([0, 1, 0]), jnp.array([1, 2, 1]))
     condition = jnp.array([True, True, False])
     values_to_set = 5.0
-    result = xnp.set_as_condition_on_array(original_array, indices, condition, values_to_set)
-    expected = jnp.array([[0.0, 5.0, 0.0], [0.0, 0.0, 5.0]])
-    assert jnp.array_equal(result, expected)
+
+    result = xnp.update_on_condition(original, indices, condition, values_to_set)
+
+    # Check that position and velocity fields are updated correctly
+    expected_position = jnp.array(
+        [
+            [[0.0, 0.0, 0.0], [5.0, 5.0, 5.0], [0.0, 0.0, 0.0]],
+            [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [5.0, 5.0, 5.0]],
+        ],
+        dtype=jnp.float32,
+    )
+    expected_velocity = expected_position.copy()
+
+    assert jnp.array_equal(result.position, expected_position)
+    assert jnp.array_equal(result.velocity, expected_velocity)
 
 
-def test_set_as_condition_all_false():
-    original_array = jnp.arange(5)
+def test_update_on_condition_all_false():
+    """Test update_on_condition when all conditions are False."""
+    original = SimpleData.default((5,))
+    original = original.replace(
+        id=jnp.arange(5, dtype=jnp.uint32), value=jnp.arange(5, dtype=jnp.float32)
+    )
     indices = jnp.array([0, 1, 2])
     condition = jnp.array([False, False, False])
     values_to_set = 99.0
-    result = xnp.set_as_condition_on_array(original_array, indices, condition, values_to_set)
-    assert jnp.array_equal(result, original_array)
+
+    result = xnp.update_on_condition(original, indices, condition, values_to_set)
+
+    # Should remain unchanged
+    assert jnp.array_equal(result.id, original.id)
+    assert jnp.array_equal(result.value, original.value)
 
 
-def test_set_as_condition_scalar_value():
-    original_array = jnp.ones(4)
+def test_update_on_condition_scalar_value():
+    """Test update_on_condition with scalar values."""
+    original = SimpleData.default((4,))
+    original = original.replace(
+        id=jnp.ones(4, dtype=jnp.uint32), value=jnp.ones(4, dtype=jnp.float32)
+    )
     indices = jnp.array([1, 3])
     condition = jnp.array([True, True])
     values_to_set = 7.0
-    result = xnp.set_as_condition_on_array(original_array, indices, condition, values_to_set)
-    expected = jnp.array([1.0, 7.0, 1.0, 7.0])
-    assert jnp.array_equal(result, expected)
+
+    result = xnp.update_on_condition(original, indices, condition, values_to_set)
+
+    expected_id = jnp.array([1, 7, 1, 7], dtype=jnp.uint32)
+    expected_value = jnp.array([1.0, 7.0, 1.0, 7.0], dtype=jnp.float32)
+    assert jnp.array_equal(result.id, expected_id)
+    assert jnp.array_equal(result.value, expected_value)
 
 
-def test_set_as_condition_array_values():
-    original_array = jnp.zeros(5)
+def test_update_on_condition_array_values():
+    """Test update_on_condition with array values."""
+    original = SimpleData.default((5,))
+    original = original.replace(
+        id=jnp.zeros(5, dtype=jnp.uint32), value=jnp.zeros(5, dtype=jnp.float32)
+    )
     indices = jnp.array([0, 2, 4, 0])
     condition = jnp.array([True, True, False, True])
     values_to_set = jnp.array([10.0, 20.0, 30.0, 40.0])
-    result = xnp.set_as_condition_on_array(original_array, indices, condition, values_to_set)
-    expected = jnp.array([10.0, 0.0, 20.0, 0.0, 0.0])
-    assert jnp.array_equal(result, expected)
+
+    result = xnp.update_on_condition(original, indices, condition, values_to_set)
+
+    expected_id = jnp.array([10, 0, 20, 0, 0], dtype=jnp.uint32)
+    expected_value = jnp.array([10.0, 0.0, 20.0, 0.0, 0.0], dtype=jnp.float32)
+    assert jnp.array_equal(result.id, expected_id)
+    assert jnp.array_equal(result.value, expected_value)
+
+
+# Tests for take function
+def test_take_basic():
+    """Test basic take functionality."""
+    data = SimpleData.default((5,))
+    data = data.replace(
+        id=jnp.array([1, 2, 3, 4, 5], dtype=jnp.uint32),
+        value=jnp.array([1.0, 2.0, 3.0, 4.0, 5.0], dtype=jnp.float32),
+    )
+
+    indices = jnp.array([0, 2, 4])
+    result = xnp.take(data, indices)
+
+    expected_id = jnp.array([1, 3, 5], dtype=jnp.uint32)
+    expected_value = jnp.array([1.0, 3.0, 5.0], dtype=jnp.float32)
+    assert jnp.array_equal(result.id, expected_id)
+    assert jnp.array_equal(result.value, expected_value)
+
+
+def test_take_with_negative_indices():
+    """Test take with negative indices."""
+    data = SimpleData.default((4,))
+    data = data.replace(
+        id=jnp.array([1, 2, 3, 4], dtype=jnp.uint32),
+        value=jnp.array([1.0, 2.0, 3.0, 4.0], dtype=jnp.float32),
+    )
+
+    indices = jnp.array([-1, -2])
+    result = xnp.take(data, indices)
+
+    expected_id = jnp.array([4, 3], dtype=jnp.uint32)
+    expected_value = jnp.array([4.0, 3.0], dtype=jnp.float32)
+    assert jnp.array_equal(result.id, expected_id)
+    assert jnp.array_equal(result.value, expected_value)
+
+
+def test_take_2d_axis_0():
+    """Test take on 2D dataclass along axis 0."""
+    data = VectorData.default((3, 2))
+    data = data.replace(
+        position=jnp.array(
+            [
+                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+                [[7.0, 8.0, 9.0], [10.0, 11.0, 12.0]],
+                [[13.0, 14.0, 15.0], [16.0, 17.0, 18.0]],
+            ],
+            dtype=jnp.float32,
+        ),
+        velocity=jnp.array(
+            [
+                [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]],
+                [[0.7, 0.8, 0.9], [1.0, 1.1, 1.2]],
+                [[1.3, 1.4, 1.5], [1.6, 1.7, 1.8]],
+            ],
+            dtype=jnp.float32,
+        ),
+    )
+
+    indices = jnp.array([0, 2])
+    result = xnp.take(data, indices, axis=0)
+
+    expected_position = jnp.array(
+        [[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], [[13.0, 14.0, 15.0], [16.0, 17.0, 18.0]]],
+        dtype=jnp.float32,
+    )
+    expected_velocity = jnp.array(
+        [[[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]], [[1.3, 1.4, 1.5], [1.6, 1.7, 1.8]]], dtype=jnp.float32
+    )
+
+    assert jnp.array_equal(result.position, expected_position)
+    assert jnp.array_equal(result.velocity, expected_velocity)
+
+
+def test_take_2d_axis_1():
+    """Test take on 2D dataclass along axis 1."""
+    data = VectorData.default((2, 3))
+    data = data.replace(
+        position=jnp.array(
+            [
+                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]],
+                [[10.0, 11.0, 12.0], [13.0, 14.0, 15.0], [16.0, 17.0, 18.0]],
+            ],
+            dtype=jnp.float32,
+        ),
+        velocity=jnp.array(
+            [
+                [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6], [0.7, 0.8, 0.9]],
+                [[1.0, 1.1, 1.2], [1.3, 1.4, 1.5], [1.6, 1.7, 1.8]],
+            ],
+            dtype=jnp.float32,
+        ),
+    )
+
+    indices = jnp.array([0, 2])
+    result = xnp.take(data, indices, axis=1)
+
+    expected_position = jnp.array(
+        [[[1.0, 2.0, 3.0], [7.0, 8.0, 9.0]], [[10.0, 11.0, 12.0], [16.0, 17.0, 18.0]]],
+        dtype=jnp.float32,
+    )
+    expected_velocity = jnp.array(
+        [[[0.1, 0.2, 0.3], [0.7, 0.8, 0.9]], [[1.0, 1.1, 1.2], [1.6, 1.7, 1.8]]], dtype=jnp.float32
+    )
+
+    assert jnp.array_equal(result.position, expected_position)
+    assert jnp.array_equal(result.velocity, expected_velocity)
+
+
+def test_take_single_element():
+    """Test take with single element."""
+    data = SimpleData.default((3,))
+    data = data.replace(
+        id=jnp.array([1, 2, 3], dtype=jnp.uint32),
+        value=jnp.array([1.0, 2.0, 3.0], dtype=jnp.float32),
+    )
+
+    indices = jnp.array([1])
+    result = xnp.take(data, indices)
+
+    expected_id = jnp.array([2], dtype=jnp.uint32)
+    expected_value = jnp.array([2.0], dtype=jnp.float32)
+    assert jnp.array_equal(result.id, expected_id)
+    assert jnp.array_equal(result.value, expected_value)
+
+
+def test_take_empty_indices():
+    """Test take with empty indices."""
+    data = SimpleData.default((3,))
+    data = data.replace(
+        id=jnp.array([1, 2, 3], dtype=jnp.uint32),
+        value=jnp.array([1.0, 2.0, 3.0], dtype=jnp.float32),
+    )
+
+    indices = jnp.array([], dtype=jnp.int32)
+    result = xnp.take(data, indices)
+
+    expected_id = jnp.array([], dtype=jnp.uint32)
+    expected_value = jnp.array([], dtype=jnp.float32)
+    assert jnp.array_equal(result.id, expected_id)
+    assert jnp.array_equal(result.value, expected_value)
+
+
+def test_take_equivalent_to_jnp_take():
+    """Test that xnp.take produces same result as manual jnp.take."""
+    data = SimpleData.default((4,))
+    data = data.replace(
+        id=jnp.array([1, 2, 3, 4], dtype=jnp.uint32),
+        value=jnp.array([1.0, 2.0, 3.0, 4.0], dtype=jnp.float32),
+    )
+
+    indices = jnp.array([0, 2, 3])
+
+    # Using our xnp.take
+    result_xnp = xnp.take(data, indices)
+
+    # Using manual jnp.take
+    result_manual = SimpleData(id=jnp.take(data.id, indices), value=jnp.take(data.value, indices))
+
+    assert jnp.array_equal(result_xnp.id, result_manual.id)
+    assert jnp.array_equal(result_xnp.value, result_manual.value)
 
 
 # Tests for concat function
@@ -171,8 +390,11 @@ def test_pad_single_to_batched():
 
     assert result.structured_type.name == "BATCHED"
     assert result.shape.batch == (5,)
-    assert jnp.array_equal(result.id, jnp.array([42, 42, 42, 42, 42]))
-    assert jnp.allclose(result.value, jnp.array([3.14, 3.14, 3.14, 3.14, 3.14]))
+    # The first element should be the original value, rest should be default values
+    expected_id = jnp.array([42, 4294967295, 4294967295, 4294967295, 4294967295], dtype=jnp.uint32)
+    expected_value = jnp.array([3.14, jnp.inf, jnp.inf, jnp.inf, jnp.inf], dtype=jnp.float32)
+    assert jnp.array_equal(result.id, expected_id)
+    assert jnp.allclose(result.value, expected_value)
 
 
 def test_pad_batched_axis_0():
@@ -336,6 +558,95 @@ def test_reshape_wrapper():
     assert jnp.array_equal(result_wrapper.id, result_builtin.id)
     assert jnp.array_equal(result_wrapper.value, result_builtin.value)
     assert result_wrapper.shape.batch == result_builtin.shape.batch == (2, 3)
+
+
+def test_reshape_with_minus_one():
+    """Test reshape with -1 to automatically calculate dimensions."""
+    data = SimpleData.default(shape=(12,))
+    data = data.replace(id=jnp.arange(12), value=jnp.arange(12, dtype=jnp.float32))
+
+    # Test -1 at the end
+    result1 = xnp.reshape(data, (2, -1))
+    assert result1.shape.batch == (2, 6)
+    assert jnp.array_equal(result1.id, jnp.arange(12).reshape(2, 6))
+    assert jnp.array_equal(result1.value, jnp.arange(12, dtype=jnp.float32).reshape(2, 6))
+
+    # Test -1 at the beginning
+    result2 = xnp.reshape(data, (-1, 3))
+    assert result2.shape.batch == (4, 3)
+    assert jnp.array_equal(result2.id, jnp.arange(12).reshape(4, 3))
+    assert jnp.array_equal(result2.value, jnp.arange(12, dtype=jnp.float32).reshape(4, 3))
+
+    # Test -1 alone (flatten)
+    result3 = xnp.reshape(data, (-1,))
+    assert result3.shape.batch == (12,)
+    assert jnp.array_equal(result3.id, jnp.arange(12))
+    assert jnp.array_equal(result3.value, jnp.arange(12, dtype=jnp.float32))
+
+
+def test_reshape_with_minus_one_2d():
+    """Test reshape with -1 on 2D data."""
+    data = SimpleData.default(shape=(8, 3))
+    data = data.replace(
+        id=jnp.arange(24).reshape(8, 3), value=jnp.arange(24, dtype=jnp.float32).reshape(8, 3)
+    )
+
+    # Test -1 in middle
+    result1 = xnp.reshape(data, (2, -1, 3))
+    assert result1.shape.batch == (2, 4, 3)
+    expected_id = jnp.arange(24).reshape(2, 4, 3)
+    expected_value = jnp.arange(24, dtype=jnp.float32).reshape(2, 4, 3)
+    assert jnp.array_equal(result1.id, expected_id)
+    assert jnp.array_equal(result1.value, expected_value)
+
+    # Test -1 at end
+    result2 = xnp.reshape(data, (4, -1))
+    assert result2.shape.batch == (4, 6)
+    expected_id = jnp.arange(24).reshape(4, 6)
+    expected_value = jnp.arange(24, dtype=jnp.float32).reshape(4, 6)
+    assert jnp.array_equal(result2.id, expected_id)
+    assert jnp.array_equal(result2.value, expected_value)
+
+
+def test_reshape_with_minus_one_errors():
+    """Test that reshape with invalid -1 usage raises appropriate errors."""
+    data = SimpleData.default(shape=(10,))
+    data = data.replace(id=jnp.arange(10), value=jnp.arange(10, dtype=jnp.float32))
+
+    # Test multiple -1s (should raise error)
+    with pytest.raises(ValueError, match="Only one -1 is allowed in new_shape"):
+        xnp.reshape(data, (-1, -1))
+
+    # Test invalid shape that doesn't divide evenly
+    with pytest.raises(
+        ValueError, match="Total length 10 is not divisible by the product of other dimensions 3"
+    ):
+        xnp.reshape(data, (3, -1))
+
+    # Test with zero dimension (should raise error)
+    with pytest.raises(ValueError, match="Cannot infer -1 dimension when other dimensions are 0"):
+        xnp.reshape(data, (0, -1))
+
+
+def test_reshape_with_minus_one_vector_data():
+    """Test reshape with -1 on vector data."""
+    data = VectorData.default(shape=(12,))
+    data = data.replace(
+        position=jnp.arange(36, dtype=jnp.float32).reshape(12, 3),
+        velocity=jnp.arange(36, dtype=jnp.float32).reshape(12, 3) + 100,
+    )
+
+    # Test -1 reshape
+    result = xnp.reshape(data, (3, -1))
+    assert result.shape.batch == (3, 4)
+    assert result.position.shape == (3, 4, 3)
+    assert result.velocity.shape == (3, 4, 3)
+
+    # Verify the data is correctly reshaped
+    expected_position = jnp.arange(36, dtype=jnp.float32).reshape(3, 4, 3)
+    expected_velocity = (jnp.arange(36, dtype=jnp.float32) + 100).reshape(3, 4, 3)
+    assert jnp.array_equal(result.position, expected_position)
+    assert jnp.array_equal(result.velocity, expected_velocity)
 
 
 # Tests for flatten wrapper function
@@ -614,7 +925,7 @@ def test_unique_mask_error_no_uint32ed():
     # Create a simple array without uint32ed
     invalid_data = jnp.array([1, 2, 3])
 
-    with pytest.raises(ValueError, match="val must have a uint32ed attribute"):
+    with pytest.raises(ValueError, match="key_fn failed to generate hashable keys"):
         xnp.unique_mask(invalid_data)
 
 
@@ -678,3 +989,25 @@ def test_unique_mask_integration_with_other_ops():
     default_id = HashableData.default().id  # Get the actual default value
     expected_filtered_ids = jnp.where(mask, data.id, default_id)
     assert jnp.array_equal(filtered_data.id, expected_filtered_ids)
+
+
+def test_unique_mask_with_custom_key_fn():
+    """Test unique_mask with custom key function."""
+    data = HashableData.default(shape=(6,))
+    data = data.replace(
+        id=jnp.array([1, 2, 1, 3, 2, 1]),
+        value=jnp.array([10.0, 20.0, 10.0, 30.0, 20.0, 10.0]),
+    )
+
+    costs = jnp.array([3.0, 2.0, 1.0, 4.0, 5.0, 0.5])
+
+    # Use custom key function that uses value field instead of uint32ed
+    def custom_key_fn(x):
+        return x.value
+
+    mask = xnp.unique_mask(data, key=costs, key_fn=custom_key_fn)
+
+    # Should keep: value=10.0 with min cost=0.5 (index 5), value=20.0 with min cost=2.0 (index 1),
+    #              value=30.0 with cost=4.0 (index 3)
+    expected_mask = jnp.array([False, True, False, True, False, True])
+    assert jnp.array_equal(mask, expected_mask)

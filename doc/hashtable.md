@@ -41,7 +41,6 @@ print(f"HashTable size: {hash_table.size}")
 # inserted_mask: boolean array, true if the item at the corresponding input index was successfully inserted.
 # unique_mask: boolean array, true if the inserted item was unique (not a duplicate).
 # idxs: HashIdx object containing indices in the hash table where items were stored.
-#       Access primary indices with `idxs.index` and cuckoo indices with `idxs.table_index`.
 
 # 5. Lookup data
 #    HashTable.lookup(table, item_to_lookup)
@@ -49,14 +48,26 @@ item_to_check = sample_data[0]  # Let's check the first item we inserted
 idx, found = HashTable.lookup(hash_table, item_to_check)
 
 if found:
-    retrieved_item = hash_table.table[idx.index, idx.table_index]  # Accessing the item from the internal table
-    print(f"HashTable: Item found at primary index {idx.index}, cuckoo_index {idx.table_index}.")
+    retrieved_item = hash_table.table[idx.index]  # Accessing the item from the internal table
+    print(f"HashTable: Item found at index {idx.index}.")
     # You can then compare retrieved_item with item_to_check
 else:
     print("HashTable: Item not found.")
 
-# (Optional) Batching data for insertion if your data isn't already batched appropriately:
-# batch_size_for_insert = 50 # Example internal batch size if HashTable has one
+# 6. Parallel lookup (for multiple items)
+#    HashTable.lookup_parallel(table, items_to_lookup)
+items_to_lookup = sample_data[:5]  # Look up first 5 items
+idxs, founds = HashTable.lookup_parallel(hash_table, items_to_lookup)
+print(f"HashTable: Found {jnp.sum(founds)} out of {len(items_to_lookup)} items in parallel lookup.")
+
+# 7. Single item insertion
+#    HashTable.insert(table, item_to_insert)
+single_item = MyDataValue.default()
+single_item = single_item.replace(
+    id=jnp.array(999), position=jnp.array([1.0, 2.0, 3.0]), flags=jnp.array([True, False, True, False])
+)
+hash_table, was_inserted, idx = HashTable.insert(hash_table, single_item)
+print(f"HashTable: Single item inserted? {was_inserted}")
 ```
 
 ## Key `HashTable` Details
@@ -66,10 +77,25 @@ else:
     *   `dataclass`: The *class* of your custom data structure (e.g., `MyDataValue`). An instance of this class (e.g., `MyDataValue.default()`) is used internally to define the table structure.
     *   `seed`: Integer seed for hashing.
     *   `capacity`: Desired user capacity. The internal capacity (`_capacity`) will be larger to accommodate Cuckoo hashing (specifically, `int(HASH_SIZE_MULTIPLIER * capacity / CUCKOO_TABLE_N)`).
-*   **`HashTable.parallel_insert(table, inputs, filled_mask)`**:
+*   **`HashTable.parallel_insert(table, inputs, filled_mask=None)`**:
     *   `inputs`: A PyTree (or batch of PyTrees) of items to insert.
-    *   `filled_mask`: A boolean JAX array indicating which entries in `inputs` are valid.
-    *   Returns the updated table, `inserted_mask` (boolean array for successful insertions for each input), `unique_mask` (boolean array, true if the item was new and not a duplicate), and `idxs` (a `HashIdx` object containing `.index` and `.table_index` for where items were stored).
+    *   `filled_mask`: A boolean JAX array indicating which entries in `inputs` are valid. If `None`, all inputs are considered valid.
+    *   Returns a tuple of:
+        *   `updated_table`: The updated HashTable instance
+        *   `inserted_mask`: Boolean array for successful insertions for each input
+        *   `unique_mask`: Boolean array, true if the item was new and not a duplicate
+        *   `idxs`: A `HashIdx` object containing `.index` for where items were stored
 *   **`HashTable.lookup(table, item_to_lookup)`**:
-    *   Returns `idx` (a `HashIdx` object with `.index` and `.table_index`) and `found` (boolean).
-    *   If `found` is true, the item can be retrieved from `table.table[idx.index, idx.table_index]`.
+    *   Returns `idx` (a `HashIdx` object with `.index`) and `found` (boolean).
+    *   If `found` is true, the item can be retrieved from `table.table[idx.index]`.
+*   **`HashTable.lookup_parallel(table, items_to_lookup)`**:
+    *   Performs parallel lookup for multiple items.
+    *   `items_to_lookup`: A batch of items to look up.
+    *   Returns `idxs` (a `HashIdx` object with `.index` for each item) and `founds` (boolean array indicating which items were found).
+*   **`HashTable.insert(table, item_to_insert)`**:
+    *   Inserts a single item into the hash table.
+    *   `item_to_insert`: The item to insert.
+    *   Returns a tuple of:
+        *   `updated_table`: The updated HashTable instance
+        *   `was_inserted`: Boolean indicating if the item was actually inserted (not already present)
+        *   `idx`: A `HashIdx` object with `.index` for where the item was stored
