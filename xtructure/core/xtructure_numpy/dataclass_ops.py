@@ -639,3 +639,132 @@ def update_on_condition(
             lambda field: _update_array_on_condition(field, indices, condition, values_to_set),
             dataclass_instance,
         )
+
+
+def transpose(dataclass_instance: T, axes: Union[tuple[int, ...], None] = None) -> T:
+    """
+    Transpose the batch dimensions of a dataclass instance.
+
+    This function applies transpose only to the batch dimensions of each field,
+    preserving the field-specific dimensions (like vector dimensions).
+
+    Args:
+        dataclass_instance: The dataclass instance to transpose
+        axes: Tuple or list of ints, a permutation of [0,1,..,N-1] where N is the number of batch axes.
+              If None, batch axes are reversed.
+
+    Returns:
+        A new dataclass instance with transposed batch dimensions
+
+    Examples:
+        >>> # Transpose a 2D batched dataclass
+        >>> data = MyData.default((3, 4))
+        >>> result = xnp.transpose(data)
+        >>> # result will have batch shape (4, 3)
+
+        >>> # Transpose with specific axes order
+        >>> data = MyData.default((2, 3, 4))
+        >>> result = xnp.transpose(data, axes=(2, 0, 1))
+        >>> # result will have batch shape (4, 2, 3)
+
+        >>> # For vector dataclass, only batch dimensions are transposed
+        >>> data = VectorData.default((2, 3))  # batch shape (2, 3), vector shape (3,)
+        >>> result = xnp.transpose(data)
+        >>> # result will have batch shape (3, 2), vector shape remains (3,)
+    """
+    # Get the batch shape to determine how many batch dimensions we have
+    batch_shape = dataclass_instance.shape.batch
+    if isinstance(batch_shape, int):
+        # Single dimension batch
+        batch_ndim = 1
+    else:
+        batch_ndim = len(batch_shape)
+
+    # If no axes specified, reverse the batch axes
+    if axes is None:
+        axes = tuple(range(batch_ndim - 1, -1, -1))
+
+    # Apply transpose only to the batch dimensions
+    def transpose_batch_only(field):
+        # For fields with more dimensions than batch, we need to transpose only the batch part
+        field_ndim = field.ndim
+        if field_ndim <= batch_ndim:
+            # Field has same or fewer dimensions than batch, transpose all
+            return jnp.transpose(field, axes=axes)
+        else:
+            # Field has more dimensions than batch (e.g., vector fields)
+            # We need to transpose only the first batch_ndim dimensions
+            # Create a full axes permutation that keeps non-batch dimensions in place
+            full_axes = list(axes) + list(range(batch_ndim, field_ndim))
+            return jnp.transpose(field, axes=full_axes)
+
+    return jax.tree_util.tree_map(transpose_batch_only, dataclass_instance)
+
+
+def swap_axes(dataclass_instance: T, axis1: int, axis2: int) -> T:
+    """
+    Swap two batch axes of a dataclass instance.
+
+    This function applies swap_axes only to the batch dimensions of each field,
+    preserving the field-specific dimensions (like vector dimensions).
+
+    Args:
+        dataclass_instance: The dataclass instance to swap axes for
+        axis1: First batch axis to swap
+        axis2: Second batch axis to swap
+
+    Returns:
+        A new dataclass instance with swapped batch axes
+
+    Examples:
+        >>> # Swap first and second batch axes
+        >>> data = MyData.default((3, 4, 5))
+        >>> result = xnp.swap_axes(data, 0, 1)
+        >>> # result will have batch shape (4, 3, 5)
+
+        >>> # Swap last two batch axes
+        >>> data = MyData.default((2, 3, 4))
+        >>> result = xnp.swap_axes(data, -1, -2)
+        >>> # result will have batch shape (2, 4, 3)
+
+        >>> # For vector dataclass, only batch dimensions are swapped
+        >>> data = VectorData.default((2, 3))  # batch shape (2, 3), vector shape (3,)
+        >>> result = xnp.swap_axes(data, 0, 1)
+        >>> # result will have batch shape (3, 2), vector shape remains (3,)
+    """
+    # Get the batch shape to determine how many batch dimensions we have
+    batch_shape = dataclass_instance.shape.batch
+    if isinstance(batch_shape, int):
+        # Single dimension batch
+        batch_ndim = 1
+    else:
+        batch_ndim = len(batch_shape)
+
+    # Normalize negative indices to positive indices within batch dimensions
+    def normalize_axis(axis):
+        if axis < 0:
+            return batch_ndim + axis
+        return axis
+
+    axis1_norm = normalize_axis(axis1)
+    axis2_norm = normalize_axis(axis2)
+
+    # Validate that axes are within batch dimensions
+    if axis1_norm < 0 or axis1_norm >= batch_ndim:
+        raise ValueError(f"Axis {axis1} is out of bounds for batch dimensions {batch_shape}")
+    if axis2_norm < 0 or axis2_norm >= batch_ndim:
+        raise ValueError(f"Axis {axis2} is out of bounds for batch dimensions {batch_shape}")
+
+    # Apply swap_axes only to the batch dimensions
+    def swap_batch_axes_only(field):
+        # For fields with more dimensions than batch, we need to swap only the batch part
+        field_ndim = field.ndim
+        if field_ndim <= batch_ndim:
+            # Field has same or fewer dimensions than batch, swap directly
+            return jnp.swapaxes(field, axis1_norm, axis2_norm)
+        else:
+            # Field has more dimensions than batch (e.g., vector fields)
+            # We need to swap only the batch dimensions, keeping non-batch dimensions in place
+            return jnp.swapaxes(field, axis1_norm, axis2_norm)
+
+    return jax.tree_util.tree_map(swap_batch_axes_only, dataclass_instance)
