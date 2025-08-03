@@ -82,9 +82,9 @@ else:
     *   Keys are padded with `jnp.inf`.
     *   Values are padded using `value_class.default()` for the padding portion.
     *   Returns `batched_keys, batched_values`.
-*   **`BGPQ.insert(heap, block_key, block_val, added_size=None)`**:
+*   **`BGPQ.insert(heap, block_key, block_val)`**:
     *   Inserts a batch of keys and values. Inputs (`block_key`, `block_val`) *must* be pre-batched, typically using `BGPQ.make_batched()`.
-    *   `added_size` is an optional integer; if not provided, the function counts the number of finite keys in `block_key` to determine how many items are being added.
+    *   The function automatically counts the number of finite keys in `block_key` to determine how many items are being added.
 *   **`BGPQ.delete_mins(heap)`**:
     *   Returns the modified queue, a batch of `batch_size` smallest keys, and their corresponding values.
     *   **Important**: If the queue contains fewer than `batch_size` items, the returned `min_keys` and `min_values` arrays will be padded (keys with `jnp.inf`, values with their defaults). You **must** use a filter like `valid_mask = jnp.isfinite(min_keys)` to identify and use only the actual (non-padded) items returned.

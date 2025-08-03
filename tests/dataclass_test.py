@@ -184,6 +184,114 @@ def test_reshape():
     assert reshaped_nested2d.simple.value.shape == (6,)
 
 
+def test_reshape_with_minus_one():
+    """Test reshape with -1 to automatically calculate dimensions."""
+    # Test SimpleData
+    batched = SimpleData.default(shape=(12,))
+    batched = batched.replace(
+        id=jnp.arange(12, dtype=jnp.uint32), value=jnp.arange(12, dtype=jnp.float32)
+    )
+
+    # Test -1 at the end
+    reshaped1 = batched.reshape((2, -1))
+    assert reshaped1.structured_type == StructuredType.BATCHED
+    assert reshaped1.shape.batch == (2, 6)
+    assert reshaped1.id.shape == (2, 6)
+    assert reshaped1.value.shape == (2, 6)
+
+    # Test -1 at the beginning
+    reshaped2 = batched.reshape((-1, 3))
+    assert reshaped2.structured_type == StructuredType.BATCHED
+    assert reshaped2.shape.batch == (4, 3)
+    assert reshaped2.id.shape == (4, 3)
+    assert reshaped2.value.shape == (4, 3)
+
+    # Test -1 alone (flatten)
+    reshaped3 = batched.reshape((-1,))
+    assert reshaped3.structured_type == StructuredType.BATCHED
+    assert reshaped3.shape.batch == (12,)
+    assert reshaped3.id.shape == (12,)
+    assert reshaped3.value.shape == (12,)
+
+    # Test VectorData
+    vector = VectorData.default(shape=(10,))
+    vector = vector.replace(
+        position=jnp.arange(30, dtype=jnp.float32).reshape(10, 3),
+        velocity=jnp.arange(30, dtype=jnp.float32).reshape(10, 3) + 100,
+    )
+
+    # Test -1 reshape on vector data
+    reshaped_vector = vector.reshape((2, -1))
+    assert reshaped_vector.structured_type == StructuredType.BATCHED
+    assert reshaped_vector.shape.batch == (2, 5)
+    assert reshaped_vector.position.shape == (2, 5, 3)
+    assert reshaped_vector.velocity.shape == (2, 5, 3)
+
+    # Test MatrixData
+    matrix = MatrixData.default(shape=(8,))
+    matrix = matrix.replace(
+        matrix=jnp.arange(32, dtype=jnp.float32).reshape(8, 2, 2),
+        flags=jnp.arange(32, dtype=jnp.int32).reshape(8, 4).astype(jnp.bool_),
+    )
+
+    # Test -1 reshape on matrix data
+    reshaped_matrix = matrix.reshape((2, -1))
+    assert reshaped_matrix.structured_type == StructuredType.BATCHED
+    assert reshaped_matrix.shape.batch == (2, 4)
+    assert reshaped_matrix.matrix.shape == (2, 4, 2, 2)
+    assert reshaped_matrix.flags.shape == (2, 4, 4)
+
+    # Test NestedData
+    nested = NestedData.default(shape=(6,))
+    nested = nested.replace(
+        simple=SimpleData(
+            id=jnp.arange(6, dtype=jnp.uint32), value=jnp.arange(6, dtype=jnp.float32)
+        ),
+        vector=VectorData(
+            position=jnp.arange(18, dtype=jnp.float32).reshape(6, 3),
+            velocity=jnp.arange(18, dtype=jnp.float32).reshape(6, 3) + 100,
+        ),
+    )
+
+    # Test -1 reshape on nested data
+    reshaped_nested = nested.reshape((2, -1))
+    assert reshaped_nested.structured_type == StructuredType.BATCHED
+    assert reshaped_nested.shape.batch == (2, 3)
+    assert reshaped_nested.simple.id.shape == (2, 3)
+    assert reshaped_nested.simple.value.shape == (2, 3)
+    assert reshaped_nested.vector.position.shape == (2, 3, 3)
+    assert reshaped_nested.vector.velocity.shape == (2, 3, 3)
+
+
+def test_reshape_with_minus_one_errors():
+    """Test that reshape with invalid -1 usage raises appropriate errors."""
+    batched = SimpleData.default(shape=(10,))
+    batched = batched.replace(
+        id=jnp.arange(10, dtype=jnp.uint32), value=jnp.arange(10, dtype=jnp.float32)
+    )
+
+    # Test multiple -1s (should raise error)
+    try:
+        batched.reshape((-1, -1))
+        assert False, "Multiple -1s should have raised an error"
+    except ValueError as e:
+        assert "Only one -1 is allowed in new_shape" in str(e)
+
+    # Test invalid shape that doesn't divide evenly
+    try:
+        batched.reshape((3, -1))
+        assert False, "Invalid shape should have raised an error"
+    except ValueError as e:
+        assert "Total length 10 is not divisible by the product of other dimensions 3" in str(e)
+
+    # Test with zero dimension (should raise error)
+    try:
+        batched.reshape((0, -1))
+        assert False, "Zero dimension should have raised an error"
+    except ValueError as e:
+        assert "Cannot infer -1 dimension when other dimensions are 0" in str(e)
+
+
 def test_flatten():
     # Test flatten functionality
     batched = SimpleData.default(shape=(2, 3))

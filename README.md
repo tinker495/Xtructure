@@ -8,7 +8,7 @@ A Python package providing JAX-optimized data structures, including a batched pr
 - Queue (`Queue`): A FIFO (First-In, First-Out) data structure.
 - Batched GPU Priority Queue (`BGPQ`): A batched priority queue optimized for GPU operations.
 - Cuckoo Hash Table (`HashTable`): A cuckoo hash table optimized for GPU operations.
-- Xtructure NumPy (`xtructure_numpy`): JAX-compatible operations for dataclass manipulation including concatenation, stacking, padding, conditional selection, and deduplication.
+- Xtructure NumPy (`xtructure_numpy`): JAX-compatible operations for dataclass manipulation including concatenation, stacking, padding, conditional selection, deduplication, and element selection.
 - Optimized for JAX.
 
 ## Installation
@@ -41,6 +41,7 @@ import jax.numpy as jnp
 
 from xtructure import xtructure_dataclass, FieldDescriptor
 from xtructure import HashTable, BGPQ
+from xtructure import numpy as xnp  # Recommended import method
 
 
 # Define a custom data structure using xtructure_data
@@ -67,6 +68,11 @@ print(f"HashTable: Inserted {jnp.sum(inserted_mask)} items. Current size: {hash_
 item_to_find = items_to_insert[0]
 _, found = hash_table.lookup(item_to_find)
 print(f"HashTable: Item found? {found}")
+
+# Parallel lookup for multiple items
+items_to_lookup = items_to_insert[:5]
+idxs, founds = hash_table.lookup_parallel(items_to_lookup)
+print(f"HashTable: Found {jnp.sum(founds)} out of {len(items_to_lookup)} items in parallel lookup.")
 
 
 # --- Batched GPU Priority Queue (BGPQ) Example ---
@@ -95,6 +101,57 @@ print(f"BGPQ: Inserted a batch. Current size: {priority_queue.size}")
 priority_queue, min_keys, _ = BGPQ.delete_mins(priority_queue)
 valid_mask = jnp.isfinite(min_keys)
 print(f"BGPQ: Deleted {jnp.sum(valid_mask)} items. Size after deletion: {priority_queue.size}")
+
+
+# --- Xtructure NumPy Operations Example ---
+print("\n--- Xtructure NumPy Operations Example ---")
+
+# Create some test data
+data1 = MyDataValue.default((3,))
+data1 = data1.replace(
+    a=jnp.array([1, 2, 3], dtype=jnp.uint8), b=jnp.array([[[1.0, 2.0]], [[3.0, 4.0]], [[5.0, 6.0]]], dtype=jnp.uint32)
+)
+
+data2 = MyDataValue.default((2,))
+data2 = data2.replace(
+    a=jnp.array([4, 5], dtype=jnp.uint8), b=jnp.array([[[7.0, 8.0]], [[9.0, 10.0]]], dtype=jnp.uint32)
+)
+
+# Concatenate dataclasses
+concatenated = xnp.concat([data1, data2])
+print(f"XNP: Concatenated shape: {concatenated.shape.batch}")
+
+# Stack dataclasses (requires same batch shape)
+data3 = MyDataValue.default((3,))
+data3 = data3.replace(
+    a=jnp.array([6, 7, 8], dtype=jnp.uint8),
+    b=jnp.array([[[11.0, 12.0]], [[13.0, 14.0]], [[15.0, 16.0]]], dtype=jnp.uint32),
+)
+stacked = xnp.stack([data1, data3])
+print(f"XNP: Stacked shape: {stacked.shape.batch}")
+
+# Conditional operations
+condition = jnp.array([True, False, True])
+filtered = xnp.where(condition, data1, -1)
+print(f"XNP: Conditional filtering: {filtered.a}")
+
+# Unique filtering
+mask = xnp.unique_mask(data1)
+print(f"XNP: Unique mask: {mask}")
+
+# Take specific elements
+taken = xnp.take(data1, jnp.array([0, 2]))
+print(f"XNP: Taken elements: {taken.a}")
+
+# Update values conditionally
+indices = jnp.array([0, 1])
+condition = jnp.array([True, False])
+new_values = MyDataValue.default((2,))
+new_values = new_values.replace(
+    a=jnp.array([99, 100], dtype=jnp.uint8), b=jnp.array([[[99.0, 99.0]], [[100.0, 100.0]]], dtype=jnp.uint32)
+)
+updated = xnp.update_on_condition(data1, indices, condition, new_values)
+print(f"XNP: Updated elements: {updated.a}")
 ```
 
 ## Working Example

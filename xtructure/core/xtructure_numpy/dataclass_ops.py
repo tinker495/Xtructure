@@ -4,7 +4,7 @@ This module provides operations that complement the existing structure utilities
 in xtructure_decorators.structure_util, reusing existing methods where possible.
 """
 
-from typing import Any, List, TypeVar, Union
+from typing import Any, Callable, List, TypeVar, Union
 
 import jax
 import jax.numpy as jnp
@@ -12,8 +12,44 @@ import jax.numpy as jnp
 from xtructure.core.structuredtype import StructuredType
 
 from ..xtructure_decorators import Xtructurable
+from .array_ops import _update_array_on_condition
 
 T = TypeVar("T")
+
+
+def _normalize_pad_width(pad_width, ndim):
+    """Normalize pad_width to list of (before, after) tuples for each axis."""
+    if isinstance(pad_width, int):
+        # Same padding for all axes
+        return [(pad_width, pad_width)] * ndim
+    elif isinstance(pad_width, (list, tuple)):
+        if len(pad_width) == 0:
+            raise ValueError("pad_width cannot be empty")
+
+        # Check if it's a single (before, after) pair for the first axis
+        if len(pad_width) == 2 and all(isinstance(x, (int, float)) for x in pad_width):
+            # Single (before, after) pair for first axis, rest get (0, 0)
+            result = [(int(pad_width[0]), int(pad_width[1]))]
+            result.extend([(0, 0)] * (ndim - 1))
+            return result
+
+        # Check if it's a sequence of pairs
+        if all(isinstance(x, (list, tuple)) and len(x) == 2 for x in pad_width):
+            # Sequence of (before, after) pairs
+            if len(pad_width) != ndim:
+                raise ValueError(
+                    f"pad_width length {len(pad_width)} must match number of batch dimensions {ndim}"
+                )
+            return [(int(before), int(after)) for before, after in pad_width]
+        else:
+            # Sequence of single values - treat as (before, after) for each axis
+            if len(pad_width) != ndim:
+                raise ValueError(
+                    f"pad_width length {len(pad_width)} must match number of batch dimensions {ndim}"
+                )
+            return [(int(x), int(x)) for x in pad_width]
+    else:
+        raise ValueError("pad_width must be int, sequence of int, or sequence of pairs")
 
 
 def concat(dataclasses: List[T], axis: int = 0) -> T:
@@ -117,40 +153,6 @@ def pad(
     """
     structured_type = dataclass_instance.structured_type
 
-    def _normalize_pad_width(pad_width, ndim):
-        """Normalize pad_width to list of (before, after) tuples for each axis."""
-        if isinstance(pad_width, int):
-            # Same padding for all axes
-            return [(pad_width, pad_width)] * ndim
-        elif isinstance(pad_width, (list, tuple)):
-            if len(pad_width) == 0:
-                raise ValueError("pad_width cannot be empty")
-
-            # Check if it's a single (before, after) pair for the first axis
-            if len(pad_width) == 2 and all(isinstance(x, (int, float)) for x in pad_width):
-                # Single (before, after) pair for first axis, rest get (0, 0)
-                result = [(int(pad_width[0]), int(pad_width[1]))]
-                result.extend([(0, 0)] * (ndim - 1))
-                return result
-
-            # Check if it's a sequence of pairs
-            if all(isinstance(x, (list, tuple)) and len(x) == 2 for x in pad_width):
-                # Sequence of (before, after) pairs
-                if len(pad_width) != ndim:
-                    raise ValueError(
-                        f"pad_width length {len(pad_width)} must match number of batch dimensions {ndim}"
-                    )
-                return [(int(before), int(after)) for before, after in pad_width]
-            else:
-                # Sequence of single values - treat as (before, after) for each axis
-                if len(pad_width) != ndim:
-                    raise ValueError(
-                        f"pad_width length {len(pad_width)} must match number of batch dimensions {ndim}"
-                    )
-                return [(int(x), int(x)) for x in pad_width]
-        else:
-            raise ValueError("pad_width must be int, sequence of int, or sequence of pairs")
-
     # Check for no-op case (zero padding)
     if structured_type == StructuredType.SINGLE:
         if isinstance(pad_width, int) and pad_width == 0:
@@ -171,43 +173,57 @@ def pad(
             return dataclass_instance
 
     if structured_type == StructuredType.SINGLE:
-        # For SINGLE type, create a batch dimension and pad it
-        if isinstance(pad_width, int):
-            pad_before, pad_after = pad_width, pad_width
-        elif isinstance(pad_width, (list, tuple)):
-            if len(pad_width) == 1:
-                if isinstance(pad_width[0], (list, tuple)) and len(pad_width[0]) == 2:
-                    pad_before, pad_after = pad_width[0]
-                else:
-                    pad_before, pad_after = pad_width[0], pad_width[0]
-            elif len(pad_width) == 2:
-                pad_before, pad_after = pad_width
-            else:
-                raise ValueError(
-                    "For SINGLE structured type, pad_width must specify padding for single dimension"
+        # For SINGLE type, expand to batch dimension of size 1 and apply BATCHED logic
+        expanded = jax.tree_util.tree_map(lambda x: jnp.expand_dims(x, axis=0), dataclass_instance)
+        # Apply padding to the expanded instance using the BATCHED logic directly
+        # to avoid infinite recursion
+        batch_shape = expanded.shape.batch
+        batch_ndim = len(batch_shape)
+        normalized_pad_width = _normalize_pad_width(pad_width, batch_ndim)
+
+        # Check if we can use the existing padding_as_batch method
+        if (
+            batch_ndim == 1
+            and len(normalized_pad_width) == 1
+            and mode == "constant"
+            and "constant_values" not in kwargs
+        ):
+            pad_before, pad_after = normalized_pad_width[0]
+            target_size = batch_shape[0] + pad_before + pad_after
+            padded = expanded.padding_as_batch((target_size,))
+
+            if pad_before > 0:
+                padding_instance = type(expanded).default((pad_before,))
+                result = jax.tree_util.tree_map(
+                    lambda pad_val, data_val: jnp.concatenate([pad_val, data_val], axis=0),
+                    padding_instance,
+                    padded,
                 )
-        else:
-            raise ValueError("Invalid pad_width format for SINGLE structured type")
+                return result
+            else:
+                return padded
 
-        # Create batch dimension with padding
-        total_size = 1 + pad_before + pad_after
+        # General case: create pad_width specification for jnp.pad
+        pad_width_spec = normalized_pad_width
 
-        # For simple constant padding with default values, use tiling
-        if mode == "constant" and kwargs.get("constant_values", 0) == 0:
+        if mode == "constant" and "constant_values" not in kwargs:
+            default_instance = type(expanded).default()
             result = jax.tree_util.tree_map(
-                lambda x: jnp.tile(jnp.expand_dims(x, axis=0), (total_size,) + (1,) * x.ndim),
-                dataclass_instance,
+                lambda x, default_val: jnp.pad(
+                    x,
+                    pad_width_spec + [(0, 0)] * (x.ndim - batch_ndim),
+                    mode=mode,
+                    constant_values=default_val,
+                ),
+                expanded,
+                default_instance,
             )
             return result
         else:
-            # For other modes, expand dims and pad
-            expanded = jax.tree_util.tree_map(
-                lambda x: jnp.expand_dims(x, axis=0), dataclass_instance
-            )
-            pad_width_spec = [(pad_before, pad_after)]
-
             result = jax.tree_util.tree_map(
-                lambda x: jnp.pad(x, pad_width_spec + [(0, 0)] * (x.ndim - 1), mode=mode, **kwargs),
+                lambda x: jnp.pad(
+                    x, pad_width_spec + [(0, 0)] * (x.ndim - batch_ndim), mode=mode, **kwargs
+                ),
                 expanded,
             )
             return result
@@ -389,6 +405,7 @@ def where(condition: jnp.ndarray, x: Xtructurable, y: Union[Xtructurable, Any]) 
 def unique_mask(
     val: Xtructurable,
     key: jnp.ndarray | None = None,
+    key_fn: Callable[[Any], jnp.ndarray] | None = None,
     batch_len: int | None = None,
     return_index: bool = False,
     return_inverse: bool = False,
@@ -400,9 +417,11 @@ def unique_mask(
     ensuring only the cheapest path to a state is considered.
 
     Args:
-        val (Xtructurable): The values to check for uniqueness. Must have a uint32ed attribute.
+        val (Xtructurable): The values to check for uniqueness.
         key (jnp.ndarray | None): The cost/priority values used for tie-breaking when multiple
             entries have the same unique identifier. If None, returns mask for first occurrence.
+        key_fn (Callable[[Any], jnp.ndarray] | None): Function to generate hashable keys from
+            dataclass instances. If None, defaults to lambda x: x.uint32ed for backward compatibility.
         batch_len (int | None): The length of the batch. If None, inferred from val.shape.batch[0].
         return_index (bool): Whether to return the indices of the unique values.
         return_inverse (bool): Whether to return the inverse indices of the unique values.
@@ -412,11 +431,14 @@ def unique_mask(
         - tuple: A tuple containing the mask and other requested arrays (index, inverse).
 
     Raises:
-        ValueError: If val doesn't have the required uint32ed attribute.
+        ValueError: If val doesn't have the required attributes or key_fn fails.
 
     Examples:
         >>> # Simple unique filtering without cost consideration
         >>> mask = unique_mask(batched_states)
+
+        >>> # With custom key function
+        >>> mask = unique_mask(batched_states, key_fn=lambda x: x.position)
 
         >>> # With return values
         >>> mask, index, inverse = unique_mask(batched_states, return_index=True, return_inverse=True)
@@ -425,11 +447,17 @@ def unique_mask(
         >>> mask, index = unique_mask(batched_states, costs, return_index=True)
         >>> unique_states = jax.tree_util.tree_map(lambda x: x[mask], batched_states)
     """
-    # Verify that val has the required uint32ed attribute first
+    # Use default key_fn for backward compatibility
+    if key_fn is None:
+
+        def key_fn(x):
+            return x.uint32ed
+
+    # Generate hashable keys from dataclass instances
     try:
-        hash_bytes = jax.vmap(lambda x: x.uint32ed)(val)
-    except AttributeError:
-        raise ValueError("val must have a uint32ed attribute")
+        hash_bytes = jax.vmap(key_fn)(val)
+    except Exception as e:
+        raise ValueError(f"key_fn failed to generate hashable keys: {e}")
 
     if batch_len is None:
         batch_len = val.shape.batch[0]
@@ -491,3 +519,83 @@ def unique_mask(
         returns += (inv,)
 
     return returns
+
+
+def take(dataclass_instance: T, indices: jnp.ndarray, axis: int = 0) -> T:
+    """
+    Take elements from a dataclass along the specified axis.
+
+    This function extracts elements at the given indices from each field of the dataclass,
+    similar to jnp.take but applied to all fields of a dataclass.
+
+    Args:
+        dataclass_instance: The dataclass instance to take elements from
+        indices: Array of indices to take
+        axis: Axis along which to take elements (default: 0)
+
+    Returns:
+        A new dataclass instance with elements taken from the specified indices
+
+    Examples:
+        >>> # Take specific elements from a batched dataclass
+        >>> data = MyData.default((5,))
+        >>> result = xnp.take(data, jnp.array([0, 2, 4]))
+        >>> # result will have batch shape (3,) with elements at indices 0, 2, 4
+
+        >>> # Take elements along a different axis
+        >>> data = MyData.default((3, 4))
+        >>> result = xnp.take(data, jnp.array([1, 3]), axis=1)
+        >>> # result will have batch shape (3, 2) with elements at indices 1, 3 along axis 1
+    """
+    return jax.tree_util.tree_map(lambda x: jnp.take(x, indices, axis=axis), dataclass_instance)
+
+
+def update_on_condition(
+    dataclass_instance: T,
+    indices: Union[jnp.ndarray, tuple[jnp.ndarray, ...]],
+    condition: jnp.ndarray,
+    values_to_set: Union[T, Any],
+) -> T:
+    """
+    Update values in a dataclass based on a condition, ensuring "first True wins"
+    for duplicate indices.
+
+    This function applies conditional updates to all fields of a dataclass,
+    similar to how jnp.where works but with support for duplicate index handling.
+
+    Args:
+        dataclass_instance: The dataclass instance to update
+        indices: Indices where updates should be applied
+        condition: Boolean array indicating which updates should be applied
+        values_to_set: Values to set when condition is True. Can be a dataclass
+            instance (compatible with dataclass_instance) or a scalar value.
+
+    Returns:
+        A new dataclass instance with updated values
+
+    Examples:
+        >>> # Update with scalar value
+        >>> updated = update_on_condition(dataclass, indices, condition, -1)
+
+        >>> # Update with another dataclass
+        >>> updated = update_on_condition(dataclass, indices, condition, new_values)
+    """
+    # Check if values_to_set is a dataclass (has multiple leaves)
+    values_leaves = jax.tree_util.tree_leaves(values_to_set)
+    if len(values_leaves) > 1 or (
+        len(values_leaves) == 1 and hasattr(values_to_set, "__dataclass_fields__")
+    ):
+        # values_to_set is a dataclass - apply update to each field
+        return jax.tree_util.tree_map(
+            lambda field, values_field: _update_array_on_condition(
+                field, indices, condition, values_field
+            ),
+            dataclass_instance,
+            values_to_set,
+        )
+    else:
+        # values_to_set is a scalar - apply to all fields
+        return jax.tree_util.tree_map(
+            lambda field: _update_array_on_condition(field, indices, condition, values_to_set),
+            dataclass_instance,
+        )

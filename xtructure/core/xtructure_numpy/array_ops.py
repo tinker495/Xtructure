@@ -5,7 +5,7 @@ import numpy as np
 from jax.ops import segment_max
 
 
-def set_as_condition_on_array(
+def _update_array_on_condition(
     original_array: jnp.ndarray,
     indices: Union[jnp.ndarray, tuple[jnp.ndarray, ...]],
     condition: jnp.ndarray,
@@ -14,6 +14,8 @@ def set_as_condition_on_array(
     """
     Sets values in an array based on a condition, ensuring "first True wins"
     for duplicate indices.
+
+    This is an internal utility function for array-level conditional updates.
     """
     # For advanced indexing, reshape the array to flatten the batch dimensions
     # and compute on the flattened version, then reshape back.
@@ -27,7 +29,7 @@ def set_as_condition_on_array(
 
         raveled_indices = jnp.ravel_multi_index(indices, batch_shape, mode="clip")
 
-        result = set_as_condition_on_array(
+        result = _update_array_on_condition(
             reshaped_array, raveled_indices, condition, values_to_set
         )
         return result.reshape(original_array.shape)

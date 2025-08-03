@@ -3,7 +3,7 @@ from typing import Any, Type, TypeVar
 import jax.numpy as jnp
 
 from ..protocol import Xtructurable
-from ..xtructure_numpy.set_as_cond import set_as_condition_on_array
+from ..xtructure_numpy.array_ops import _update_array_on_condition
 
 T = TypeVar("T")
 
@@ -90,7 +90,7 @@ class _Updater:
                 elif hasattr(original_field_value, "at") and hasattr(
                     original_field_value.at[self.indices], "set"
                 ):
-                    new_field_data[field_name] = set_as_condition_on_array(
+                    new_field_data[field_name] = _update_array_on_condition(
                         original_field_value,
                         self.indices,
                         condition,

@@ -6,11 +6,16 @@ The `xtructure_numpy` module provides JAX-compatible operations for working with
 import jax
 import jax.numpy as jnp
 from xtructure import xtructure_dataclass, FieldDescriptor
+
+# New import path available:
+from xtructure import numpy as xnp
+
+# Or the traditional way:
 from xtructure import xtructure_numpy as xnp
 
 # Available functions in xnp:
 # concat, concatenate (same function), pad, stack, reshape, flatten,
-# where, unique_mask, set_as_condition_on_array
+# where, unique_mask, take, update_on_condition
 
 
 # Define example data structures
@@ -58,15 +63,21 @@ data_with_dupes = data_with_dupes.replace(id=jnp.array([1, 2, 1, 3, 2]), value=j
 unique_mask = xnp.unique_mask(data_with_dupes)
 print(f"Unique mask: {unique_mask}")  # [True, True, False, True, False]
 
-# 6. Set values conditionally in arrays (with "last True wins")
+# 6. Take elements from specific indices
+data = SimpleData.default(shape=(10,))
+data = data.replace(id=jnp.arange(10), value=jnp.arange(10, dtype=jnp.float32))
+taken = xnp.take(data, jnp.array([0, 2, 4, 6, 8]))
+print(f"Taken IDs: {taken.id}")  # [0, 2, 4, 6, 8]
+
+# 7. Update values conditionally with "first True wins" semantics
 original = jnp.zeros(5)
 indices = jnp.array([0, 2, 0])  # Note: index 0 appears twice
 condition = jnp.array([True, True, True])
 values = jnp.array([1.0, 2.0, 3.0])  # Last value (3.0) wins for index 0
-result_array = xnp.set_as_condition_on_array(original, indices, condition, values)
-print(f"Conditional set result: {result_array}")  # [3.0, 0.0, 2.0, 0.0, 0.0]
+result_array = xnp.update_on_condition(original, indices, condition, values)
+print(f"Conditional update result: {result_array}")  # [3.0, 0.0, 2.0, 0.0, 0.0]
 
-# 7. Advanced padding with different modes
+# 8. Advanced padding with different modes
 data = SimpleData.default(shape=(3,))
 data = data.replace(id=jnp.array([1, 2, 3]), value=jnp.array([1.0, 2.0, 3.0]))
 
@@ -76,7 +87,7 @@ padded_const = xnp.pad(data, (0, 2), constant_values=99)
 # Edge padding (repeat edge values)
 padded_edge = xnp.pad(data, (0, 2), mode="edge")
 
-# 8. Reshape and flatten (wrappers for dataclass methods)
+# 9. Reshape and flatten (wrappers for dataclass methods)
 batched_data = SimpleData.default(shape=(6,))
 reshaped = xnp.reshape(batched_data, (2, 3))
 flattened = xnp.flatten(reshaped)
@@ -135,13 +146,15 @@ flattened = xnp.flatten(reshaped)
     *   If `y` is a dataclass: applies `jnp.where` field-wise between `x` and `y`.
     *   If `y` is a scalar: applies `jnp.where` between each field of `x` and the scalar `y`.
 
-### **`xnp.unique_mask(val, key=None, batch_len=None)`**
+### **`xnp.unique_mask(val, key=None, batch_len=None, return_index=False, return_inverse=False)`**
 *   Creates a boolean mask identifying unique elements in a batched Xtructurable, keeping only the entry with minimum cost for each unique state.
 *   **Input**: An `Xtructurable` instance with a `uint32ed` attribute (for hashing).
 *   **Parameters**:
     *   `key`: Optional cost/priority array for tie-breaking. Lower costs are preferred. If `None`, returns first occurrence.
     *   `batch_len`: Optional explicit batch length. If `None`, inferred from `val.shape.batch[0]`.
-*   **Output**: Boolean mask array where `True` indicates the single, cheapest unique value to keep.
+    *   `return_index`: If `True`, also return indices of unique elements.
+    *   `return_inverse`: If `True`, also return inverse indices for reconstructing original array.
+*   **Output**: Boolean mask array where `True` indicates the single, cheapest unique value to keep. If `return_index` or `return_inverse` is `True`, returns a tuple.
 *   **Behavior**:
     *   Uses `uint32ed` attribute to compute hash-based uniqueness via `jnp.unique`.
     *   Without `key`: Returns mask for first occurrence of each unique element.
@@ -152,20 +165,53 @@ flattened = xnp.flatten(reshaped)
         *   Excludes entries with infinite cost (padding/invalid entries).
 *   **Error**: Raises `ValueError` if `val` lacks `uint32ed` attribute or key length doesn't match batch_len.
 
-### **`xnp.set_as_condition_on_array(array, indices, condition, values_to_set)`**
-*   Sets values in an array at specified indices based on conditions, with "last True wins" semantics for duplicates.
+### **`xnp.take(dataclass_instance, indices, axis=0)`**
+*   Takes elements from a dataclass along the specified axis, similar to `jnp.take`.
 *   **Input**:
-    *   `array`: JAX array to modify.
-    *   `indices`: Array indices (1D) or tuple of index arrays for advanced/multi-dimensional indexing.
-    *   `condition`: Boolean array indicating which indices should be updated.
-    *   `values_to_set`: Values to set (scalar or array matching the updates).
-*   **Output**: Modified array with same shape as input.
+    *   `dataclass_instance`: The dataclass instance to take elements from.
+    *   `indices`: Array of indices to take.
+    *   `axis`: Axis along which to take elements (default: 0).
+*   **Output**: A new dataclass instance with elements taken from the specified indices.
+*   **Behavior**:
+    *   Applies `jnp.take` to each field of the dataclass.
+    *   Maintains the structure and field relationships of the original dataclass.
+    *   Works with both single and batched dataclasses.
+*   **Examples**:
+    ```python
+    # Take specific elements from a batched dataclass
+    data = MyData.default((5,))
+    result = xnp.take(data, jnp.array([0, 2, 4]))
+    # result will have batch shape (3,) with elements at indices 0, 2, 4
+
+    # Take elements along a different axis
+    data = MyData.default((3, 4))
+    result = xnp.take(data, jnp.array([1, 3]), axis=1)
+    # result will have batch shape (3, 2) with elements at indices 1, 3 along axis 1
+    ```
+
+### **`xnp.update_on_condition(dataclass_instance, indices, condition, values_to_set)`**
+*   Updates values in a dataclass based on a condition, ensuring "first True wins" for duplicate indices.
+*   **Input**:
+    *   `dataclass_instance`: The dataclass instance to update.
+    *   `indices`: Indices where updates should be applied (1D array or tuple for advanced indexing).
+    *   `condition`: Boolean array indicating which updates should be applied.
+    *   `values_to_set`: Values to set when condition is True. Can be a dataclass instance (compatible with dataclass_instance) or a scalar value.
+*   **Output**: A new dataclass instance with updated values.
 *   **Behavior**:
     *   Only sets values where `condition` is `True`.
-    *   For duplicate indices: "last True wins" - uses the latest update in the sequence.
+    *   For duplicate indices: "first True wins" - uses the first update in the sequence.
     *   Advanced indexing support: handles tuple indices by flattening/reshaping internally.
-    *   Uses `segment_max` with timestamps to efficiently handle duplicate index resolution.
-    *   Preserves original array values where no updates occur.
+    *   Automatically detects if `values_to_set` is a dataclass or scalar.
+    *   If `values_to_set` is a dataclass: applies update field-wise between dataclasses.
+    *   If `values_to_set` is a scalar: applies the scalar value to all fields.
+*   **Examples**:
+    ```python
+    # Update with scalar value
+    updated = xnp.update_on_condition(dataclass, indices, condition, -1)
+
+    # Update with another dataclass
+    updated = xnp.update_on_condition(dataclass, indices, condition, new_values)
+    ```
 
 ### **`xnp.reshape(dataclass, new_shape)`**
 *   Wrapper for the dataclass `reshape` method.
@@ -176,6 +222,21 @@ flattened = xnp.flatten(reshaped)
 *   Wrapper for the dataclass `flatten` method.
 *   **Input**: `@xtructure_dataclass` instance.
 *   **Output**: Flattened dataclass instance with batch dimensions collapsed.
+
+## Import Options
+
+You can import the xtructure_numpy functionality in several ways:
+
+```python
+# New recommended import path:
+from xtructure import numpy as xnp
+
+# Traditional import path:
+from xtructure import xtructure_numpy as xnp
+
+# Direct import:
+import xtructure.xtructure_numpy as xnp
+```
 
 ## Usage Patterns
 
@@ -207,12 +268,29 @@ condition = data.value > threshold
 processed = xnp.where(condition, expensive_operation(data), data)
 ```
 
+### **Selective Element Access**
+```python
+# Take specific elements from a dataset
+important_indices = jnp.array([0, 5, 10, 15])
+important_data = xnp.take(dataset, important_indices)
+```
+
+### **Conditional Updates**
+```python
+# Update specific elements based on conditions
+indices = jnp.array([1, 3, 5])
+condition = jnp.array([True, False, True])
+new_values = MyData.default(shape=(3,))
+updated_data = xnp.update_on_condition(data, indices, condition, new_values)
+```
+
 ## Technical Notes
 
 **JAX Compatibility**: All `xnp` operations maintain JAX compatibility and support JIT compilation, making them suitable for high-performance GPU computing scenarios.
 
 **Implementation Details**:
 - `unique_mask` uses hash-based grouping with segmented operations for efficient duplicate detection.
-- `set_as_condition_on_array` uses `segment_max` with timestamps for "last True wins" duplicate resolution.
+- `update_on_condition` uses `segment_max` with timestamps for "first True wins" duplicate resolution.
 - `pad` automatically chooses the optimal padding strategy based on input parameters.
 - `where` automatically detects dataclass vs scalar arguments for appropriate field-wise operations.
+- `take` applies `jnp.take` to each field while maintaining dataclass structure.
