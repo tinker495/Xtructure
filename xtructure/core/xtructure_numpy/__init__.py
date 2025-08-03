@@ -6,6 +6,7 @@ from .dataclass_ops import (
     reshape,
     stack,
     take,
+    tile,
     unique_mask,
     update_on_condition,
     where,
@@ -20,6 +21,7 @@ __all__ = [
     "flatten",
     "where",
     "take",
+    "tile",
     "unique_mask",
     "update_on_condition",
 ]

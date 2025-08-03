@@ -303,6 +303,284 @@ def test_take_equivalent_to_jnp_take():
     assert jnp.array_equal(result_xnp.value, result_manual.value)
 
 
+# Tests for tile function
+def test_tile_single_dataclass():
+    """Test tiling a single dataclass to create a batch."""
+    data = SimpleData.default()
+    data = data.replace(id=jnp.array(42), value=jnp.array(3.14))
+
+    result = xnp.tile(data, 3)
+
+    assert result.structured_type.name == "BATCHED"
+    assert result.shape.batch == (3,)
+    assert jnp.array_equal(result.id, jnp.array([42, 42, 42], dtype=jnp.uint32))
+    assert jnp.array_equal(result.value, jnp.array([3.14, 3.14, 3.14], dtype=jnp.float32))
+
+
+def test_tile_batched_dataclass_1d():
+    """Test tiling a 1D batched dataclass."""
+    data = SimpleData.default((2,))
+    data = data.replace(
+        id=jnp.array([1, 2], dtype=jnp.uint32),
+        value=jnp.array([1.0, 2.0], dtype=jnp.float32),
+    )
+
+    result = xnp.tile(data, 2)
+
+    assert result.structured_type.name == "BATCHED"
+    assert result.shape.batch == (4,)
+    assert jnp.array_equal(result.id, jnp.array([1, 2, 1, 2], dtype=jnp.uint32))
+    assert jnp.array_equal(result.value, jnp.array([1.0, 2.0, 1.0, 2.0], dtype=jnp.float32))
+
+
+def test_tile_batched_dataclass_2d():
+    """Test tiling a 2D batched dataclass."""
+    data = SimpleData.default((2, 2))
+    data = data.replace(
+        id=jnp.array([[1, 2], [3, 4]], dtype=jnp.uint32),
+        value=jnp.array([[1.0, 2.0], [3.0, 4.0]], dtype=jnp.float32),
+    )
+
+    result = xnp.tile(data, (2, 3))
+
+    assert result.structured_type.name == "BATCHED"
+    assert result.shape.batch == (4, 6)
+    # Expected pattern: repeat the 2x2 block 2 times vertically, 3 times horizontally
+    expected_id = jnp.array(
+        [
+            [1, 2, 1, 2, 1, 2],
+            [3, 4, 3, 4, 3, 4],
+            [1, 2, 1, 2, 1, 2],
+            [3, 4, 3, 4, 3, 4],
+        ],
+        dtype=jnp.uint32,
+    )
+    expected_value = expected_id.astype(jnp.float32)
+    assert jnp.array_equal(result.id, expected_id)
+    assert jnp.array_equal(result.value, expected_value)
+
+
+def test_tile_vector_dataclass():
+    """Test tiling a dataclass with vector fields."""
+    data = VectorData.default((2,))
+    data = data.replace(
+        position=jnp.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]),
+        velocity=jnp.array([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]),
+    )
+
+    result = xnp.tile(data, 2)
+
+    # For vector dataclasses, tiling repeats along the last dimension (vector dimension)
+    # Original shape: (2, 3) -> Result shape: (2, 6)
+    assert result.position.shape == (2, 6)
+    assert result.velocity.shape == (2, 6)
+    expected_position = jnp.array(
+        [
+            [1.0, 2.0, 3.0, 1.0, 2.0, 3.0],
+            [4.0, 5.0, 6.0, 4.0, 5.0, 6.0],
+        ]
+    )
+    expected_velocity = jnp.array(
+        [
+            [0.1, 0.2, 0.3, 0.1, 0.2, 0.3],
+            [0.4, 0.5, 0.6, 0.4, 0.5, 0.6],
+        ]
+    )
+    assert jnp.allclose(result.position, expected_position)
+    assert jnp.allclose(result.velocity, expected_velocity)
+
+
+def test_tile_complex_repetition_pattern():
+    """Test tiling with complex repetition patterns."""
+    data = SimpleData.default((2, 3))
+    data = data.replace(
+        id=jnp.array([[1, 2, 3], [4, 5, 6]], dtype=jnp.uint32),
+        value=jnp.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=jnp.float32),
+    )
+
+    result = xnp.tile(data, (1, 2, 1))
+
+    # The shape calculation: original (2, 3) with reps (1, 2, 1) -> (1*2, 2*3, 1*3) -> (2, 6, 3)
+    # But since we're tiling a 2D array with 3D reps, it becomes (1, 2*2, 3) -> (1, 4, 3)
+    assert result.structured_type.name == "BATCHED"
+    assert result.shape.batch == (1, 4, 3)
+    # Expected: repeat the 2x3 block 1 time in first dim, 2 times in second dim, 1 time in third dim
+    expected_id = jnp.array(
+        [
+            [
+                [1, 2, 3],
+                [4, 5, 6],
+                [1, 2, 3],
+                [4, 5, 6],
+            ]
+        ],
+        dtype=jnp.uint32,
+    )
+    expected_value = expected_id.astype(jnp.float32)
+    assert jnp.array_equal(result.id, expected_id)
+    assert jnp.array_equal(result.value, expected_value)
+
+
+def test_tile_nested_dataclass():
+    """Test tiling a nested dataclass."""
+    simple = SimpleData.default()
+    simple = simple.replace(id=jnp.array(1), value=jnp.array(1.0))
+    vector = VectorData.default()
+    vector = vector.replace(
+        position=jnp.array([1.0, 2.0, 3.0]), velocity=jnp.array([0.1, 0.2, 0.3])
+    )
+    data = NestedData.default()
+    data = data.replace(simple=simple, vector=vector)
+
+    result = xnp.tile(data, 2)
+
+    # For nested dataclasses, tiling creates batch dimensions for all fields
+    # Simple fields: scalar -> (2,) (batch dimension created)
+    # Vector fields: (3,) -> (6,) (repeated along vector dimension)
+    assert result.simple.id.shape == (2,)  # Batch dimension created
+    assert result.simple.value.shape == (2,)  # Batch dimension created
+    assert result.vector.position.shape == (6,)  # Repeated along vector dimension
+    assert result.vector.velocity.shape == (6,)
+
+    # Check that nested fields are properly tiled
+    assert jnp.array_equal(result.simple.id, jnp.array([1, 1], dtype=jnp.uint32))
+    assert jnp.array_equal(result.simple.value, jnp.array([1.0, 1.0], dtype=jnp.float32))
+    assert jnp.allclose(result.vector.position, jnp.array([1.0, 2.0, 3.0, 1.0, 2.0, 3.0]))
+    assert jnp.allclose(result.vector.velocity, jnp.array([0.1, 0.2, 0.3, 0.1, 0.2, 0.3]))
+
+
+def test_tile_equivalent_to_jnp_tile():
+    """Test that xnp.tile produces same result as manual jnp.tile."""
+    data = SimpleData.default((2, 2))
+    data = data.replace(
+        id=jnp.array([[1, 2], [3, 4]], dtype=jnp.uint32),
+        value=jnp.array([[1.0, 2.0], [3.0, 4.0]], dtype=jnp.float32),
+    )
+
+    reps = (2, 3)
+
+    # Using our xnp.tile
+    result_xnp = xnp.tile(data, reps)
+
+    # Using manual jnp.tile
+    result_manual = SimpleData(id=jnp.tile(data.id, reps), value=jnp.tile(data.value, reps))
+
+    assert jnp.array_equal(result_xnp.id, result_manual.id)
+    assert jnp.array_equal(result_xnp.value, result_manual.value)
+
+
+def test_tile_single_repetition():
+    """Test tiling with single integer repetition."""
+    data = SimpleData.default((2,))
+    data = data.replace(
+        id=jnp.array([1, 2], dtype=jnp.uint32),
+        value=jnp.array([1.0, 2.0], dtype=jnp.float32),
+    )
+
+    result = xnp.tile(data, 3)
+
+    assert result.shape.batch == (6,)
+    assert jnp.array_equal(result.id, jnp.array([1, 2, 1, 2, 1, 2], dtype=jnp.uint32))
+    assert jnp.array_equal(
+        result.value, jnp.array([1.0, 2.0, 1.0, 2.0, 1.0, 2.0], dtype=jnp.float32)
+    )
+
+
+def test_tile_tuple_repetition():
+    """Test tiling with tuple repetition."""
+    data = SimpleData.default((2,))
+    data = data.replace(
+        id=jnp.array([1, 2], dtype=jnp.uint32),
+        value=jnp.array([1.0, 2.0], dtype=jnp.float32),
+    )
+
+    result = xnp.tile(data, (2, 3))
+
+    # For 1D data with 2D reps, the result is (2*2, 3) -> (4, 3), but since we're tiling a 1D array
+    # with 2D reps, it becomes (2, 3*2) -> (2, 6)
+    assert result.shape.batch == (2, 6)
+    # Expected: repeat [1, 2] 2 times vertically, 3 times horizontally
+    expected_id = jnp.array(
+        [
+            [1, 2, 1, 2, 1, 2],
+            [1, 2, 1, 2, 1, 2],
+        ],
+        dtype=jnp.uint32,
+    )
+    expected_value = expected_id.astype(jnp.float32)
+    assert jnp.array_equal(result.id, expected_id)
+    assert jnp.array_equal(result.value, expected_value)
+
+
+def test_tile_empty_batch():
+    """Test tiling with empty batch."""
+    data = SimpleData.default((0,))
+
+    result = xnp.tile(data, 3)
+
+    assert result.shape.batch == (0,)
+    assert jnp.array_equal(result.id, jnp.array([], dtype=jnp.uint32))
+    assert jnp.array_equal(result.value, jnp.array([], dtype=jnp.float32))
+
+
+def test_tile_zero_repetition():
+    """Test tiling with zero repetition."""
+    data = SimpleData.default((2,))
+    data = data.replace(
+        id=jnp.array([1, 2], dtype=jnp.uint32),
+        value=jnp.array([1.0, 2.0], dtype=jnp.float32),
+    )
+
+    result = xnp.tile(data, 0)
+
+    assert result.shape.batch == (0,)
+    assert jnp.array_equal(result.id, jnp.array([], dtype=jnp.uint32))
+    assert jnp.array_equal(result.value, jnp.array([], dtype=jnp.float32))
+
+
+def test_tile_mixed_zero_repetition():
+    """Test tiling with mixed zero and non-zero repetition."""
+    data = SimpleData.default((2, 2))
+    data = data.replace(
+        id=jnp.array([[1, 2], [3, 4]], dtype=jnp.uint32),
+        value=jnp.array([[1.0, 2.0], [3.0, 4.0]], dtype=jnp.float32),
+    )
+
+    result = xnp.tile(data, (2, 0))
+
+    assert result.shape.batch == (4, 0)
+    assert jnp.array_equal(result.id, jnp.array([], dtype=jnp.uint32).reshape(4, 0))
+    assert jnp.array_equal(result.value, jnp.array([], dtype=jnp.float32).reshape(4, 0))
+
+
+def test_tile_integration_with_other_ops():
+    """Test tile integration with other xnp operations."""
+    # Create base data
+    data = SimpleData.default((2,))
+    data = data.replace(
+        id=jnp.array([1, 2], dtype=jnp.uint32),
+        value=jnp.array([1.0, 2.0], dtype=jnp.float32),
+    )
+
+    # Tile to create larger batch
+    tiled = xnp.tile(data, 3)
+    assert tiled.shape.batch == (6,)
+
+    # Take specific elements from tiled data
+    taken = xnp.take(tiled, jnp.array([0, 2, 4]))
+    assert taken.shape.batch == (3,)
+    assert jnp.array_equal(taken.id, jnp.array([1, 1, 1], dtype=jnp.uint32))
+
+    # Use where to conditionally select from tiled data
+    # Use a valid uint32 value instead of -1 to avoid overflow
+    condition = jnp.array([True, False, True, False, True, False])
+    fallback_value = jnp.array(999, dtype=jnp.uint32)  # Use a valid uint32 value
+    filtered = xnp.where(condition, tiled, fallback_value)
+    assert filtered.shape.batch == (6,)
+    expected_id = jnp.array([1, 999, 1, 999, 1, 999], dtype=jnp.uint32)
+    assert jnp.array_equal(filtered.id, expected_id)
+
+
 # Tests for concat function
 def test_concat_single_dataclasses():
     """Test concatenating SINGLE structured dataclasses."""

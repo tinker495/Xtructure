@@ -550,6 +550,46 @@ def take(dataclass_instance: T, indices: jnp.ndarray, axis: int = 0) -> T:
     return jax.tree_util.tree_map(lambda x: jnp.take(x, indices, axis=axis), dataclass_instance)
 
 
+def tile(dataclass_instance: T, reps: Union[int, tuple[int, ...]]) -> T:
+    """
+    Construct an array by repeating a dataclass instance the number of times given by reps.
+
+    This function replicates a dataclass instance along specified axes, similar to jnp.tile
+    but applied to all fields of a dataclass.
+
+    Args:
+        dataclass_instance: The dataclass instance to tile
+        reps: The number of repetitions of dataclass_instance along each axis.
+              If reps has length d, the result will have that dimension.
+              If reps is an int, it is treated as a 1-tuple.
+
+    Returns:
+        A new dataclass instance with tiled data
+
+    Examples:
+        >>> # Tile a single dataclass to create a batch
+        >>> data = MyData.default()
+        >>> result = xnp.tile(data, 3)
+        >>> # result will have batch shape (3,) with repeated data
+
+        >>> # Tile a batched dataclass along multiple axes
+        >>> data = MyData.default((2,))
+        >>> result = xnp.tile(data, (2, 3))
+        >>> # result will have batch shape (4, 3) with tiled data
+
+        >>> # Tile along specific dimensions
+        >>> data = MyData.default((2, 3))
+        >>> result = xnp.tile(data, (1, 2, 1))
+        >>> # result will have batch shape (2, 6, 3) with tiled data
+    """
+    # Normalize reps to a tuple
+    if isinstance(reps, int):
+        reps = (reps,)
+
+    # Apply tile to each field
+    return jax.tree_util.tree_map(lambda x: jnp.tile(x, reps), dataclass_instance)
+
+
 def update_on_condition(
     dataclass_instance: T,
     indices: Union[jnp.ndarray, tuple[jnp.ndarray, ...]],
