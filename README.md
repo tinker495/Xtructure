@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="images/Xtructure.svg" alt="Xtructure Logo" width="600">
+</div>
+
 # Xtructure
 
 A Python package providing JAX-optimized data structures, including a batched priority queue and a cuckoo hash table.
