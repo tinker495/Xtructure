@@ -303,6 +303,284 @@ def test_take_equivalent_to_jnp_take():
     assert jnp.array_equal(result_xnp.value, result_manual.value)
 
 
+# Tests for tile function
+def test_tile_single_dataclass():
+    """Test tiling a single dataclass to create a batch."""
+    data = SimpleData.default()
+    data = data.replace(id=jnp.array(42), value=jnp.array(3.14))
+
+    result = xnp.tile(data, 3)
+
+    assert result.structured_type.name == "BATCHED"
+    assert result.shape.batch == (3,)
+    assert jnp.array_equal(result.id, jnp.array([42, 42, 42], dtype=jnp.uint32))
+    assert jnp.array_equal(result.value, jnp.array([3.14, 3.14, 3.14], dtype=jnp.float32))
+
+
+def test_tile_batched_dataclass_1d():
+    """Test tiling a 1D batched dataclass."""
+    data = SimpleData.default((2,))
+    data = data.replace(
+        id=jnp.array([1, 2], dtype=jnp.uint32),
+        value=jnp.array([1.0, 2.0], dtype=jnp.float32),
+    )
+
+    result = xnp.tile(data, 2)
+
+    assert result.structured_type.name == "BATCHED"
+    assert result.shape.batch == (4,)
+    assert jnp.array_equal(result.id, jnp.array([1, 2, 1, 2], dtype=jnp.uint32))
+    assert jnp.array_equal(result.value, jnp.array([1.0, 2.0, 1.0, 2.0], dtype=jnp.float32))
+
+
+def test_tile_batched_dataclass_2d():
+    """Test tiling a 2D batched dataclass."""
+    data = SimpleData.default((2, 2))
+    data = data.replace(
+        id=jnp.array([[1, 2], [3, 4]], dtype=jnp.uint32),
+        value=jnp.array([[1.0, 2.0], [3.0, 4.0]], dtype=jnp.float32),
+    )
+
+    result = xnp.tile(data, (2, 3))
+
+    assert result.structured_type.name == "BATCHED"
+    assert result.shape.batch == (4, 6)
+    # Expected pattern: repeat the 2x2 block 2 times vertically, 3 times horizontally
+    expected_id = jnp.array(
+        [
+            [1, 2, 1, 2, 1, 2],
+            [3, 4, 3, 4, 3, 4],
+            [1, 2, 1, 2, 1, 2],
+            [3, 4, 3, 4, 3, 4],
+        ],
+        dtype=jnp.uint32,
+    )
+    expected_value = expected_id.astype(jnp.float32)
+    assert jnp.array_equal(result.id, expected_id)
+    assert jnp.array_equal(result.value, expected_value)
+
+
+def test_tile_vector_dataclass():
+    """Test tiling a dataclass with vector fields."""
+    data = VectorData.default((2,))
+    data = data.replace(
+        position=jnp.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]),
+        velocity=jnp.array([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]),
+    )
+
+    result = xnp.tile(data, 2)
+
+    # For vector dataclasses, tiling repeats along the last dimension (vector dimension)
+    # Original shape: (2, 3) -> Result shape: (2, 6)
+    assert result.position.shape == (2, 6)
+    assert result.velocity.shape == (2, 6)
+    expected_position = jnp.array(
+        [
+            [1.0, 2.0, 3.0, 1.0, 2.0, 3.0],
+            [4.0, 5.0, 6.0, 4.0, 5.0, 6.0],
+        ]
+    )
+    expected_velocity = jnp.array(
+        [
+            [0.1, 0.2, 0.3, 0.1, 0.2, 0.3],
+            [0.4, 0.5, 0.6, 0.4, 0.5, 0.6],
+        ]
+    )
+    assert jnp.allclose(result.position, expected_position)
+    assert jnp.allclose(result.velocity, expected_velocity)
+
+
+def test_tile_complex_repetition_pattern():
+    """Test tiling with complex repetition patterns."""
+    data = SimpleData.default((2, 3))
+    data = data.replace(
+        id=jnp.array([[1, 2, 3], [4, 5, 6]], dtype=jnp.uint32),
+        value=jnp.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=jnp.float32),
+    )
+
+    result = xnp.tile(data, (1, 2, 1))
+
+    # The shape calculation: original (2, 3) with reps (1, 2, 1) -> (1*2, 2*3, 1*3) -> (2, 6, 3)
+    # But since we're tiling a 2D array with 3D reps, it becomes (1, 2*2, 3) -> (1, 4, 3)
+    assert result.structured_type.name == "BATCHED"
+    assert result.shape.batch == (1, 4, 3)
+    # Expected: repeat the 2x3 block 1 time in first dim, 2 times in second dim, 1 time in third dim
+    expected_id = jnp.array(
+        [
+            [
+                [1, 2, 3],
+                [4, 5, 6],
+                [1, 2, 3],
+                [4, 5, 6],
+            ]
+        ],
+        dtype=jnp.uint32,
+    )
+    expected_value = expected_id.astype(jnp.float32)
+    assert jnp.array_equal(result.id, expected_id)
+    assert jnp.array_equal(result.value, expected_value)
+
+
+def test_tile_nested_dataclass():
+    """Test tiling a nested dataclass."""
+    simple = SimpleData.default()
+    simple = simple.replace(id=jnp.array(1), value=jnp.array(1.0))
+    vector = VectorData.default()
+    vector = vector.replace(
+        position=jnp.array([1.0, 2.0, 3.0]), velocity=jnp.array([0.1, 0.2, 0.3])
+    )
+    data = NestedData.default()
+    data = data.replace(simple=simple, vector=vector)
+
+    result = xnp.tile(data, 2)
+
+    # For nested dataclasses, tiling creates batch dimensions for all fields
+    # Simple fields: scalar -> (2,) (batch dimension created)
+    # Vector fields: (3,) -> (6,) (repeated along vector dimension)
+    assert result.simple.id.shape == (2,)  # Batch dimension created
+    assert result.simple.value.shape == (2,)  # Batch dimension created
+    assert result.vector.position.shape == (6,)  # Repeated along vector dimension
+    assert result.vector.velocity.shape == (6,)
+
+    # Check that nested fields are properly tiled
+    assert jnp.array_equal(result.simple.id, jnp.array([1, 1], dtype=jnp.uint32))
+    assert jnp.array_equal(result.simple.value, jnp.array([1.0, 1.0], dtype=jnp.float32))
+    assert jnp.allclose(result.vector.position, jnp.array([1.0, 2.0, 3.0, 1.0, 2.0, 3.0]))
+    assert jnp.allclose(result.vector.velocity, jnp.array([0.1, 0.2, 0.3, 0.1, 0.2, 0.3]))
+
+
+def test_tile_equivalent_to_jnp_tile():
+    """Test that xnp.tile produces same result as manual jnp.tile."""
+    data = SimpleData.default((2, 2))
+    data = data.replace(
+        id=jnp.array([[1, 2], [3, 4]], dtype=jnp.uint32),
+        value=jnp.array([[1.0, 2.0], [3.0, 4.0]], dtype=jnp.float32),
+    )
+
+    reps = (2, 3)
+
+    # Using our xnp.tile
+    result_xnp = xnp.tile(data, reps)
+
+    # Using manual jnp.tile
+    result_manual = SimpleData(id=jnp.tile(data.id, reps), value=jnp.tile(data.value, reps))
+
+    assert jnp.array_equal(result_xnp.id, result_manual.id)
+    assert jnp.array_equal(result_xnp.value, result_manual.value)
+
+
+def test_tile_single_repetition():
+    """Test tiling with single integer repetition."""
+    data = SimpleData.default((2,))
+    data = data.replace(
+        id=jnp.array([1, 2], dtype=jnp.uint32),
+        value=jnp.array([1.0, 2.0], dtype=jnp.float32),
+    )
+
+    result = xnp.tile(data, 3)
+
+    assert result.shape.batch == (6,)
+    assert jnp.array_equal(result.id, jnp.array([1, 2, 1, 2, 1, 2], dtype=jnp.uint32))
+    assert jnp.array_equal(
+        result.value, jnp.array([1.0, 2.0, 1.0, 2.0, 1.0, 2.0], dtype=jnp.float32)
+    )
+
+
+def test_tile_tuple_repetition():
+    """Test tiling with tuple repetition."""
+    data = SimpleData.default((2,))
+    data = data.replace(
+        id=jnp.array([1, 2], dtype=jnp.uint32),
+        value=jnp.array([1.0, 2.0], dtype=jnp.float32),
+    )
+
+    result = xnp.tile(data, (2, 3))
+
+    # For 1D data with 2D reps, the result is (2*2, 3) -> (4, 3), but since we're tiling a 1D array
+    # with 2D reps, it becomes (2, 3*2) -> (2, 6)
+    assert result.shape.batch == (2, 6)
+    # Expected: repeat [1, 2] 2 times vertically, 3 times horizontally
+    expected_id = jnp.array(
+        [
+            [1, 2, 1, 2, 1, 2],
+            [1, 2, 1, 2, 1, 2],
+        ],
+        dtype=jnp.uint32,
+    )
+    expected_value = expected_id.astype(jnp.float32)
+    assert jnp.array_equal(result.id, expected_id)
+    assert jnp.array_equal(result.value, expected_value)
+
+
+def test_tile_empty_batch():
+    """Test tiling with empty batch."""
+    data = SimpleData.default((0,))
+
+    result = xnp.tile(data, 3)
+
+    assert result.shape.batch == (0,)
+    assert jnp.array_equal(result.id, jnp.array([], dtype=jnp.uint32))
+    assert jnp.array_equal(result.value, jnp.array([], dtype=jnp.float32))
+
+
+def test_tile_zero_repetition():
+    """Test tiling with zero repetition."""
+    data = SimpleData.default((2,))
+    data = data.replace(
+        id=jnp.array([1, 2], dtype=jnp.uint32),
+        value=jnp.array([1.0, 2.0], dtype=jnp.float32),
+    )
+
+    result = xnp.tile(data, 0)
+
+    assert result.shape.batch == (0,)
+    assert jnp.array_equal(result.id, jnp.array([], dtype=jnp.uint32))
+    assert jnp.array_equal(result.value, jnp.array([], dtype=jnp.float32))
+
+
+def test_tile_mixed_zero_repetition():
+    """Test tiling with mixed zero and non-zero repetition."""
+    data = SimpleData.default((2, 2))
+    data = data.replace(
+        id=jnp.array([[1, 2], [3, 4]], dtype=jnp.uint32),
+        value=jnp.array([[1.0, 2.0], [3.0, 4.0]], dtype=jnp.float32),
+    )
+
+    result = xnp.tile(data, (2, 0))
+
+    assert result.shape.batch == (4, 0)
+    assert jnp.array_equal(result.id, jnp.array([], dtype=jnp.uint32).reshape(4, 0))
+    assert jnp.array_equal(result.value, jnp.array([], dtype=jnp.float32).reshape(4, 0))
+
+
+def test_tile_integration_with_other_ops():
+    """Test tile integration with other xnp operations."""
+    # Create base data
+    data = SimpleData.default((2,))
+    data = data.replace(
+        id=jnp.array([1, 2], dtype=jnp.uint32),
+        value=jnp.array([1.0, 2.0], dtype=jnp.float32),
+    )
+
+    # Tile to create larger batch
+    tiled = xnp.tile(data, 3)
+    assert tiled.shape.batch == (6,)
+
+    # Take specific elements from tiled data
+    taken = xnp.take(tiled, jnp.array([0, 2, 4]))
+    assert taken.shape.batch == (3,)
+    assert jnp.array_equal(taken.id, jnp.array([1, 1, 1], dtype=jnp.uint32))
+
+    # Use where to conditionally select from tiled data
+    # Use a valid uint32 value instead of -1 to avoid overflow
+    condition = jnp.array([True, False, True, False, True, False])
+    fallback_value = jnp.array(999, dtype=jnp.uint32)  # Use a valid uint32 value
+    filtered = xnp.where(condition, tiled, fallback_value)
+    assert filtered.shape.batch == (6,)
+    expected_id = jnp.array([1, 999, 1, 999, 1, 999], dtype=jnp.uint32)
+    assert jnp.array_equal(filtered.id, expected_id)
+
+
 # Tests for concat function
 def test_concat_single_dataclasses():
     """Test concatenating SINGLE structured dataclasses."""
@@ -1011,3 +1289,470 @@ def test_unique_mask_with_custom_key_fn():
     #              value=30.0 with cost=4.0 (index 3)
     expected_mask = jnp.array([False, True, False, True, False, True])
     assert jnp.array_equal(mask, expected_mask)
+
+
+# Tests for transpose function
+def test_transpose_2d_basic():
+    """Test basic transpose on 2D dataclass."""
+    data = SimpleData.default(shape=(2, 3))
+    data = data.replace(
+        id=jnp.array([[1, 2, 3], [4, 5, 6]], dtype=jnp.uint32),
+        value=jnp.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=jnp.float32),
+    )
+
+    result = xnp.transpose(data)
+
+    assert result.shape.batch == (3, 2)
+    expected_id = jnp.array([[1, 4], [2, 5], [3, 6]], dtype=jnp.uint32)
+    expected_value = jnp.array([[1.0, 4.0], [2.0, 5.0], [3.0, 6.0]], dtype=jnp.float32)
+    assert jnp.array_equal(result.id, expected_id)
+    assert jnp.array_equal(result.value, expected_value)
+
+
+def test_transpose_3d_basic():
+    """Test basic transpose on 3D dataclass."""
+    data = SimpleData.default(shape=(2, 3, 4))
+    data = data.replace(
+        id=jnp.arange(24, dtype=jnp.uint32).reshape(2, 3, 4),
+        value=jnp.arange(24, dtype=jnp.float32).reshape(2, 3, 4),
+    )
+
+    result = xnp.transpose(data)
+
+    # For xtructure, transpose should only affect batch dimensions
+    # Original batch shape: (2, 3, 4) -> Transposed: (4, 3, 2)
+    assert result.shape.batch == (4, 3, 2)
+
+    # The actual result should match what jnp.transpose produces
+    expected_id = jnp.transpose(jnp.arange(24, dtype=jnp.uint32).reshape(2, 3, 4))
+    expected_value = jnp.transpose(jnp.arange(24, dtype=jnp.float32).reshape(2, 3, 4))
+    assert jnp.array_equal(result.id, expected_id)
+    assert jnp.array_equal(result.value, expected_value)
+
+
+def test_transpose_with_custom_axes():
+    """Test transpose with custom axes order."""
+    data = SimpleData.default(shape=(2, 3, 4))
+    data = data.replace(
+        id=jnp.arange(24, dtype=jnp.uint32).reshape(2, 3, 4),
+        value=jnp.arange(24, dtype=jnp.float32).reshape(2, 3, 4),
+    )
+
+    result = xnp.transpose(data, axes=(2, 0, 1))
+
+    # For xtructure, transpose should only affect batch dimensions
+    # Original batch shape: (2, 3, 4) -> With axes=(2, 0, 1): (4, 2, 3)
+    assert result.shape.batch == (4, 2, 3)
+
+    # The actual result should match what jnp.transpose produces
+    expected_id = jnp.transpose(jnp.arange(24, dtype=jnp.uint32).reshape(2, 3, 4), axes=(2, 0, 1))
+    expected_value = jnp.transpose(
+        jnp.arange(24, dtype=jnp.float32).reshape(2, 3, 4), axes=(2, 0, 1)
+    )
+    assert jnp.array_equal(result.id, expected_id)
+    assert jnp.array_equal(result.value, expected_value)
+
+
+def test_transpose_vector_dataclass():
+    """Test transpose on dataclass with vector fields."""
+    data = VectorData.default(shape=(2, 3))
+    data = data.replace(
+        position=jnp.array(
+            [
+                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]],
+                [[10.0, 11.0, 12.0], [13.0, 14.0, 15.0], [16.0, 17.0, 18.0]],
+            ],
+            dtype=jnp.float32,
+        ),
+        velocity=jnp.array(
+            [
+                [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6], [0.7, 0.8, 0.9]],
+                [[1.0, 1.1, 1.2], [1.3, 1.4, 1.5], [1.6, 1.7, 1.8]],
+            ],
+            dtype=jnp.float32,
+        ),
+    )
+
+    result = xnp.transpose(data)
+
+    # For vector dataclasses, transpose should only affect batch dimensions
+    # Original: (2, 3, 3) -> Transposed batch: (3, 2, 3)
+    # Batch shape: (2, 3) -> (3, 2), Vector shape: (3,) remains (3,)
+    assert result.position.shape == (3, 2, 3)
+    assert result.velocity.shape == (3, 2, 3)
+
+    # The actual result should match what our batch-only transpose produces
+    # We can't use jnp.transpose directly since it would transpose all dimensions
+    # Instead, we verify the structure is correct
+    assert result.position.shape[0] == 3  # First batch dimension
+    assert result.position.shape[1] == 2  # Second batch dimension
+    assert result.position.shape[2] == 3  # Vector dimension (unchanged)
+    assert result.velocity.shape[0] == 3  # First batch dimension
+    assert result.velocity.shape[1] == 2  # Second batch dimension
+    assert result.velocity.shape[2] == 3  # Vector dimension (unchanged)
+
+
+def test_transpose_1d_no_change():
+    """Test transpose on 1D dataclass (should be no-op)."""
+    data = SimpleData.default(shape=(3,))
+    data = data.replace(
+        id=jnp.array([1, 2, 3], dtype=jnp.uint32),
+        value=jnp.array([1.0, 2.0, 3.0], dtype=jnp.float32),
+    )
+
+    result = xnp.transpose(data)
+
+    assert result.shape.batch == (3,)
+    assert jnp.array_equal(result.id, data.id)
+    assert jnp.array_equal(result.value, data.value)
+
+
+def test_transpose_equivalent_to_jnp_transpose():
+    """Test that xnp.transpose produces same result as manual jnp.transpose."""
+    data = SimpleData.default(shape=(2, 3))
+    data = data.replace(
+        id=jnp.array([[1, 2, 3], [4, 5, 6]], dtype=jnp.uint32),
+        value=jnp.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=jnp.float32),
+    )
+
+    # Using our xnp.transpose
+    result_xnp = xnp.transpose(data)
+
+    # Using manual jnp.transpose
+    result_manual = SimpleData(id=jnp.transpose(data.id), value=jnp.transpose(data.value))
+
+    assert jnp.array_equal(result_xnp.id, result_manual.id)
+    assert jnp.array_equal(result_xnp.value, result_manual.value)
+
+
+def test_transpose_with_axes_equivalent_to_jnp():
+    """Test that xnp.transpose with axes produces same result as manual jnp.transpose."""
+    data = SimpleData.default(shape=(2, 3, 4))
+    data = data.replace(
+        id=jnp.arange(24, dtype=jnp.uint32).reshape(2, 3, 4),
+        value=jnp.arange(24, dtype=jnp.float32).reshape(2, 3, 4),
+    )
+
+    axes = (2, 0, 1)
+
+    # Using our xnp.transpose
+    result_xnp = xnp.transpose(data, axes=axes)
+
+    # Using manual jnp.transpose
+    result_manual = SimpleData(
+        id=jnp.transpose(data.id, axes=axes), value=jnp.transpose(data.value, axes=axes)
+    )
+
+    assert jnp.array_equal(result_xnp.id, result_manual.id)
+    assert jnp.array_equal(result_xnp.value, result_manual.value)
+
+
+def test_transpose_nested_dataclass():
+    """Test transpose on nested dataclass."""
+    simple = SimpleData.default(shape=(2, 2))
+    simple = simple.replace(
+        id=jnp.array([[1, 2], [3, 4]], dtype=jnp.uint32),
+        value=jnp.array([[1.0, 2.0], [3.0, 4.0]], dtype=jnp.float32),
+    )
+    vector = VectorData.default(shape=(2, 2))
+    vector = vector.replace(
+        position=jnp.array(
+            [
+                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+                [[7.0, 8.0, 9.0], [10.0, 11.0, 12.0]],
+            ],
+            dtype=jnp.float32,
+        ),
+        velocity=jnp.array(
+            [
+                [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]],
+                [[0.7, 0.8, 0.9], [1.0, 1.1, 1.2]],
+            ],
+            dtype=jnp.float32,
+        ),
+    )
+    data = NestedData.default(shape=(2, 2))
+    data = data.replace(simple=simple, vector=vector)
+
+    result = xnp.transpose(data)
+
+    # For nested dataclasses, transpose should only affect batch dimensions
+    # Simple fields: batch shape (2, 2) -> (2, 2) (no change for 2D transpose)
+    # Vector fields: batch shape (2, 2) -> (2, 2), vector shape (3,) remains (3,)
+    assert result.simple.id.shape == (2, 2)  # No change for 2D transpose
+    assert result.simple.value.shape == (2, 2)  # No change for 2D transpose
+    assert result.vector.position.shape == (2, 2, 3)  # Batch (2,2) + vector (3,)
+    assert result.vector.velocity.shape == (2, 2, 3)  # Batch (2,2) + vector (3,)
+
+    # Check that nested fields are properly transposed
+    expected_simple_id = jnp.transpose(data.simple.id)
+    expected_simple_value = jnp.transpose(data.simple.value)
+    assert jnp.array_equal(result.simple.id, expected_simple_id)
+    assert jnp.array_equal(result.simple.value, expected_simple_value)
+
+
+# Tests for swap_axes function
+def test_swap_axes_2d_basic():
+    """Test basic swap_axes on 2D dataclass."""
+    data = SimpleData.default(shape=(2, 3))
+    data = data.replace(
+        id=jnp.array([[1, 2, 3], [4, 5, 6]], dtype=jnp.uint32),
+        value=jnp.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=jnp.float32),
+    )
+
+    result = xnp.swap_axes(data, 0, 1)
+
+    assert result.shape.batch == (3, 2)
+    expected_id = jnp.array([[1, 4], [2, 5], [3, 6]], dtype=jnp.uint32)
+    expected_value = jnp.array([[1.0, 4.0], [2.0, 5.0], [3.0, 6.0]], dtype=jnp.float32)
+    assert jnp.array_equal(result.id, expected_id)
+    assert jnp.array_equal(result.value, expected_value)
+
+
+def test_swap_axes_3d_basic():
+    """Test basic swap_axes on 3D dataclass."""
+    data = SimpleData.default(shape=(2, 3, 4))
+    data = data.replace(
+        id=jnp.arange(24, dtype=jnp.uint32).reshape(2, 3, 4),
+        value=jnp.arange(24, dtype=jnp.float32).reshape(2, 3, 4),
+    )
+
+    result = xnp.swap_axes(data, 0, 2)
+
+    # For xtructure, swap_axes should only affect batch dimensions
+    # Original batch shape: (2, 3, 4) -> Swapped axes 0,2: (4, 3, 2)
+    assert result.shape.batch == (4, 3, 2)
+
+    # The actual result should match what jnp.swapaxes produces
+    expected_id = jnp.swapaxes(jnp.arange(24, dtype=jnp.uint32).reshape(2, 3, 4), 0, 2)
+    expected_value = jnp.swapaxes(jnp.arange(24, dtype=jnp.float32).reshape(2, 3, 4), 0, 2)
+    assert jnp.array_equal(result.id, expected_id)
+    assert jnp.array_equal(result.value, expected_value)
+
+
+def test_swap_axes_with_negative_indices():
+    """Test swap_axes with negative indices."""
+    data = SimpleData.default(shape=(2, 3, 4))
+    data = data.replace(
+        id=jnp.arange(24, dtype=jnp.uint32).reshape(2, 3, 4),
+        value=jnp.arange(24, dtype=jnp.float32).reshape(2, 3, 4),
+    )
+
+    result = xnp.swap_axes(data, -1, -2)
+
+    # For xtructure, swap_axes should only affect batch dimensions
+    # Original batch shape: (2, 3, 4) -> Swapped axes -1,-2: (2, 4, 3)
+    assert result.shape.batch == (2, 4, 3)
+
+    # The actual result should match what jnp.swapaxes produces
+    expected_id = jnp.swapaxes(jnp.arange(24, dtype=jnp.uint32).reshape(2, 3, 4), -1, -2)
+    expected_value = jnp.swapaxes(jnp.arange(24, dtype=jnp.float32).reshape(2, 3, 4), -1, -2)
+    assert jnp.array_equal(result.id, expected_id)
+    assert jnp.array_equal(result.value, expected_value)
+
+
+def test_swap_axes_mixed_positive_negative():
+    """Test swap_axes with mixed positive and negative indices."""
+    data = SimpleData.default(shape=(2, 3, 4))
+    data = data.replace(
+        id=jnp.arange(24, dtype=jnp.uint32).reshape(2, 3, 4),
+        value=jnp.arange(24, dtype=jnp.float32).reshape(2, 3, 4),
+    )
+
+    result = xnp.swap_axes(data, 1, -1)
+
+    # For xtructure, swap_axes should only affect batch dimensions
+    # Original batch shape: (2, 3, 4) -> Swapped axes 1,-1: (2, 4, 3)
+    assert result.shape.batch == (2, 4, 3)
+
+    # The actual result should match what jnp.swapaxes produces
+    expected_id = jnp.swapaxes(jnp.arange(24, dtype=jnp.uint32).reshape(2, 3, 4), 1, -1)
+    expected_value = jnp.swapaxes(jnp.arange(24, dtype=jnp.float32).reshape(2, 3, 4), 1, -1)
+    assert jnp.array_equal(result.id, expected_id)
+    assert jnp.array_equal(result.value, expected_value)
+
+
+def test_swap_axes_vector_dataclass():
+    """Test swap_axes on dataclass with vector fields."""
+    data = VectorData.default(shape=(2, 3))
+    data = data.replace(
+        position=jnp.array(
+            [
+                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]],
+                [[10.0, 11.0, 12.0], [13.0, 14.0, 15.0], [16.0, 17.0, 18.0]],
+            ],
+            dtype=jnp.float32,
+        ),
+        velocity=jnp.array(
+            [
+                [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6], [0.7, 0.8, 0.9]],
+                [[1.0, 1.1, 1.2], [1.3, 1.4, 1.5], [1.6, 1.7, 1.8]],
+            ],
+            dtype=jnp.float32,
+        ),
+    )
+
+    result = xnp.swap_axes(data, 0, 1)
+
+    assert result.shape.batch == (3, 2)
+    expected_position = jnp.array(
+        [
+            [[1.0, 2.0, 3.0], [10.0, 11.0, 12.0]],
+            [[4.0, 5.0, 6.0], [13.0, 14.0, 15.0]],
+            [[7.0, 8.0, 9.0], [16.0, 17.0, 18.0]],
+        ],
+        dtype=jnp.float32,
+    )
+    expected_velocity = jnp.array(
+        [
+            [[0.1, 0.2, 0.3], [1.0, 1.1, 1.2]],
+            [[0.4, 0.5, 0.6], [1.3, 1.4, 1.5]],
+            [[0.7, 0.8, 0.9], [1.6, 1.7, 1.8]],
+        ],
+        dtype=jnp.float32,
+    )
+    assert jnp.array_equal(result.position, expected_position)
+    assert jnp.array_equal(result.velocity, expected_velocity)
+
+
+def test_swap_axes_1d_no_change():
+    """Test swap_axes on 1D dataclass (should be no-op)."""
+    data = SimpleData.default(shape=(3,))
+    data = data.replace(
+        id=jnp.array([1, 2, 3], dtype=jnp.uint32),
+        value=jnp.array([1.0, 2.0, 3.0], dtype=jnp.float32),
+    )
+
+    result = xnp.swap_axes(data, 0, 0)  # Same axis
+
+    assert result.shape.batch == (3,)
+    assert jnp.array_equal(result.id, data.id)
+    assert jnp.array_equal(result.value, data.value)
+
+
+def test_swap_axes_equivalent_to_jnp_swapaxes():
+    """Test that xnp.swap_axes produces same result as manual jnp.swapaxes."""
+    data = SimpleData.default(shape=(2, 3))
+    data = data.replace(
+        id=jnp.array([[1, 2, 3], [4, 5, 6]], dtype=jnp.uint32),
+        value=jnp.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=jnp.float32),
+    )
+
+    # Using our xnp.swap_axes
+    result_xnp = xnp.swap_axes(data, 0, 1)
+
+    # Using manual jnp.swapaxes
+    result_manual = SimpleData(id=jnp.swapaxes(data.id, 0, 1), value=jnp.swapaxes(data.value, 0, 1))
+
+    assert jnp.array_equal(result_xnp.id, result_manual.id)
+    assert jnp.array_equal(result_xnp.value, result_manual.value)
+
+
+def test_swap_axes_nested_dataclass():
+    """Test swap_axes on nested dataclass."""
+    simple = SimpleData.default(shape=(2, 2))
+    simple = simple.replace(
+        id=jnp.array([[1, 2], [3, 4]], dtype=jnp.uint32),
+        value=jnp.array([[1.0, 2.0], [3.0, 4.0]], dtype=jnp.float32),
+    )
+    vector = VectorData.default(shape=(2, 2))
+    vector = vector.replace(
+        position=jnp.array(
+            [
+                [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+                [[7.0, 8.0, 9.0], [10.0, 11.0, 12.0]],
+            ],
+            dtype=jnp.float32,
+        ),
+        velocity=jnp.array(
+            [
+                [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]],
+                [[0.7, 0.8, 0.9], [1.0, 1.1, 1.2]],
+            ],
+            dtype=jnp.float32,
+        ),
+    )
+    data = NestedData.default(shape=(2, 2))
+    data = data.replace(simple=simple, vector=vector)
+
+    result = xnp.swap_axes(data, 0, 1)
+
+    assert result.shape.batch == (2, 2)
+    # Check that nested fields are properly swapped
+    expected_simple_id = jnp.array([[1, 3], [2, 4]], dtype=jnp.uint32)
+    expected_simple_value = jnp.array([[1.0, 3.0], [2.0, 4.0]], dtype=jnp.float32)
+    assert jnp.array_equal(result.simple.id, expected_simple_id)
+    assert jnp.array_equal(result.simple.value, expected_simple_value)
+
+
+def test_swap_axes_integration_with_other_ops():
+    """Test swap_axes integration with other xnp operations."""
+    # Create base data
+    data = SimpleData.default(shape=(2, 3))
+    data = data.replace(
+        id=jnp.array([[1, 2, 3], [4, 5, 6]], dtype=jnp.uint32),
+        value=jnp.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=jnp.float32),
+    )
+
+    # Swap axes
+    swapped = xnp.swap_axes(data, 0, 1)
+    assert swapped.shape.batch == (3, 2)
+
+    # Take specific elements from swapped data
+    taken = xnp.take(swapped, jnp.array([0, 2]), axis=0)
+    assert taken.shape.batch == (2, 2)
+    expected_id = jnp.array([[1, 4], [3, 6]], dtype=jnp.uint32)
+    assert jnp.array_equal(taken.id, expected_id)
+
+    # Use where to conditionally select from swapped data
+    condition = jnp.array([[True, False], [False, True], [True, True]])
+    fallback_value = jnp.array(999, dtype=jnp.uint32)
+    filtered = xnp.where(condition, swapped, fallback_value)
+    assert filtered.shape.batch == (3, 2)
+    expected_filtered_id = jnp.array([[1, 999], [999, 5], [3, 6]], dtype=jnp.uint32)
+    assert jnp.array_equal(filtered.id, expected_filtered_id)
+
+
+def test_transpose_integration_with_other_ops():
+    """Test transpose integration with other xnp operations."""
+    # Create base data
+    data = SimpleData.default(shape=(2, 3))
+    data = data.replace(
+        id=jnp.array([[1, 2, 3], [4, 5, 6]], dtype=jnp.uint32),
+        value=jnp.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=jnp.float32),
+    )
+
+    # Transpose
+    transposed = xnp.transpose(data)
+    assert transposed.shape.batch == (3, 2)
+
+    # Take specific elements from transposed data
+    taken = xnp.take(transposed, jnp.array([0, 2]), axis=0)
+    assert taken.shape.batch == (2, 2)
+    expected_id = jnp.array([[1, 4], [3, 6]], dtype=jnp.uint32)
+    assert jnp.array_equal(taken.id, expected_id)
+
+    # Use where to conditionally select from transposed data
+    condition = jnp.array([[True, False], [False, True], [True, True]])
+    fallback_value = jnp.array(999, dtype=jnp.uint32)
+    filtered = xnp.where(condition, transposed, fallback_value)
+    assert filtered.shape.batch == (3, 2)
+    expected_filtered_id = jnp.array([[1, 999], [999, 5], [3, 6]], dtype=jnp.uint32)
+    assert jnp.array_equal(filtered.id, expected_filtered_id)
+
+
+def test_transpose_swap_axes_equivalence():
+    """Test that transpose and swap_axes produce equivalent results for 2D arrays."""
+    data = SimpleData.default(shape=(2, 3))
+    data = data.replace(
+        id=jnp.array([[1, 2, 3], [4, 5, 6]], dtype=jnp.uint32),
+        value=jnp.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=jnp.float32),
+    )
+
+    # Transpose should be equivalent to swap_axes(0, 1) for 2D arrays
+    result_transpose = xnp.transpose(data)
+    result_swap = xnp.swap_axes(data, 0, 1)
+
+    assert jnp.array_equal(result_transpose.id, result_swap.id)
+    assert jnp.array_equal(result_transpose.value, result_swap.value)
+    assert result_transpose.shape.batch == result_swap.shape.batch
