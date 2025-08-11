@@ -15,7 +15,7 @@ The following data structures are benchmarked:
 Ensure you have the necessary libraries installed. You can install them using pip:
 
 ```bash
-pip install xtructure "jax[gpu]" matplotlib
+pip install xtructure "jax[gpu]" matplotlib rich
 ```
 *Note: Please follow the official JAX documentation for detailed instructions on installing for your specific CUDA version.*
 

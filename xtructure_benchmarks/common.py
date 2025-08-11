@@ -1,8 +1,9 @@
 import time
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Tuple
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 from rich.console import Console
 from rich.table import Table
 
@@ -34,16 +35,17 @@ class BenchmarkValue:
     embedding: FieldDescriptor[jnp.float16, (128,)]
 
 
-def jax_timer(func: Callable[[], Any]) -> float:
+def jax_timer(func: Callable[[], Any], trials: int = 10) -> Tuple[float, float]:
     """
     A timer for JAX functions that ensures accurate measurement by waiting for
-    computation to complete.
+    computation to complete. Runs multiple trials and returns median and IQR.
 
     Args:
         func: The JAX function to time.
+        trials: Number of timing trials to run (default 10).
 
     Returns:
-        The execution time in seconds.
+        Tuple of (median_time, iqr_time) in seconds.
     """
     # JIT compile the function first if it's not already
     jitted_func = jax.jit(func)
@@ -52,29 +54,47 @@ def jax_timer(func: Callable[[], Any]) -> float:
     result = jitted_func()
     jax.block_until_ready(result)
 
-    # Time the actual execution
-    start_time = time.perf_counter()
-    result = jitted_func()
-    jax.block_until_ready(result)
-    end_time = time.perf_counter()
+    # Time multiple trials
+    times = []
+    for _ in range(trials):
+        start_time = time.perf_counter()
+        result = jitted_func()
+        jax.block_until_ready(result)
+        end_time = time.perf_counter()
+        times.append(end_time - start_time)
 
-    return end_time - start_time
+    times = np.array(times)
+    median_time = np.median(times)
+    q75, q25 = np.percentile(times, [75, 25])
+    iqr_time = q75 - q25
+
+    return median_time, iqr_time
 
 
-def python_timer(func: Callable[[], Any]) -> float:
+def python_timer(func: Callable[[], Any], trials: int = 10) -> Tuple[float, float]:
     """
-    A simple timer for standard Python functions.
+    A timer for standard Python functions with multiple trials.
 
     Args:
         func: The Python function to time.
+        trials: Number of timing trials to run (default 10).
 
     Returns:
-        The execution time in seconds.
+        Tuple of (median_time, iqr_time) in seconds.
     """
-    start_time = time.perf_counter()
-    func()
-    end_time = time.perf_counter()
-    return end_time - start_time
+    times = []
+    for _ in range(trials):
+        start_time = time.perf_counter()
+        func()
+        end_time = time.perf_counter()
+        times.append(end_time - start_time)
+
+    times = np.array(times)
+    median_time = np.median(times)
+    q75, q25 = np.percentile(times, [75, 25])
+    iqr_time = q75 - q25
+
+    return median_time, iqr_time
 
 
 def print_results_table(results: Dict[str, Any], title: str):
@@ -87,7 +107,8 @@ def print_results_table(results: Dict[str, Any], title: str):
     table.add_column("Batch Size", justify="right", style="cyan")
     table.add_column("Operation", style="green")
     table.add_column("Implementation", style="yellow")
-    table.add_column("Operations per Second", justify="right", style="bold blue")
+    table.add_column("Ops/Sec (Median)", justify="right", style="bold blue")
+    table.add_column("IQR", justify="right", style="dim blue")
 
     batch_sizes = results.get("batch_sizes", [])
     xtructure_results = results.get("xtructure", {})
@@ -100,15 +121,37 @@ def print_results_table(results: Dict[str, Any], title: str):
             op_name = op.replace("_ops_per_sec", "")
 
             # Add row for xtructure
-            xtructure_perf = xtructure_results.get(op, [])[i]
-            table.add_row(f"{size:,}", op_name, "xtructure", human_format(xtructure_perf))
+            xtructure_data = xtructure_results.get(op, [])[i]
+            if isinstance(xtructure_data, dict):
+                xtructure_perf = xtructure_data["median"]
+                xtructure_iqr = xtructure_data["iqr"]
+            else:
+                # Backward compatibility with old format
+                xtructure_perf = xtructure_data
+                xtructure_iqr = 0
+
+            table.add_row(
+                f"{size:,}",
+                op_name,
+                "xtructure",
+                human_format(xtructure_perf),
+                f"±{human_format(xtructure_iqr)}",
+            )
 
             # Add row for python
-            python_perf = python_results.get(op, [])[i]
+            python_data = python_results.get(op, [])[i]
+            if isinstance(python_data, dict):
+                python_perf = python_data["median"]
+                python_iqr = python_data["iqr"]
+            else:
+                # Backward compatibility with old format
+                python_perf = python_data
+                python_iqr = 0
+
             table.add_row(
-                "", op_name, "python", human_format(python_perf)
-            )  # Don't repeat batch size
+                "", op_name, "python", human_format(python_perf), f"±{human_format(python_iqr)}"
+            )
         if i < len(batch_sizes) - 1:
-            table.add_row("", "", "", "", end_section=True)
+            table.add_row("", "", "", "", "", end_section=True)
 
     console.print(table)

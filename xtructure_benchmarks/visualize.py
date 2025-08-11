@@ -42,8 +42,46 @@ def plot_performance(results_path: Path):
         op_name = op.replace("_ops_per_sec", "").capitalize()
         title = f"{data_structure_name} {op_name} Performance"
 
-        plt.plot(batch_sizes, xtructure_data[op], "o-", label=f"xtructure.{data_structure_name}")
-        plt.plot(batch_sizes, python_data[op], "s--", label="Python Baseline")
+        # Extract median values and error bars from new format
+        xtructure_values = []
+        xtructure_errors = []
+        python_values = []
+        python_errors = []
+
+        for result in xtructure_data[op]:
+            if isinstance(result, dict):
+                xtructure_values.append(result["median"])
+                xtructure_errors.append(result["iqr"] / 2)  # Half IQR for error bars
+            else:
+                # Backward compatibility
+                xtructure_values.append(result)
+                xtructure_errors.append(0)
+
+        for result in python_data[op]:
+            if isinstance(result, dict):
+                python_values.append(result["median"])
+                python_errors.append(result["iqr"] / 2)  # Half IQR for error bars
+            else:
+                # Backward compatibility
+                python_values.append(result)
+                python_errors.append(0)
+
+        plt.errorbar(
+            batch_sizes,
+            xtructure_values,
+            yerr=xtructure_errors,
+            fmt="o-",
+            label=f"xtructure.{data_structure_name}",
+            capsize=5,
+        )
+        plt.errorbar(
+            batch_sizes,
+            python_values,
+            yerr=python_errors,
+            fmt="s--",
+            label="Python Baseline",
+            capsize=5,
+        )
 
         plt.xscale("log", base=2)
         plt.yscale("log")

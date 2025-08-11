@@ -44,8 +44,19 @@ def display_summary_table():
         for i, op in enumerate(operations):
             op_name = op.replace("_ops_per_sec", "")
 
-            xtructure_perf = xtructure_data[op][largest_batch_idx]
-            python_perf = python_data[op][largest_batch_idx]
+            xtructure_result = xtructure_data[op][largest_batch_idx]
+            python_result = python_data[op][largest_batch_idx]
+
+            # Handle both old and new result formats
+            if isinstance(xtructure_result, dict):
+                xtructure_perf = xtructure_result["median"]
+            else:
+                xtructure_perf = xtructure_result
+
+            if isinstance(python_result, dict):
+                python_perf = python_result["median"]
+            else:
+                python_perf = python_result
 
             ratio = xtructure_perf / python_perf if python_perf > 0 else float("inf")
 
@@ -78,7 +89,6 @@ def run_script(script_path: Path):
             [sys.executable, str(script_path)],
             check=True,
             env=env,
-            capture_output=True,  # Disable capturing to see rich output in real-time
             text=True,
         )
         print(f"--- Finished {script_path.name} successfully ---")
@@ -97,6 +107,10 @@ def main():
     Finds and runs all benchmark scripts, then runs the visualization script.
     """
     benchmarks_dir = Path(__file__).parent
+
+    # Ensure results directory exists
+    results_dir = benchmarks_dir / "results"
+    results_dir.mkdir(exist_ok=True)
 
     # 1. Find and run all benchmark scripts
     benchmark_scripts = sorted(benchmarks_dir.glob("benchmark_*.py"))
