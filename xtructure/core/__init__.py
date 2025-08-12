@@ -11,6 +11,5 @@ __all__ = [
     "base_dataclass",
     "xtructure_dataclass",
     "FieldDescriptor",
-    "uint32ed_to_hash",
     "xtructure_numpy",
 ]

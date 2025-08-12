@@ -15,7 +15,8 @@ from xtructure import xtructure_numpy as xnp
 
 # Available functions in xnp:
 # concat, concatenate (same function), pad, stack, reshape, flatten,
-# where, unique_mask, take, update_on_condition
+# where, unique_mask, take, update_on_condition,
+# tile, transpose, swap_axes
 
 
 # Define example data structures

@@ -221,19 +221,10 @@ class HashTable:
     @jax.jit
     def lookup(table: "HashTable", input: Xtructurable) -> tuple[HashIdx, bool]:
         """
-        Finds the state in the hash table using Cuckoo hashing.
+        Find a state in the hash table.
 
-        Args:
-            table: The HashTable instance.
-            input: The Xtructurable state to look up.
-
-        Returns:
-            A tuple (idx, table_idx, found):
-            - idx (int): The primary hash index in the table.
-            - table_idx (int): The cuckoo table index (which hash function/slot was used or probed).
-            - found (bool): True if the state was found, False otherwise.
-            If not found, idx and table_idx indicate the first empty slot encountered
-            during the Cuckoo search path where an insertion could occur.
+        Returns a tuple of `(HashIdx, found)` where `HashIdx.index` is the flat
+        index into `table.table`, and `found` indicates existence.
         """
         idx, found = HashTable.lookup_cuckoo(table, input)
         return HashIdx(index=idx.index * table.cuckoo_table_n + idx.table_index), found

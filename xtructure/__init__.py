@@ -13,8 +13,6 @@ from .stack import Stack
 
 __all__ = [
     # bgpq.py
-    "bgpq_value_dataclass",
-    "HeapValue",
     "BGPQ",
     # hash.py
     "HashTable",
@@ -30,11 +28,9 @@ __all__ = [
     "StructuredType",
     # core.field_descriptors.py
     "FieldDescriptor",
-    # core.xtructure_numpy.py
-    "xtructure_numpy",
     # numpy.py
     "numpy",
-    # xtructure_numpy.py
+    # xtructure_numpy.py (top-level xnp module)
     "xtructure_numpy",
     # io.py
     "io",
