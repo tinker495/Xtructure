@@ -1,13 +1,18 @@
+import argparse
 import dataclasses
 import json
 import time
 from collections import deque
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 import jax
 
 from xtructure import Queue
-from xtructure_benchmarks.common import BenchmarkValue, print_results_table
+from xtructure_benchmarks.common import (
+    BenchmarkValue,
+    print_results_table,
+    validate_results_schema,
+)
 
 
 def benchmark_xtructure_queue_enqueue(queue: Queue, values: BenchmarkValue, trials: int = 10):
@@ -75,17 +80,22 @@ def benchmark_xtructure_queue_dequeue(
     return median_time, iqr_time
 
 
-def benchmark_deque_enqueue(values: BenchmarkValue, trials: int = 10):
+def benchmark_deque_enqueue(
+    values: BenchmarkValue, trials: int = 10, include_preprocessing: bool = False
+):
     """Benchmarks the extend (batched enqueue) operation for collections.deque."""
-    # Convert xtructure data to a list of dicts for deque
-    # Use dataclasses.asdict and then convert numpy arrays to lists
-    dict_of_arrays = dataclasses.asdict(values)
-    items = [dict(zip(dict_of_arrays, t)) for t in zip(*dict_of_arrays.values())]
+    # Optionally include preprocessing in the timed region
+    if not include_preprocessing:
+        dict_of_arrays = dataclasses.asdict(values)
+        items = [dict(zip(dict_of_arrays, t)) for t in zip(*dict_of_arrays.values())]
 
     times = []
     for _ in range(trials):
         d = deque()  # Fresh deque per trial
         start_time = time.perf_counter()
+        if include_preprocessing:
+            dict_of_arrays = dataclasses.asdict(values)
+            items = [dict(zip(dict_of_arrays, t)) for t in zip(*dict_of_arrays.values())]
         d.extend(items)
         end_time = time.perf_counter()
         times.append(end_time - start_time)
@@ -100,14 +110,20 @@ def benchmark_deque_enqueue(values: BenchmarkValue, trials: int = 10):
     return median_time, iqr_time
 
 
-def benchmark_deque_dequeue(values: BenchmarkValue, count: int, trials: int = 10):
+def benchmark_deque_dequeue(
+    values: BenchmarkValue, count: int, trials: int = 10, include_preprocessing: bool = False
+):
     """Benchmarks the popleft (dequeue) operation for collections.deque."""
-    # Convert xtructure data to a list of dicts for deque
-    dict_of_arrays = dataclasses.asdict(values)
-    items = [dict(zip(dict_of_arrays, t)) for t in zip(*dict_of_arrays.values())]
+    # Optionally include preprocessing in the timed region
+    if not include_preprocessing:
+        dict_of_arrays = dataclasses.asdict(values)
+        items = [dict(zip(dict_of_arrays, t)) for t in zip(*dict_of_arrays.values())]
 
     times = []
     for _ in range(trials):
+        if include_preprocessing:
+            dict_of_arrays = dataclasses.asdict(values)
+            items = [dict(zip(dict_of_arrays, t)) for t in zip(*dict_of_arrays.values())]
         d = deque(items)  # Fresh filled deque per trial
         start_time = time.perf_counter()
         results = []
@@ -127,13 +143,18 @@ def benchmark_deque_dequeue(values: BenchmarkValue, count: int, trials: int = 10
     return median_time, iqr_time
 
 
-def run_benchmarks():
+def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional[List[int]] = None):
     """Runs the full suite of Queue benchmarks and saves the results."""
-    batch_sizes = [2**10, 2**12, 2**14]
+    batch_sizes = batch_sizes or [2**10, 2**12, 2**14]
     results: Dict[str, Any] = {"batch_sizes": batch_sizes, "xtructure": {}, "python": {}}
     max_size = int(max(batch_sizes) * 2)
 
     print("Running Queue Benchmarks...")
+    try:
+        print(f"JAX backend: {jax.default_backend()}")
+        print("JAX devices:", ", ".join([d.platform + ":" + d.device_kind for d in jax.devices()]))
+    except Exception:
+        pass
     for batch_size in batch_sizes:
         print(f"  Batch Size: {batch_size}")
         key = jax.random.PRNGKey(batch_size)
@@ -142,14 +163,14 @@ def run_benchmarks():
         # --- xtructure.Queue Benchmark ---
         xtructure_queue = Queue.build(max_size=max_size, value_class=BenchmarkValue)
         xtructure_enqueue_median, xtructure_enqueue_iqr = benchmark_xtructure_queue_enqueue(
-            xtructure_queue, values
+            xtructure_queue, values, trials=trials
         )
 
         # Create a filled queue for dequeue benchmark
         queue_with_data = xtructure_queue.enqueue(values)
         jax.block_until_ready(queue_with_data)
         xtructure_dequeue_median, xtructure_dequeue_iqr = benchmark_xtructure_queue_dequeue(
-            queue_with_data, batch_size
+            queue_with_data, batch_size, trials=trials, include_host_transfer=(mode == "e2e")
         )
 
         results["xtructure"].setdefault("enqueue_ops_per_sec", []).append(
@@ -174,8 +195,12 @@ def run_benchmarks():
         )
 
         # --- Python collections.deque Benchmark ---
-        python_enqueue_median, python_enqueue_iqr = benchmark_deque_enqueue(values)
-        python_dequeue_median, python_dequeue_iqr = benchmark_deque_dequeue(values, batch_size)
+        python_enqueue_median, python_enqueue_iqr = benchmark_deque_enqueue(
+            values, trials=trials, include_preprocessing=(mode == "e2e")
+        )
+        python_dequeue_median, python_dequeue_iqr = benchmark_deque_dequeue(
+            values, batch_size, trials=trials, include_preprocessing=(mode == "e2e")
+        )
 
         results["python"].setdefault("enqueue_ops_per_sec", []).append(
             {
@@ -194,7 +219,8 @@ def run_benchmarks():
             }
         )
 
-    # Save results
+    # Validate and save results
+    validate_results_schema(results)
     output_path = "xtructure_benchmarks/results/queue_results.json"
     with open(output_path, "w") as f:
         json.dump(results, f, indent=4)
@@ -204,4 +230,19 @@ def run_benchmarks():
 
 
 if __name__ == "__main__":
-    run_benchmarks()
+    parser = argparse.ArgumentParser(description="Queue benchmarks")
+    parser.add_argument("--mode", choices=["kernel", "e2e"], default="kernel")
+    parser.add_argument("--trials", type=int, default=10)
+    parser.add_argument(
+        "--batch-sizes",
+        type=str,
+        default="",
+        help="Comma-separated batch sizes (e.g. 1024,4096,16384)",
+    )
+    args = parser.parse_args()
+
+    batch_sizes_arg: Optional[List[int]] = None
+    if args.batch_sizes:
+        batch_sizes_arg = [int(x.strip()) for x in args.batch_sizes.split(",") if x.strip()]
+
+    run_benchmarks(mode=args.mode, trials=args.trials, batch_sizes=batch_sizes_arg)
