@@ -80,5 +80,5 @@ Defines the type and shape of each field within an `@xtructure_dataclass`.
 *   **Parameters**:
     *   `dtype`: The JAX dtype (e.g., `jnp.int32`, `jnp.float32`, `jnp.bool_`). Can also be another `@xtructure_dataclass` type for nesting.
     *   `intrinsic_shape` (optional): A tuple defining the field's shape *excluding* batch dimensions (e.g., `(3,)` for a vector, `(2,2)` for a matrix). Defaults to `()` for a scalar.
-    *   `fill_value` (optional): The value used when `cls.default()` is called.
-        *   Defaults: `-1` (max value) for unsigned integers, `jnp.inf` for signed integers and floats. `None` for nested structures (their own default applies).
+        *   `fill_value` (optional): The value used when `cls.default()` is called.
+        *   Defaults: maximum representable value for unsigned integers, `jnp.inf` for signed integers and floats. `None` for nested structures (their own default applies).

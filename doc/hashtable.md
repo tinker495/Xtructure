@@ -48,7 +48,7 @@ item_to_check = sample_data[0]  # Let's check the first item we inserted
 idx, found = HashTable.lookup(hash_table, item_to_check)
 
 if found:
-    retrieved_item = hash_table.table[idx.index]  # Accessing the item from the internal table
+    retrieved_item = hash_table[idx]  # Access using public __getitem__ with HashIdx
     print(f"HashTable: Item found at index {idx.index}.")
     # You can then compare retrieved_item with item_to_check
 else:

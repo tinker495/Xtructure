@@ -147,11 +147,12 @@ flattened = xnp.flatten(reshaped)
     *   If `y` is a dataclass: applies `jnp.where` field-wise between `x` and `y`.
     *   If `y` is a scalar: applies `jnp.where` between each field of `x` and the scalar `y`.
 
-### **`xnp.unique_mask(val, key=None, batch_len=None, return_index=False, return_inverse=False)`**
+### **`xnp.unique_mask(val, key=None, key_fn=None, batch_len=None, return_index=False, return_inverse=False)`**
 *   Creates a boolean mask identifying unique elements in a batched Xtructurable, keeping only the entry with minimum cost for each unique state.
 *   **Input**: An `Xtructurable` instance with a `uint32ed` attribute (for hashing).
 *   **Parameters**:
     *   `key`: Optional cost/priority array for tie-breaking. Lower costs are preferred. If `None`, returns first occurrence.
+    *   `key_fn`: Optional callable to compute a cost/priority array from `val` for tie-breaking. Lower costs are preferred. Ignored if `key` is provided.
     *   `batch_len`: Optional explicit batch length. If `None`, inferred from `val.shape.batch[0]`.
     *   `return_index`: If `True`, also return indices of unique elements.
     *   `return_inverse`: If `True`, also return inverse indices for reconstructing original array.

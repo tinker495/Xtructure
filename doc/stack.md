@@ -50,7 +50,7 @@ print("Popped item:", popped_item)
 ## Key `Stack` Details
 
 *   **LIFO Principle**: The last element added to the stack will be the first one to be removed.
-*   **Pure Functional API**: All methods (`push`, `pop`) are pure functions. They do not modify the stack in-place but instead return a new `Stack` instance with the updated state. This is essential for compatibility with JAX's JIT compilation.
+*   **API Style**: The methods (`push`, `pop`) modify the stack's state and return the modified instance, allowing for a chained, functional-style usage pattern.
 
 *   **`Stack.build(max_size, value_class)`**:
     *   `max_size` (int): The maximum number of elements the stack can hold.
@@ -58,12 +58,12 @@ print("Popped item:", popped_item)
 
 *   **`stack.push(items)`**:
     *   `items` (Xtructurable): An instance or a batch of instances to push onto the stack. If a batch is provided, its first dimension is treated as the batch dimension.
-    *   Returns a new `Stack` instance with the items added.
+    *   Returns the updated `Stack` instance.
 
 *   **`stack.pop(num_items=1)`**:
     *   `num_items` (int): The number of items to pop from the top of the stack.
     *   Returns a tuple containing:
-        1.  A new `Stack` instance with the items removed.
+        1.  The updated `Stack` instance with the items removed.
         2.  The `Xtructurable` containing the popped items.
 
 *   **`stack.peek(num_items=1)`**:

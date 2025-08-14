@@ -16,7 +16,7 @@ class MyHeapItem:
 
 
 # 1. Build a BGPQ
-#    BGPQ.build(total_size, batch_size, value_pytree_def_type)
+#    BGPQ.build(total_size, batch_size, value_class)
 pq_total_size = 2000  # Max number of items
 pq_batch_size = 64  # Items to insert/delete per operation
 priority_queue = BGPQ.build(pq_total_size, pq_batch_size, MyHeapItem)
@@ -73,10 +73,11 @@ else:
 ## Key `BGPQ` Details
 
 *   **Batched Operations**: All operations (insert, delete_mins) are designed to work on batches of data of size `batch_size`.
-*   **`BGPQ.build(total_size, batch_size, value_class)`**:
+*   **`BGPQ.build(total_size, batch_size, value_class, key_dtype=jnp.float16)`**:
     *   `total_size`: Desired maximum capacity. The actual `max_size` of the queue might be slightly larger to be an exact multiple of `batch_size` (calculated as `ceil(total_size / batch_size) * batch_size`).
     *   `batch_size`: The fixed size for all batch operations.
     *   `value_class`: The *class* of your custom `@xtructure_dataclass` used for storing values in the queue. This class must have a `.default()` method.
+    *   `key_dtype`: Dtype for keys; defaults to `jnp.float16`.
 *   **`BGPQ.make_batched(keys, values, batch_size)`**: (Static method)
     *   A crucial helper to prepare data for `BGPQ.insert()`. It takes a chunk of keys and corresponding values and pads them to the required `batch_size`.
     *   Keys are padded with `jnp.inf`.
