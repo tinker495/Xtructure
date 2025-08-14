@@ -4,11 +4,11 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import List, Optional
 
+from common import human_format
 from rich.console import Console
 from rich.table import Table
-
-from xtructure_benchmarks.common import human_format
 
 
 def display_summary_table():
@@ -75,7 +75,7 @@ def display_summary_table():
     console.print(table)
 
 
-def run_script(script_path: Path, extra_args: list[str] | None = None):
+def run_script(script_path: Path, extra_args: Optional[List[str]] = None):
     """
     Runs a Python script in a subprocess with the correct PYTHONPATH.
     """
@@ -139,7 +139,7 @@ def main():
     )
     args, _ = parser.parse_known_args()
 
-    common_args: list[str] = ["--mode", args.mode, "--trials", str(args.trials)]
+    common_args: List[str] = ["--mode", args.mode, "--trials", str(args.trials)]
     if args.batch_sizes:
         common_args += ["--batch-sizes", args.batch_sizes]
 
