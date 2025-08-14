@@ -48,7 +48,7 @@ from xtructure import HashTable, BGPQ
 from xtructure import numpy as xnp  # Recommended import method
 
 
-# Define a custom data structure using xtructure_data
+# Define a custom data structure using xtructure_dataclass
 @xtructure_dataclass
 class MyDataValue:
     a: FieldDescriptor[jnp.uint8]
@@ -94,7 +94,7 @@ print(f"BGPQ: Built with max_size={priority_queue.max_size}, batch_size={priorit
 
 # Prepare a batch of keys and values to insert
 key, subkey1, subkey2 = jax.random.split(key, 3)
-keys_to_insert = jax.random.uniform(subkey1, (pq_batch_size,)).astype(jnp.bfloat16)
+keys_to_insert = jax.random.uniform(subkey1, (pq_batch_size,)).astype(jnp.float16)
 values_to_insert = MyDataValue.random((pq_batch_size,), key=subkey2)
 
 # Insert data
