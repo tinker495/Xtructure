@@ -10,7 +10,7 @@ from rich.table import Table
 from xtructure import FieldDescriptor, xtructure_dataclass
 
 
-def human_format(num):
+def human_format(num, pos=None):
     num = float("{:.3g}".format(num))
     magnitude = 0
     while abs(num) >= 1000:
@@ -19,6 +19,61 @@ def human_format(num):
     return "{}{}".format(
         "{:f}".format(num).rstrip("0").rstrip("."), ["", "K", "M", "B", "T"][magnitude]
     )
+
+
+def validate_results_schema(results: Dict[str, Any]) -> None:
+    """
+    Validates that the results dictionary has consistent shapes and symmetric ops.
+
+    Requirements:
+      - keys: batch_sizes, xtructure, python
+      - operations present under xtructure and python are identical
+      - for every operation, list lengths equal len(batch_sizes)
+      - entries are either numbers or dicts with {median, iqr}
+    Raises AssertionError on violation.
+    """
+    assert isinstance(results, dict), "results must be a dict"
+    assert "batch_sizes" in results and isinstance(
+        results["batch_sizes"], list
+    ), "results must contain a list 'batch_sizes'"
+    batch_sizes = results["batch_sizes"]
+    assert "xtructure" in results and isinstance(
+        results["xtructure"], dict
+    ), "results must contain dict 'xtructure'"
+    assert "python" in results and isinstance(
+        results["python"], dict
+    ), "results must contain dict 'python'"
+
+    x_ops = set(results["xtructure"].keys())
+    p_ops = set(results["python"].keys())
+    assert (
+        x_ops == p_ops
+    ), f"operation keys mismatch between xtructure and python: {x_ops} vs {p_ops}"
+
+    for op in x_ops:
+        x_list = results["xtructure"][op]
+        p_list = results["python"][op]
+        assert isinstance(x_list, list) and isinstance(
+            p_list, list
+        ), f"'{op}' entries must be lists"
+        assert len(x_list) == len(
+            batch_sizes
+        ), f"xtructure['{op}'] length {len(x_list)} != len(batch_sizes) {len(batch_sizes)}"
+        assert len(p_list) == len(
+            batch_sizes
+        ), f"python['{op}'] length {len(p_list)} != len(batch_sizes) {len(batch_sizes)}"
+
+        def _validate_entry(e: Any) -> None:
+            if isinstance(e, (int, float)):
+                return
+            assert (
+                isinstance(e, dict) and "median" in e and "iqr" in e
+            ), "each entry must be a number or a dict with 'median' and 'iqr'"
+
+        for e in x_list:
+            _validate_entry(e)
+        for e in p_list:
+            _validate_entry(e)
 
 
 @xtructure_dataclass

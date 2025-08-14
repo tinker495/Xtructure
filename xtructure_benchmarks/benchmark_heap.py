@@ -1,13 +1,18 @@
+import argparse
 import heapq
 import json
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import jax
 import jax.numpy as jnp
 
 from xtructure import BGPQ
-from xtructure_benchmarks.common import BenchmarkValue, print_results_table
+from xtructure_benchmarks.common import (
+    BenchmarkValue,
+    print_results_table,
+    validate_results_schema,
+)
 
 
 # Key generation function adapted from tests/heap_test.py
@@ -87,27 +92,44 @@ def benchmark_bgpq_delete(heap: BGPQ, trials: int = 10, include_host_transfer: b
 
 
 def benchmark_heapq_insert(
-    keys: jnp.ndarray, values: BenchmarkValue, trials: int = 10, bulk_mode: bool = False
+    keys: jnp.ndarray,
+    values: BenchmarkValue,
+    trials: int = 10,
+    bulk_mode: bool = False,
+    include_preprocessing: bool = False,
 ):
     """Benchmarks insertion into Python's heapq."""
-    # Convert JAX arrays to Python native types for heapq
-    native_keys = keys.tolist()
-    value_bytes = [v.tobytes() for v in jax.vmap(lambda x: x.bytes)(values)]
+    # Optionally include preprocessing in the timed region
+    if not include_preprocessing:
+        native_keys = keys.tolist()
+        value_bytes = [v.tobytes() for v in jax.vmap(lambda x: x.bytes)(values)]
 
     times = []
     for _ in range(trials):
         if bulk_mode:
             # Bulk build using heapify - O(n) instead of O(n log n)
-            items = [(native_keys[i], i, value_bytes[i]) for i in range(len(native_keys))]
+            nk = keys.tolist() if include_preprocessing else native_keys
+            vb = (
+                [v.tobytes() for v in jax.vmap(lambda x: x.bytes)(values)]
+                if include_preprocessing
+                else value_bytes
+            )
+            items = [(nk[i], i, vb[i]) for i in range(len(nk))]
             start_time = time.perf_counter()
             heapq.heapify(items)
             end_time = time.perf_counter()
         else:
             # Incremental insert with integer tiebreaker to avoid expensive bytes comparison
+            nk = keys.tolist() if include_preprocessing else native_keys
+            vb = (
+                [v.tobytes() for v in jax.vmap(lambda x: x.bytes)(values)]
+                if include_preprocessing
+                else value_bytes
+            )
             data_heap = []  # Fresh heap per trial
             start_time = time.perf_counter()
-            for i in range(len(native_keys)):
-                heapq.heappush(data_heap, (native_keys[i], i, value_bytes[i]))
+            for i in range(len(nk)):
+                heapq.heappush(data_heap, (nk[i], i, vb[i]))
             end_time = time.perf_counter()
         times.append(end_time - start_time)
 
@@ -145,14 +167,25 @@ def benchmark_heapq_delete(prototype_heap: List, count: int, trials: int = 10):
     return median_time, iqr_time
 
 
-def run_benchmarks():
+def run_benchmarks(
+    mode: str = "kernel",
+    trials: int = 10,
+    batch_sizes: Optional[List[int]] = None,
+    python_heap_insert_mode: str = "bulk",
+):
     """Runs the full suite of Heap benchmarks and saves the results."""
     # Using smaller batch sizes to ensure completion within a reasonable time
-    batch_sizes = [2**10, 2**12, 2**14]
+    if batch_sizes is None:
+        batch_sizes = [2**10, 2**12, 2**14]
     results: Dict[str, Any] = {"batch_sizes": batch_sizes, "xtructure": {}, "python": {}}
     max_size = int(max(batch_sizes) * 1.5)
 
     print("Running Heap (BGPQ) Benchmarks...")
+    try:
+        print(f"JAX backend: {jax.default_backend()}")
+        print("JAX devices:", ", ".join([d.platform + ":" + d.device_kind for d in jax.devices()]))
+    except Exception:
+        pass
     for batch_size in batch_sizes:
         print(f"  Batch Size: {batch_size}")
         key = jax.random.PRNGKey(batch_size)
@@ -166,13 +199,15 @@ def run_benchmarks():
         padded_keys, padded_values = BGPQ.make_batched(keys, values, batch_size)
 
         xtructure_insert_median, xtructure_insert_iqr = benchmark_bgpq_insert(
-            bgpq_heap, padded_keys, padded_values
+            bgpq_heap, padded_keys, padded_values, trials=trials
         )
 
         # Create a filled heap for deletion benchmark
         heap_with_data = bgpq_heap.insert(padded_keys, padded_values)
         jax.block_until_ready(heap_with_data)
-        xtructure_delete_median, xtructure_delete_iqr = benchmark_bgpq_delete(heap_with_data)
+        xtructure_delete_median, xtructure_delete_iqr = benchmark_bgpq_delete(
+            heap_with_data, trials=trials, include_host_transfer=(mode == "e2e")
+        )
 
         results["xtructure"].setdefault("insert_ops_per_sec", []).append(
             {
@@ -195,36 +230,22 @@ def run_benchmarks():
             }
         )
 
-        # --- Python heapq Benchmark ---
-        # Test both incremental and bulk modes, report the better one
-        python_insert_incremental_median, python_insert_incremental_iqr = benchmark_heapq_insert(
-            keys, values, bulk_mode=False
-        )
-        python_insert_bulk_median, python_insert_bulk_iqr = benchmark_heapq_insert(
-            keys, values, bulk_mode=True
+        # --- Python heapq Benchmark --- (fixed algorithm for fairness)
+        use_bulk = python_heap_insert_mode == "bulk"
+        python_insert_median, python_insert_iqr = benchmark_heapq_insert(
+            keys, values, trials=trials, bulk_mode=use_bulk, include_preprocessing=(mode == "e2e")
         )
 
-        # Use the better (faster) Python baseline and build prototype heap for deletion
+        # Build prototype heap for deletion using the same chosen method
         native_keys = keys.tolist()
         value_bytes = [v.tobytes() for v in jax.vmap(lambda x: x.bytes)(values)]
-
-        if python_insert_incremental_median < python_insert_bulk_median:
-            python_insert_median, python_insert_iqr = (
-                python_insert_incremental_median,
-                python_insert_incremental_iqr,
-            )
-            # Build prototype heap using incremental method
+        if use_bulk:
+            py_heap = [(native_keys[i], i, value_bytes[i]) for i in range(len(native_keys))]
+            heapq.heapify(py_heap)
+        else:
             py_heap = []
             for i in range(len(native_keys)):
                 heapq.heappush(py_heap, (native_keys[i], i, value_bytes[i]))
-        else:
-            python_insert_median, python_insert_iqr = (
-                python_insert_bulk_median,
-                python_insert_bulk_iqr,
-            )
-            # Build prototype heap using bulk method
-            py_heap = [(native_keys[i], i, value_bytes[i]) for i in range(len(native_keys))]
-            heapq.heapify(py_heap)
 
         python_delete_median, python_delete_iqr = benchmark_heapq_delete(py_heap, batch_size)
 
@@ -245,7 +266,8 @@ def run_benchmarks():
             }
         )
 
-    # Save results
+    # Validate and save results
+    validate_results_schema(results)
     output_path = "xtructure_benchmarks/results/heap_results.json"
     with open(output_path, "w") as f:
         json.dump(results, f, indent=4)
@@ -255,4 +277,32 @@ def run_benchmarks():
 
 
 if __name__ == "__main__":
-    run_benchmarks()
+    parser = argparse.ArgumentParser(description="Heap (BGPQ) benchmarks")
+    parser.add_argument("--mode", choices=["kernel", "e2e"], default="kernel")
+    parser.add_argument("--trials", type=int, default=10)
+    parser.add_argument(
+        "--batch-sizes",
+        type=str,
+        default="",
+        help="Comma-separated batch sizes (e.g. 1024,4096,16384)",
+    )
+    parser.add_argument(
+        "--python-heap-insert-mode",
+        choices=["bulk", "incremental"],
+        default="bulk",
+        help="Choose Python heap insert algorithm for fairness",
+    )
+    args = parser.parse_args()
+
+    batch_sizes_arg: Optional[List[int]] = None
+    if args.batch_sizes:
+        batch_sizes_arg = [int(x.strip()) for x in args.batch_sizes.split(",") if x.strip()]
+
+    run_benchmarks(
+        mode=args.mode,
+        trials=args.trials,
+        batch_sizes=batch_sizes_arg,
+        python_heap_insert_mode=args["python_heap_insert_mode"]
+        if isinstance(args, dict)
+        else args.python_heap_insert_mode,
+    )

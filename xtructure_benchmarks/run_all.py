@@ -1,12 +1,14 @@
+import argparse
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
 
-from common import human_format
 from rich.console import Console
 from rich.table import Table
+
+from xtructure_benchmarks.common import human_format
 
 
 def display_summary_table():
@@ -73,7 +75,7 @@ def display_summary_table():
     console.print(table)
 
 
-def run_script(script_path: Path):
+def run_script(script_path: Path, extra_args: list[str] | None = None):
     """
     Runs a Python script in a subprocess with the correct PYTHONPATH.
     """
@@ -85,8 +87,11 @@ def run_script(script_path: Path):
     env["PYTHONPATH"] = str(project_root) + os.pathsep + env.get("PYTHONPATH", "")
 
     try:
+        cmd = [sys.executable, str(script_path)]
+        if extra_args:
+            cmd.extend(extra_args)
         subprocess.run(
-            [sys.executable, str(script_path)],
+            cmd,
             check=True,
             env=env,
             text=True,
@@ -116,8 +121,33 @@ def main():
     benchmark_scripts = sorted(benchmarks_dir.glob("benchmark_*.py"))
     print(f"Found {len(benchmark_scripts)} benchmark scripts to run.")
 
+    # Build pass-through args for each benchmark
+    parser = argparse.ArgumentParser(description="Run all xtructure benchmarks")
+    parser.add_argument("--mode", choices=["kernel", "e2e"], default="e2e")
+    parser.add_argument("--trials", type=int, default=10)
+    parser.add_argument(
+        "--batch-sizes",
+        type=str,
+        default="",
+        help="Comma-separated batch sizes (e.g. 1024,4096,16384)",
+    )
+    parser.add_argument(
+        "--python-heap-insert-mode",
+        choices=["bulk", "incremental"],
+        default="bulk",
+        help="Choose Python heap insert algorithm for fairness",
+    )
+    args, _ = parser.parse_known_args()
+
+    common_args: list[str] = ["--mode", args.mode, "--trials", str(args.trials)]
+    if args.batch_sizes:
+        common_args += ["--batch-sizes", args.batch_sizes]
+
     for script in benchmark_scripts:
-        run_script(script)
+        extra = list(common_args)
+        if script.name == "benchmark_heap.py":
+            extra += ["--python-heap-insert-mode", args.python_heap_insert_mode]
+        run_script(script, extra_args=extra)
 
     # 2. Run the visualization script
     visualize_script = benchmarks_dir / "visualize.py"

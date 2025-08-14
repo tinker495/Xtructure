@@ -1,6 +1,7 @@
+import argparse
 import json
 import time
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 import jax
 
@@ -9,6 +10,7 @@ from xtructure_benchmarks.common import (
     BenchmarkValue,
     print_results_table,
     python_timer,
+    validate_results_schema,
 )
 
 
@@ -78,21 +80,37 @@ def benchmark_hashtable_lookup(
     return median_time, iqr_time
 
 
-def benchmark_dict_insert(keys: BenchmarkValue, trials: int = 10, bulk_mode: bool = False):
+def benchmark_dict_insert(
+    keys: BenchmarkValue,
+    trials: int = 10,
+    bulk_mode: bool = False,
+    include_preprocessing: bool = False,
+):
     """Benchmarks insertion into a standard Python dict."""
-    # Convert JAX arrays to hashable Python bytes
-    key_bytes = [arr.tobytes() for arr in jax.vmap(lambda x: x.bytes)(keys)]
+    # Optionally include preprocessing (conversion to bytes) in the timed region
+    if not include_preprocessing:
+        key_bytes = [arr.tobytes() for arr in jax.vmap(lambda x: x.bytes)(keys)]
 
     times = []
     for _ in range(trials):
         data_dict = {}  # Fresh dict per trial
         if bulk_mode:
             start_time = time.perf_counter()
-            data_dict.update({key: key for key in key_bytes})
+            kb = (
+                [arr.tobytes() for arr in jax.vmap(lambda x: x.bytes)(keys)]
+                if include_preprocessing
+                else key_bytes
+            )
+            data_dict.update({key: key for key in kb})
             end_time = time.perf_counter()
         else:
             start_time = time.perf_counter()
-            for key in key_bytes:
+            kb = (
+                [arr.tobytes() for arr in jax.vmap(lambda x: x.bytes)(keys)]
+                if include_preprocessing
+                else key_bytes
+            )
+            for key in kb:
                 data_dict[key] = key  # Store key as value for payload parity
             end_time = time.perf_counter()
         times.append(end_time - start_time)
@@ -107,14 +125,25 @@ def benchmark_dict_insert(keys: BenchmarkValue, trials: int = 10, bulk_mode: boo
     return median_time, iqr_time
 
 
-def benchmark_dict_lookup(data_dict: Dict, keys: BenchmarkValue, trials: int = 10):
+def benchmark_dict_lookup(
+    data_dict: Dict,
+    keys: BenchmarkValue,
+    trials: int = 10,
+    include_preprocessing: bool = False,
+):
     """Benchmarks lookup from a standard Python dict."""
-    # Convert JAX arrays to hashable Python bytes
-    key_bytes = [arr.tobytes() for arr in jax.vmap(lambda x: x.bytes)(keys)]
+    # Optionally include preprocessing (conversion to bytes) in the timed region
+    if not include_preprocessing:
+        key_bytes = [arr.tobytes() for arr in jax.vmap(lambda x: x.bytes)(keys)]
 
     def lookup_op():
         results = []
-        for key in key_bytes:
+        kb = (
+            [arr.tobytes() for arr in jax.vmap(lambda x: x.bytes)(keys)]
+            if include_preprocessing
+            else key_bytes
+        )
+        for key in kb:
             results.append(data_dict.get(key))
         # Return results to match xtructure lookup semantics
         return results
@@ -122,14 +151,20 @@ def benchmark_dict_lookup(data_dict: Dict, keys: BenchmarkValue, trials: int = 1
     return python_timer(lookup_op, trials)
 
 
-def run_benchmarks():
+def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional[List[int]] = None):
     """Runs the full suite of HashTable benchmarks and saves the results."""
     # Using smaller batch sizes to ensure completion within a reasonable time
-    batch_sizes = [2**10, 2**12, 2**14]
+    if batch_sizes is None:
+        batch_sizes = [2**10, 2**12, 2**14]
     results: Dict[str, Any] = {"batch_sizes": batch_sizes, "xtructure": {}, "python": {}}
     load_factor_inverse = 1.5  # Keep load factor constant across batch sizes
 
     print("Running HashTable Benchmarks...")
+    try:
+        print(f"JAX backend: {jax.default_backend()}")
+        print("JAX devices:", ", ".join([d.platform + ":" + d.device_kind for d in jax.devices()]))
+    except Exception:
+        pass
     for batch_size in batch_sizes:
         print(f"  Batch Size: {batch_size}")
         key = jax.random.PRNGKey(0)
@@ -141,14 +176,14 @@ def run_benchmarks():
         # --- xtructure.HashTable Benchmark ---
         xtructure_table = HashTable.build(BenchmarkValue, 1, table_size)
         xtructure_insert_median, xtructure_insert_iqr = benchmark_hashtable_insert(
-            xtructure_table, keys
+            xtructure_table, keys, trials=trials
         )
 
         # Re-build and insert for a fair lookup comparison
         table_with_data, _, _, _ = xtructure_table.parallel_insert(keys)
         jax.block_until_ready(table_with_data)
         xtructure_lookup_median, xtructure_lookup_iqr = benchmark_hashtable_lookup(
-            table_with_data, keys
+            table_with_data, keys, trials=trials, include_host_transfer=(mode == "e2e")
         )
 
         results["xtructure"].setdefault("insert_ops_per_sec", []).append(
@@ -167,10 +202,10 @@ def run_benchmarks():
         # --- Python dict Benchmark ---
         # Test both incremental and bulk modes, report the better one
         python_insert_incremental_median, python_insert_incremental_iqr = benchmark_dict_insert(
-            keys, bulk_mode=False
+            keys, trials=trials, bulk_mode=False, include_preprocessing=(mode == "e2e")
         )
         python_insert_bulk_median, python_insert_bulk_iqr = benchmark_dict_insert(
-            keys, bulk_mode=True
+            keys, trials=trials, bulk_mode=True, include_preprocessing=(mode == "e2e")
         )
 
         # Use the better (faster) Python baseline
@@ -193,7 +228,9 @@ def run_benchmarks():
             key_bytes = [arr.tobytes() for arr in jax.vmap(lambda x: x.bytes)(keys)]
             py_dict = {key: key for key in key_bytes}
 
-        python_lookup_median, python_lookup_iqr = benchmark_dict_lookup(py_dict, keys)
+        python_lookup_median, python_lookup_iqr = benchmark_dict_lookup(
+            py_dict, keys, trials=trials, include_preprocessing=(mode == "e2e")
+        )
 
         results["python"].setdefault("insert_ops_per_sec", []).append(
             {
@@ -208,7 +245,8 @@ def run_benchmarks():
             }
         )
 
-    # Save results to the correct directory
+    # Validate and save results to the correct directory
+    validate_results_schema(results)
     output_path = "xtructure_benchmarks/results/hashtable_results.json"
     with open(output_path, "w") as f:
         json.dump(results, f, indent=4)
@@ -218,4 +256,19 @@ def run_benchmarks():
 
 
 if __name__ == "__main__":
-    run_benchmarks()
+    parser = argparse.ArgumentParser(description="HashTable benchmarks")
+    parser.add_argument("--mode", choices=["kernel", "e2e"], default="kernel")
+    parser.add_argument("--trials", type=int, default=10)
+    parser.add_argument(
+        "--batch-sizes",
+        type=str,
+        default="",
+        help="Comma-separated batch sizes (e.g. 1024,4096,16384)",
+    )
+    args = parser.parse_args()
+
+    batch_sizes_arg: Optional[List[int]] = None
+    if args.batch_sizes:
+        batch_sizes_arg = [int(x.strip()) for x in args.batch_sizes.split(",") if x.strip()]
+
+    run_benchmarks(mode=args.mode, trials=args.trials, batch_sizes=batch_sizes_arg)
