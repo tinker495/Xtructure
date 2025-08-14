@@ -162,6 +162,34 @@ print(f"XNP: Updated elements: {updated.a}")
 
 For a fully functional example using `Xtructure`, check out the [JAxtar](https://github.com/tinker495/JAxtar) repository. `JAxtar` demonstrates how to use `Xtructure` to build a JAX-native, parallelizable A* and Q* solver for neural heuristic search research, showcasing the library in a real, high-performance computing workflow.
 
+## Benchmark Results
+
+Measured on NVIDIA GeForce RTX 5090.
+
+Raw JSON links are in the last column; plots show ops/sec by batch size.
+
+| Structure | Op A (plot) | Op B (plot) | Results |
+| --- | --- | --- | --- |
+| Stack | ![Push](./xtructure_benchmarks/benchmark_data/stack_push_performance.png) | ![Pop](./xtructure_benchmarks/benchmark_data/stack_pop_performance.png) | [`stack_results.json`](./xtructure_benchmarks/benchmark_data/stack_results.json) |
+| Queue | ![Enqueue](./xtructure_benchmarks/benchmark_data/queue_enqueue_performance.png) | ![Dequeue](./xtructure_benchmarks/benchmark_data/queue_dequeue_performance.png) | [`queue_results.json`](./xtructure_benchmarks/benchmark_data/queue_results.json) |
+| BGPQ (Heap) | ![Insert](./xtructure_benchmarks/benchmark_data/heap_insert_performance.png) | ![Delete](./xtructure_benchmarks/benchmark_data/heap_delete_performance.png) | [`heap_results.json`](./xtructure_benchmarks/benchmark_data/heap_results.json) |
+| Hash Table | ![Insert](./xtructure_benchmarks/benchmark_data/hashtable_insert_performance.png) | ![Lookup](./xtructure_benchmarks/benchmark_data/hashtable_lookup_performance.png) | [`hashtable_results.json`](./xtructure_benchmarks/benchmark_data/hashtable_results.json) |
+
+### Detailed Results (median ops/sec ± IQR; speedup = xtructure/python)
+
+Values are shown in the order 1,024 / 4,096 / 16,384.
+
+| Structure | Operation | xtructure (median ± IQR) | python (median ± IQR) | Speedup (×) |
+| --- | --- | --- | --- | --- |
+| Stack | Push | 14,535,435 ± 2,635,103<br/>80,672,798 ± 24,314,367<br/>269,429,330 ± 37,552,312 | 42,558 ± 1,908<br/>51,527 ± 14,995<br/>45,999 ± 1,314 | 341.64 / 1,566.09 / 5,859.23 |
+| Stack | Pop | 5,266,311 ± 786,689<br/>13,375,678 ± 2,135,048<br/>30,326,310 ± 1,865,609 | 251,700 ± 30,268<br/>253,131 ± 11,311<br/>246,296 ± 10,523 | 20.93 / 52.85 / 123.17 |
+| Queue | Enqueue | 12,870,713 ± 2,238,375<br/>57,148,845 ± 25,254,233<br/>225,195,655 ± 76,034,047 | 49,916 ± 1,391<br/>50,113 ± 13,593<br/>47,148 ± 3,058 | 257.83 / 1,140.49 / 4,777.20 |
+| Queue | Dequeue | 5,022,229 ± 483,230<br/>12,913,416 ± 1,668,073<br/>29,107,706 ± 2,382,835 | 259,493 ± 28,879<br/>244,835 ± 4,627<br/>241,120 ± 5,366 | 19.36 / 52.77 / 120.74 |
+| BGPQ (Heap) | Insert | 6,057,863 ± 943,945<br/>22,304,210 ± 8,135,547<br/>85,577,360 ± 9,516,407 | 30,375,845 ± 362,698<br/>27,901,911 ± 2,065,789<br/>29,658,943 ± 1,095,604 | 0.20 / 0.80 / 2.89 |
+| BGPQ (Heap) | Delete | 3,721,160 ± 284,567<br/>11,557,757 ± 2,903,894<br/>26,708,899 ± 1,896,707 | 5,083,955 ± 99,315<br/>3,914,545 ± 96,803<br/>3,164,385 ± 289,304 | 0.73 / 2.95 / 8.44 |
+| Hash Table | Insert | 289,286 ± 1,768<br/>1,151,791 ± 18,977<br/>3,907,092 ± 60,753 | 37,297 ± 1,333<br/>24,822 ± 3,206<br/>37,056 ± 13,532 | 7.76 / 46.43 / 105.49 |
+| Hash Table | Lookup | 317,278 ± 2,884<br/>1,373,139 ± 54,821<br/>4,671,074 ± 160,999 | 39,219 ± 1,534<br/>39,613 ± 443<br/>36,586 ± 2,419 | 8.09 / 34.67 / 127.67 |
+
 ## Citation
 
 If you use this code in your research, please cite:
