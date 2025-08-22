@@ -420,7 +420,12 @@ class HashTable:
         return table, index
 
     @jax.jit
-    def parallel_insert(table: "HashTable", inputs: Xtructurable, filled: chex.Array = None):
+    def parallel_insert(
+        table: "HashTable",
+        inputs: Xtructurable,
+        filled: chex.Array = None,
+        unique_key: chex.Array = None,
+    ):
         """
         Parallel insertion of multiple states into the hash table.
 
@@ -428,6 +433,9 @@ class HashTable:
             table: Hash table instance
             inputs: States to insert
             filled: Boolean array indicating which inputs are valid
+            unique_key: Optional key array for determining priority among duplicate states.
+                       When provided, among duplicate states, only the one with the smallest
+                       key value will be marked as unique in unique_filled mask.
 
         Returns:
             Tuple of (updated_table, updatable, unique_filled, idx, table_idx)
@@ -444,7 +452,7 @@ class HashTable:
 
         # Find unique states to avoid duplicates using enhanced unique_mask
         unique, unique_uint32eds_idx, inverse_indices = xnp.unique_mask(
-            val=inputs, batch_len=batch_len, return_index=True, return_inverse=True
+            val=inputs, key=unique_key, batch_len=batch_len, return_index=True, return_inverse=True
         )
         unique_filled = jnp.logical_and(filled, unique)
 
