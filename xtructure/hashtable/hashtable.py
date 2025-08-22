@@ -400,13 +400,13 @@ class HashTable:
             overflowed = jnp.logical_and(
                 idxs.table_index >= table.cuckoo_table_n, unupdated
             )  # Overflowed index must be updated
-            not_uniques = jnp.logical_not(xnp.unique_mask(idxs))
+            not_uniques = jnp.logical_not(xnp.unique_mask(idxs, filled=updatable))
 
             unupdated = jnp.logical_and(updatable, not_uniques)
             unupdated = jnp.logical_or(unupdated, overflowed)
             return seeds, idxs, unupdated
 
-        not_uniques = jnp.logical_not(xnp.unique_mask(index))
+        not_uniques = jnp.logical_not(xnp.unique_mask(index, filled=updatable))
         unupdated = jnp.logical_and(
             updatable, not_uniques
         )  # remove the unique index from the unupdated index
@@ -450,11 +450,15 @@ class HashTable:
 
         batch_len = filled.shape[0]
 
-        # Find unique states to avoid duplicates using enhanced unique_mask
-        unique, unique_uint32eds_idx, inverse_indices = xnp.unique_mask(
-            val=inputs, key=unique_key, batch_len=batch_len, return_index=True, return_inverse=True
+        # Find unique states to avoid duplicates using enhanced unique_mask with filled optimization
+        unique_filled, unique_uint32eds_idx, inverse_indices = xnp.unique_mask(
+            val=inputs,
+            key=unique_key,
+            filled=filled,
+            batch_len=batch_len,
+            return_index=True,
+            return_inverse=True,
         )
-        unique_filled = jnp.logical_and(filled, unique)
 
         # Look up each state
         idx = CuckooIdx(
