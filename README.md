@@ -15,6 +15,13 @@ A Python package providing JAX-optimized data structures, including a batched pr
 - Xtructure NumPy (`xtructure_numpy`): JAX-compatible operations for dataclass manipulation including concatenation, stacking, padding, conditional selection, deduplication, and element selection.
 - Optimized for JAX.
 
+## Structure Layout Flexibility
+
+Xtructure stores every `@xtructure_dataclass` in **Structure of Arrays (SoA)**
+form for JAX performance, yet exposes **Array of Structures (AoS)** semantics to
+callers. See [Structure Layout Flexibility](./doc/layout_flexibility.md) for the
+full rationale, breakdown of supporting utilities, and a worked example.
+
 ## Installation
 
 ```bash
@@ -34,6 +41,7 @@ Detailed documentation on how to use Xtructure is available in the `doc/` direct
 *   **[BGPQ Usage](./doc/bgpq.md)**: Guide to using the Batched GPU Priority Queue.
 *   **[HashTable Usage](./doc/hashtable.md)**: Guide to using the Cuckoo hash table.
 *   **[Xtructure NumPy Operations](./doc/xnp.md)**: Guide to using `xtructure_numpy` (`xnp`) operations for dataclass manipulation.
+*   **[Structure Layout Flexibility](./doc/layout_flexibility.md)**: How SoA storage and AoS semantics coexist in Xtructure.
 
 Quick examples can still be found below for a brief overview.
 
