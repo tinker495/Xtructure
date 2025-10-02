@@ -1,8 +1,8 @@
 from typing import Any, Union
 
+import jax
 import jax.numpy as jnp
 import numpy as np
-from jax.ops import segment_max
 
 
 def _update_array_on_condition(
@@ -38,32 +38,50 @@ def _update_array_on_condition(
     if num_updates == 0:
         return original_array
 
-    # Use segment_max to find the first update for each index where condition is True.
-    # To find the minimum timestamp (first True), we use a trick with segment_max:
-    # we negate the timestamps, find the maximum (which corresponds to the minimum
-    # absolute value), and then negate the result back. A very large negative number
-    # is used for False conditions to ensure they are ignored in the max operation.
-    timestamps = jnp.arange(num_updates)
-    masked_timestamps = jnp.where(condition, -(timestamps + 1), -jnp.inf)
+    def _apply_updates(_):
+        # Identify the earliest True entry for each index while keeping all tensors
+        # bounded by the number of updates instead of the full table size.
+        true_positions = jnp.nonzero(condition, size=num_updates, fill_value=-1)[0]
+        safe_positions = jnp.where(true_positions >= 0, true_positions, 0)
 
-    num_segments = original_array.shape[0]
-    # The result of segment_max will be -(t+1) for the first t, or -inf.
-    first_true_timestamps_neg = segment_max(masked_timestamps, indices, num_segments=num_segments)
-    # Undo the negation to get t+1.
-    first_true_timestamps = -first_true_timestamps_neg
+        gathered_indices = indices[safe_positions]
+        gathered_indices = jnp.where(true_positions >= 0, gathered_indices, -1)
 
-    update_indices = first_true_timestamps - 1
-
-    if jnp.ndim(values_to_set) == 0:
-        updates = jnp.full(original_array.shape, values_to_set, dtype=original_array.dtype)
-    else:
-        safe_update_indices = jnp.where(jnp.isfinite(update_indices), update_indices, 0).astype(
-            jnp.int32
+        unique_indices, first_pos = jnp.unique(
+            gathered_indices,
+            size=num_updates,
+            fill_value=-1,
+            return_index=True,
         )
-        updates = values_to_set[safe_update_indices]
 
-    condition_mask = jnp.isfinite(first_true_timestamps)
-    while len(condition_mask.shape) < len(original_array.shape):
-        condition_mask = jnp.expand_dims(condition_mask, -1)
+        valid_unique = unique_indices >= 0
+        safe_first_pos = jnp.where(valid_unique, first_pos, 0)
+        selected_positions = safe_positions[safe_first_pos]
 
-    return jnp.where(condition_mask, updates, original_array)
+        target_indices = jnp.where(valid_unique, unique_indices, 0).astype(indices.dtype)
+
+        value_array = jnp.asarray(values_to_set)
+        if value_array.ndim == 0:
+            trailing_shape = original_array.shape[1:]
+            value_array = jnp.broadcast_to(
+                value_array.astype(original_array.dtype),
+                (num_updates, *trailing_shape),
+            )
+
+        updates = jnp.take(value_array, selected_positions, axis=0, mode="clip")
+        fallback = jnp.take(original_array, target_indices, axis=0, mode="clip")
+
+        mask = valid_unique
+        while mask.ndim < updates.ndim:
+            mask = mask[..., None]
+
+        updates = jnp.where(mask, updates, fallback)
+
+        return original_array.at[target_indices].set(updates)
+
+    return jax.lax.cond(
+        jnp.any(condition),
+        _apply_updates,
+        lambda _: original_array,
+        operand=None,
+    )
