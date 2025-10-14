@@ -77,29 +77,18 @@ def byterize_hash_func_builder(x: Xtructurable):
             return jnp.array([], dtype=jnp.uint8)
         return jnp.concatenate(x)
 
-    default_bytes = _byterize(x.default())
-    bytes_len = default_bytes.shape[0]
-    # Calculate padding needed to make byte length multiple of 4
-    pad_len = jnp.where(bytes_len % 4 != 0, 4 - (bytes_len % 4), 0)
+    def _to_uint32_from_bytes(bytes):
+        """Convert byte array to uint32 array with runtime-safe padding."""
+        bytes_len = bytes.shape[0]
+        if bytes_len == 0:
+            return jnp.zeros((0,), dtype=jnp.uint32)
 
-    if pad_len > 0:
-
-        def _to_uint32_from_bytes(bytes):
-            """Convert padded bytes to uint32 array."""
-            x_padded = jnp.pad(bytes, (pad_len, 0), mode="constant", constant_values=0)
-            x_reshaped = jnp.reshape(x_padded, (-1, 4))
-            return jax.vmap(lambda x: jax.lax.bitcast_convert_type(x, jnp.uint32))(
-                x_reshaped
-            ).reshape(-1)
-
-    else:
-
-        def _to_uint32_from_bytes(bytes):
-            """Convert bytes directly to uint32 array."""
-            x_reshaped = jnp.reshape(bytes, (-1, 4))
-            return jax.vmap(lambda x: jax.lax.bitcast_convert_type(x, jnp.uint32))(
-                x_reshaped
-            ).reshape(-1)
+        pad_len = (-bytes_len) % 4
+        bytes_padded = jnp.pad(bytes, (0, pad_len), mode="constant", constant_values=0)
+        bytes_reshaped = jnp.reshape(bytes_padded, (-1, 4))
+        return jax.vmap(lambda chunk: jax.lax.bitcast_convert_type(chunk, jnp.uint32))(
+            bytes_reshaped
+        ).reshape(-1)
 
     def _to_uint32(x):
         """Convert pytree to uint32 array."""

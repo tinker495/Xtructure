@@ -10,6 +10,11 @@ class XtructureValue:
     b: FieldDescriptor(jnp.uint32, (1, 2))  # type: ignore
 
 
+@xtructure_dataclass
+class OddBytesValue:
+    payload: FieldDescriptor(jnp.uint8, (47,))  # type: ignore
+
+
 def test_hash_table_lookup():
     count = 1000
     sample = XtructureValue.random((count,))
@@ -175,3 +180,14 @@ def test_default_value_insertion():
 
     # All should be found
     assert jnp.all(batch_found), "All default values should be found after batch insertion"
+
+
+def test_uint32ed_padding_for_non_multiple_of_four_bytes():
+    payload = jnp.asarray(jnp.arange(47, dtype=jnp.uint8).block_until_ready())
+    sample = OddBytesValue(payload=payload)
+
+    uint32ed = sample.uint32ed
+
+    expected_words = (47 + 3) // 4
+    assert uint32ed.shape == (expected_words,)
+    assert uint32ed.dtype == jnp.uint32
