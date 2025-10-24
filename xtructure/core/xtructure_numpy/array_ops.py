@@ -1,8 +1,8 @@
 from typing import Any, Union
 
+import jax
 import jax.numpy as jnp
 import numpy as np
-from jax.ops import segment_max
 
 
 def _update_array_on_condition(
@@ -34,36 +34,52 @@ def _update_array_on_condition(
         )
         return result.reshape(original_array.shape)
 
+    condition = jnp.asarray(condition, dtype=bool)
     num_updates = len(condition)
     if num_updates == 0:
         return original_array
 
-    # Use segment_max to find the first update for each index where condition is True.
-    # To find the minimum timestamp (first True), we use a trick with segment_max:
-    # we negate the timestamps, find the maximum (which corresponds to the minimum
-    # absolute value), and then negate the result back. A very large negative number
-    # is used for False conditions to ensure they are ignored in the max operation.
-    timestamps = jnp.arange(num_updates)
-    masked_timestamps = jnp.where(condition, -(timestamps + 1), -jnp.inf)
+    indices_array = jnp.asarray(indices)
+    indices_array = jnp.reshape(indices_array, (num_updates,))
+    invalid_index = jnp.array(original_array.shape[0], dtype=indices_array.dtype)
+    invalid_fill = jnp.full_like(indices_array, invalid_index)
+    # Drop False updates by mapping them to an out-of-bounds position.
+    safe_indices = _where_no_broadcast(condition, indices_array, invalid_fill)
+    # Reverse so that earlier True entries are applied last ("first True wins").
+    safe_indices = jnp.flip(safe_indices, axis=0)
 
-    num_segments = original_array.shape[0]
-    # The result of segment_max will be -(t+1) for the first t, or -inf.
-    first_true_timestamps_neg = segment_max(masked_timestamps, indices, num_segments=num_segments)
-    # Undo the negation to get t+1.
-    first_true_timestamps = -first_true_timestamps_neg
+    value_array = jnp.asarray(values_to_set, dtype=original_array.dtype)
+    if value_array.ndim > 0 and value_array.shape[0] == num_updates:
+        value_array = jnp.flip(value_array, axis=0)
 
-    update_indices = first_true_timestamps - 1
+    return original_array.at[safe_indices].set(value_array, mode="drop")
 
-    if jnp.ndim(values_to_set) == 0:
-        updates = jnp.full(original_array.shape, values_to_set, dtype=original_array.dtype)
-    else:
-        safe_update_indices = jnp.where(jnp.isfinite(update_indices), update_indices, 0).astype(
-            jnp.int32
+
+def _where_no_broadcast(
+    condition: jnp.ndarray,
+    true_values: jnp.ndarray,
+    false_values: jnp.ndarray,
+) -> jnp.ndarray:
+    """Apply jnp.where while enforcing identical shapes to avoid implicit broadcasting."""
+    condition = jnp.asarray(condition, dtype=jnp.bool_)
+    true_values = jnp.asarray(true_values)
+    false_values = jnp.asarray(false_values)
+
+    if condition.shape != true_values.shape:
+        raise ValueError(
+            f"`condition` shape {condition.shape} must match `true_values` shape {true_values.shape} "
+            "to avoid broadcasting."
         )
-        updates = values_to_set[safe_update_indices]
+    if true_values.shape != false_values.shape:
+        raise ValueError(
+            f"`true_values` shape {true_values.shape} must match `false_values` shape "
+            f"{false_values.shape} to avoid broadcasting."
+        )
 
-    condition_mask = jnp.isfinite(first_true_timestamps)
-    while len(condition_mask.shape) < len(original_array.shape):
-        condition_mask = jnp.expand_dims(condition_mask, -1)
+    if true_values.dtype != false_values.dtype:
+        raise ValueError(
+            f"`true_values` dtype {true_values.dtype} must match `false_values` dtype "
+            f"{false_values.dtype} to avoid implicit casting."
+        )
 
-    return jnp.where(condition_mask, updates, original_array)
+    return jnp.where(condition, true_values, false_values)

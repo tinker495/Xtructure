@@ -2,6 +2,8 @@ import jax
 import jax.numpy as jnp
 from jax.experimental import pallas as pl
 
+from xtructure.core.xtructure_numpy.array_ops import _where_no_broadcast
+
 
 def _get_sentinels(dtype):
     """Returns the min and max sentinel values for a given dtype."""
@@ -63,21 +65,40 @@ def binary_search_partition(k, a, b):
         # 2. Perform the load unconditionally.
         # 3. Use `where` to replace the loaded value with a sentinel if the
         #    original index was out of bounds.
-        safe_a_idx = jnp.where(is_a_safe, i - 1, 0)
+        cond_safe_a = jnp.asarray(is_a_safe, dtype=jnp.bool_)
+        i_minus_one = jnp.asarray(i - 1)
+        safe_a_idx = _where_no_broadcast(
+            cond_safe_a,
+            i_minus_one,
+            jnp.zeros_like(i_minus_one),
+        )
         a_val_loaded = pl.load(a, (safe_a_idx,))
-        a_val = jnp.where(is_a_safe, a_val_loaded, min_val)
+        min_val_array = jnp.full_like(a_val_loaded, min_val)
+        a_val = _where_no_broadcast(cond_safe_a, a_val_loaded, min_val_array)
 
-        safe_b_idx = jnp.where(is_b_safe, j, 0)
+        cond_safe_b = jnp.asarray(is_b_safe, dtype=jnp.bool_)
+        j_array = jnp.asarray(j)
+        safe_b_idx = _where_no_broadcast(
+            cond_safe_b,
+            j_array,
+            jnp.zeros_like(j_array),
+        )
         b_val_loaded = pl.load(b, (safe_b_idx,))
-        b_val = jnp.where(is_b_safe, b_val_loaded, max_val)
+        max_val_array = jnp.full_like(b_val_loaded, max_val)
+        b_val = _where_no_broadcast(cond_safe_b, b_val_loaded, max_val_array)
 
         # The condition for a valid partition from `a`'s perspective.
         # If `a[i-1] <= b[j]`, then `i` is a valid candidate, and we can
         # potentially take even more from `a`. So, we search in `[i, high]`.
         # Otherwise, `i` is too high, and we must search in `[low, i-1]`.
         is_partition_valid = a_val <= b_val
-        new_low = jnp.where(is_partition_valid, i, low_i)
-        new_high = jnp.where(is_partition_valid, high_i, i - 1)
+        cond_partition = jnp.asarray(is_partition_valid, dtype=jnp.bool_)
+        new_low = _where_no_broadcast(cond_partition, jnp.asarray(i), jnp.asarray(low_i))
+        new_high = _where_no_broadcast(
+            cond_partition,
+            jnp.asarray(high_i),
+            i_minus_one,
+        )
         return new_low, new_high
 
     # The loop terminates when low == high, and `final_low` is our desired `i`.

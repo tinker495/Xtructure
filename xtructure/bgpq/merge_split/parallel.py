@@ -4,6 +4,8 @@ import jax
 import jax.numpy as jnp
 from jax.experimental import pallas as pl
 
+from xtructure.core.xtructure_numpy.array_ops import _where_no_broadcast
+
 from .common import binary_search_partition
 
 BLOCK_SIZE = 64
@@ -37,8 +39,17 @@ def merge_parallel_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref):
         val_b = pl.load(bk_ref, (idx_b,))
         is_a_le_b = val_a <= val_b
 
-        key_to_store = jnp.where(is_a_le_b, val_a, val_b)
-        idx_to_store = jnp.where(is_a_le_b, idx_a, n + idx_b)
+        cond = jnp.asarray(is_a_le_b, dtype=jnp.bool_)
+
+        target_key_dtype = jnp.result_type(val_a.dtype, val_b.dtype)
+        val_a_cast = jnp.asarray(val_a, dtype=target_key_dtype)
+        val_b_cast = jnp.asarray(val_b, dtype=target_key_dtype)
+        key_to_store = _where_no_broadcast(cond, val_a_cast, val_b_cast)
+
+        idx_true = jnp.asarray(idx_a)
+        idx_dtype = idx_true.dtype
+        idx_false = jnp.asarray(n + idx_b, dtype=idx_dtype)
+        idx_to_store = _where_no_broadcast(cond, idx_true, idx_false)
 
         key_casted = key_to_store.astype(merged_keys_ref.dtype)
         pl.store(merged_keys_ref, (pl.ds(out_ptr, 1),), jnp.expand_dims(key_casted, 0))
@@ -48,8 +59,16 @@ def merge_parallel_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref):
             jnp.expand_dims(idx_to_store, 0),
         )
 
-        next_idx_a = jnp.where(is_a_le_b, idx_a + 1, idx_a)
-        next_idx_b = jnp.where(is_a_le_b, idx_b, idx_b + 1)
+        next_idx_a = _where_no_broadcast(
+            cond,
+            jnp.asarray(idx_a + 1, dtype=idx_dtype),
+            jnp.asarray(idx_a, dtype=idx_dtype),
+        )
+        next_idx_b = _where_no_broadcast(
+            cond,
+            jnp.asarray(idx_b, dtype=idx_dtype),
+            jnp.asarray(idx_b + 1, dtype=idx_dtype),
+        )
         return next_idx_a, next_idx_b, out_ptr + 1
 
     idx_a, idx_b, out_ptr = jax.lax.while_loop(

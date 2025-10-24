@@ -16,6 +16,7 @@ import jax.numpy as jnp
 
 from ..core import Xtructurable, base_dataclass
 from ..core import xtructure_numpy as xnp
+from ..core.xtructure_numpy.array_ops import _where_no_broadcast
 from .merge_split import merge_arrays_parallel, merge_sort_split_idx
 
 SORT_STABLE = True  # Use stable sorting to maintain insertion order for equal keys
@@ -159,10 +160,18 @@ class BGPQ:
 
     @property
     def size(self):
-        return jnp.where(
-            self.heap_size == 0,
-            jnp.sum(jnp.isfinite(self.key_store[0])) + self.buffer_size,
-            (self.heap_size + 1) * self.batch_size + self.buffer_size,
+        cond = jnp.asarray(self.heap_size == 0, dtype=jnp.bool_)
+        empty_branch = jnp.asarray(
+            jnp.sum(jnp.isfinite(self.key_store[0])) + self.buffer_size
+        )
+        non_empty_branch = jnp.asarray(
+            (self.heap_size + 1) * self.batch_size + self.buffer_size
+        )
+        target_dtype = jnp.result_type(empty_branch.dtype, non_empty_branch.dtype)
+        return _where_no_broadcast(
+            cond,
+            empty_branch.astype(target_dtype),
+            non_empty_branch.astype(target_dtype),
         )
 
     @jax.jit

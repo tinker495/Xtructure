@@ -13,6 +13,7 @@ import jax.numpy as jnp
 from ..core import FieldDescriptor, Xtructurable, base_dataclass, xtructure_dataclass
 from ..core import xtructure_numpy as xnp
 from ..core.xtructure_decorators.hash import uint32ed_to_hash
+from ..core.xtructure_numpy.array_ops import _where_no_broadcast
 
 SIZE_DTYPE = jnp.uint32
 HASH_TABLE_IDX_DTYPE = jnp.uint8
@@ -479,8 +480,17 @@ class HashTable:
         )
 
         # Provisional index: found -> idx, inserted -> inserted_idx
-        provisional_index = jnp.where(found, idx.index, inserted_idx.index)
-        provisional_table_index = jnp.where(found, idx.table_index, inserted_idx.table_index)
+        cond_found = jnp.asarray(found, dtype=jnp.bool_)
+        provisional_index = _where_no_broadcast(
+            cond_found,
+            jnp.asarray(idx.index),
+            jnp.asarray(inserted_idx.index, dtype=idx.index.dtype),
+        )
+        provisional_table_index = _where_no_broadcast(
+            cond_found,
+            jnp.asarray(idx.table_index),
+            jnp.asarray(inserted_idx.table_index, dtype=idx.table_index.dtype),
+        )
         provisional_idx = CuckooIdx(index=provisional_index, table_index=provisional_table_index)
 
         # Only keep indices for unique elements
