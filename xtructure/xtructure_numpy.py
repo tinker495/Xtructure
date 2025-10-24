@@ -19,6 +19,7 @@ from .core.xtructure_numpy import (
     unique_mask,
     update_on_condition,
     where,
+    where_no_broadcast,
 )
 
 __all__ = [
@@ -29,6 +30,7 @@ __all__ = [
     "reshape",
     "flatten",
     "where",
+    "where_no_broadcast",
     "take",
     "tile",
     "transpose",

@@ -15,7 +15,7 @@ from xtructure import xtructure_numpy as xnp
 
 # Available functions in xnp:
 # concat, concatenate (same function), pad, stack, reshape, flatten,
-# where, unique_mask, take, update_on_condition,
+# where, where_no_broadcast, unique_mask, take, update_on_condition,
 # tile, transpose, swap_axes
 
 
@@ -295,4 +295,12 @@ updated_data = xnp.update_on_condition(data, indices, condition, new_values)
 - `update_on_condition` uses `segment_max` with timestamps for "first True wins" duplicate resolution.
 - `pad` automatically chooses the optimal padding strategy based on input parameters.
 - `where` automatically detects dataclass vs scalar arguments for appropriate field-wise operations.
+
+### **`xnp.where_no_broadcast(condition, x, y)`**
+*   Strict variant of `where` that forbids implicit broadcasting.
+
+**Usage notes:**
+- `condition`, `x`, and `y` must share identical dataclass structures and per-field shapes.
+- Raises `ValueError` if any field would require broadcasting or implicit dtype casting.
+- Helpful for catching accidental shape mismatches that standard `jnp.where` would silently broadcast.
 - `take` applies `jnp.take` to each field while maintaining dataclass structure.

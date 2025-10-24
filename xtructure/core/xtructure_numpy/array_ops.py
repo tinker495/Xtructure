@@ -42,8 +42,9 @@ def _update_array_on_condition(
     indices_array = jnp.asarray(indices)
     indices_array = jnp.reshape(indices_array, (num_updates,))
     invalid_index = jnp.array(original_array.shape[0], dtype=indices_array.dtype)
+    invalid_fill = jnp.full_like(indices_array, invalid_index)
     # Drop False updates by mapping them to an out-of-bounds position.
-    safe_indices = jnp.where(condition, indices_array, invalid_index)
+    safe_indices = _where_no_broadcast(condition, indices_array, invalid_fill)
     # Reverse so that earlier True entries are applied last ("first True wins").
     safe_indices = jnp.flip(safe_indices, axis=0)
 
@@ -52,3 +53,33 @@ def _update_array_on_condition(
         value_array = jnp.flip(value_array, axis=0)
 
     return original_array.at[safe_indices].set(value_array, mode="drop")
+
+
+def _where_no_broadcast(
+    condition: jnp.ndarray,
+    true_values: jnp.ndarray,
+    false_values: jnp.ndarray,
+) -> jnp.ndarray:
+    """Apply jnp.where while enforcing identical shapes to avoid implicit broadcasting."""
+    condition = jnp.asarray(condition, dtype=jnp.bool_)
+    true_values = jnp.asarray(true_values)
+    false_values = jnp.asarray(false_values)
+
+    if condition.shape != true_values.shape:
+        raise ValueError(
+            f"`condition` shape {condition.shape} must match `true_values` shape {true_values.shape} "
+            "to avoid broadcasting."
+        )
+    if true_values.shape != false_values.shape:
+        raise ValueError(
+            f"`true_values` shape {true_values.shape} must match `false_values` shape "
+            f"{false_values.shape} to avoid broadcasting."
+        )
+
+    if true_values.dtype != false_values.dtype:
+        raise ValueError(
+            f"`true_values` dtype {true_values.dtype} must match `false_values` dtype "
+            f"{false_values.dtype} to avoid implicit casting."
+        )
+
+    return jnp.where(condition, true_values, false_values)

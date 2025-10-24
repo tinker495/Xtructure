@@ -1049,6 +1049,49 @@ def test_where_scalar_equivalent_to_tree_map():
     assert jnp.array_equal(result_xnp.value, result_manual.value)
 
 
+def test_where_no_broadcast_basic():
+    """where_no_broadcast succeeds when shapes and dtypes match exactly."""
+    dc1 = SimpleData.default(shape=(3,))
+    dc1 = dc1.replace(id=jnp.array([1, 2, 3], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 3.0]))
+    dc2 = SimpleData.default(shape=(3,))
+    dc2 = dc2.replace(
+        id=jnp.array([10, 20, 30], dtype=jnp.uint32), value=jnp.array([10.0, 20.0, 30.0])
+    )
+    condition = jnp.array([True, False, True])
+
+    result = xnp.where_no_broadcast(condition, dc1, dc2)
+
+    expected_id = jnp.array([1, 20, 3], dtype=jnp.uint32)
+    expected_value = jnp.array([1.0, 20.0, 3.0])
+
+    assert jnp.array_equal(result.id, expected_id)
+    assert jnp.array_equal(result.value, expected_value)
+
+
+def test_where_no_broadcast_rejects_type_mismatch():
+    """where_no_broadcast rejects dataclass/scalar combinations to avoid broadcasting."""
+    dc = SimpleData.default(shape=(2,))
+    dc = dc.replace(id=jnp.array([1, 2], dtype=jnp.uint32), value=jnp.array([1.0, 2.0]))
+    condition = jnp.array([True, False])
+
+    with pytest.raises(TypeError):
+        xnp.where_no_broadcast(condition, dc, 0)
+
+
+def test_where_no_broadcast_rejects_shape_mismatch():
+    """where_no_broadcast raises when mask shape differs from field shape."""
+    dc1 = SimpleData.default(shape=(3,))
+    dc1 = dc1.replace(id=jnp.array([1, 2, 3], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 3.0]))
+    dc2 = SimpleData.default(shape=(3,))
+    dc2 = dc2.replace(
+        id=jnp.array([10, 20, 30], dtype=jnp.uint32), value=jnp.array([10.0, 20.0, 30.0])
+    )
+    condition = jnp.array([True, False])  # Mismatched length
+
+    with pytest.raises(ValueError):
+        xnp.where_no_broadcast(condition, dc1, dc2)
+
+
 # Tests for unique_mask function
 @xtructure_dataclass
 class HashableData:

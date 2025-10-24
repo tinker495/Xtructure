@@ -12,7 +12,7 @@ import jax.numpy as jnp
 from xtructure.core.structuredtype import StructuredType
 
 from ..xtructure_decorators import Xtructurable
-from .array_ops import _update_array_on_condition
+from .array_ops import _update_array_on_condition, _where_no_broadcast
 
 T = TypeVar("T")
 
@@ -390,16 +390,112 @@ def where(condition: jnp.ndarray, x: Xtructurable, y: Union[Xtructurable, Any]) 
         >>> # Equivalent to:
         >>> # jax.tree_util.tree_map(lambda a: jnp.where(condition, a, -1), dataclass_a)
     """
+    condition_array = jnp.asarray(condition, dtype=jnp.bool_)
+
+    def _align_condition(target_shape: tuple[int, ...]) -> jnp.ndarray:
+        if condition_array.shape == target_shape:
+            return condition_array
+        try:
+            return jnp.broadcast_to(condition_array, target_shape)
+        except ValueError as err:
+            raise ValueError(
+                f"`condition` with shape {condition_array.shape} cannot be broadcast to target shape {target_shape}."
+            ) from err
+
     # Check if y is a pytree (dataclass) by checking if it has multiple leaves
     y_leaves = jax.tree_util.tree_leaves(y)
     if len(y_leaves) > 1 or (len(y_leaves) == 1 and hasattr(y, "__dataclass_fields__")):
         # y is a dataclass with tree structure
-        return jax.tree_util.tree_map(
-            lambda x_field, y_field: jnp.where(condition, x_field, y_field), x, y
-        )
+        def _apply_dataclass_where(x_field, y_field):
+            cond = _align_condition(x_field.shape)
+            y_array = jnp.asarray(y_field)
+            if y_array.shape != x_field.shape:
+                try:
+                    y_array = jnp.broadcast_to(y_array, x_field.shape)
+                except ValueError as err:
+                    raise ValueError(
+                        f"`y` field with shape {y_array.shape} cannot be broadcast to match `x` field shape {x_field.shape}."
+                    ) from err
+            target_dtype = jnp.result_type(x_field.dtype, y_array.dtype)
+            return _where_no_broadcast(
+                cond,
+                jnp.asarray(x_field, dtype=target_dtype),
+                jnp.asarray(y_array, dtype=target_dtype),
+            )
+
+        return jax.tree_util.tree_map(_apply_dataclass_where, x, y)
     else:
         # y is a scalar value
-        return jax.tree_util.tree_map(lambda x_field: jnp.where(condition, x_field, y), x)
+        scalar_value = jnp.asarray(y)
+
+        def _apply_scalar_where(x_field):
+            cond = _align_condition(x_field.shape)
+            try:
+                y_array = jnp.broadcast_to(scalar_value, x_field.shape)
+            except ValueError as err:
+                raise ValueError(
+                    f"`y` value with shape {scalar_value.shape} cannot be broadcast to match `x` field shape {x_field.shape}."
+                ) from err
+            target_dtype = jnp.result_type(x_field.dtype, y_array.dtype)
+            return _where_no_broadcast(
+                cond,
+                jnp.asarray(x_field, dtype=target_dtype),
+                jnp.asarray(y_array, dtype=target_dtype),
+            )
+
+        return jax.tree_util.tree_map(_apply_scalar_where, x)
+
+
+def where_no_broadcast(
+    condition: Union[jnp.ndarray, Xtructurable],
+    x: Xtructurable,
+    y: Xtructurable,
+) -> Xtructurable:
+    """
+    Variant of where that forbids implicit broadcasting by enforcing shape/dtype equality.
+
+    Args:
+        condition: Boolean mask with the same tree structure and shapes as the dataclass fields,
+            or a single boolean array that exactly matches every field's shape.
+        x: Dataclass instance providing values where condition is True.
+        y: Dataclass instance providing values where condition is False. Must match the structure
+            and dtypes of `x`.
+
+    Returns:
+        Dataclass with values selected without relying on broadcasting.
+
+    Raises:
+        TypeError: If dataclass structures do not match.
+        ValueError: If any field requires broadcasting or implicit dtype casting.
+    """
+
+    if type(x) is not type(y):
+        raise TypeError("`x` and `y` must be instances of the same dataclass for where_no_broadcast.")
+
+    condition_is_dataclass = hasattr(condition, "__dataclass_fields__")
+
+    if condition_is_dataclass:
+        condition_structure = jax.tree_util.tree_structure(condition)
+        x_structure = jax.tree_util.tree_structure(x)
+        if condition_structure != x_structure:
+            raise TypeError(
+                "`condition` must share the same dataclass structure as `x` and `y` "
+                "when provided as a dataclass."
+            )
+
+        return jax.tree_util.tree_map(
+            lambda cond_field, x_field, y_field: _where_no_broadcast(cond_field, x_field, y_field),
+            condition,
+            x,
+            y,
+        )
+
+    condition_array = jnp.asarray(condition, dtype=jnp.bool_)
+    return jax.tree_util.tree_map(
+        lambda x_field, y_field: _where_no_broadcast(condition_array, x_field, y_field),
+        x,
+        y,
+    )
 
 
 def unique_mask(
@@ -489,7 +585,8 @@ def unique_mask(
         # When 'filled' is provided, we can avoid computation on non-filled items
         if filled is not None:
             # Set non-filled items to have infinite cost to exclude them from consideration
-            masked_key = jnp.where(filled, key, jnp.inf)
+            inf_fill = jnp.full_like(key, jnp.inf)
+            masked_key = _where_no_broadcast(filled, key, inf_fill)
         else:
             masked_key = key
 
@@ -506,9 +603,11 @@ def unique_mask(
         if filled is not None:
             # Only consider items that have min cost AND are filled
             can_be_considered = jnp.logical_and(is_min_cost, filled)
-            indices_to_consider = jnp.where(can_be_considered, batch_idx, batch_len)
+            fallback_idx = jnp.full_like(batch_idx, batch_len)
+            indices_to_consider = _where_no_broadcast(can_be_considered, batch_idx, fallback_idx)
         else:
-            indices_to_consider = jnp.where(is_min_cost, batch_idx, batch_len)
+            fallback_idx = jnp.full_like(batch_idx, batch_len)
+            indices_to_consider = _where_no_broadcast(is_min_cost, batch_idx, fallback_idx)
 
         winning_indices_per_group = jnp.full((batch_len,), batch_len, dtype=jnp.int32)
         winning_indices_per_group = winning_indices_per_group.at[inv].min(indices_to_consider)
