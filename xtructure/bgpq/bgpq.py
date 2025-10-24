@@ -406,12 +406,13 @@ class BGPQ:
             kc, vc, ky, vy = merge_sort_split(
                 heap.key_store[current_node], heap.val_store[current_node], ky, vy
             )
-            heap.key_store = heap.key_store.at[y].set(ky)
-            heap.key_store = heap.key_store.at[current_node].set(kc)
-            heap.key_store = heap.key_store.at[x].set(kx)
-            heap.val_store = heap.val_store.at[y].set(vy)
-            heap.val_store = heap.val_store.at[current_node].set(vc)
-            heap.val_store = heap.val_store.at[x].set(vx)
+            key_indices = jnp.stack((y, current_node, x)).astype(jnp.int32)
+            key_updates = jnp.stack((ky, kc, kx), axis=0)
+            heap.key_store = heap.key_store.at[key_indices].set(key_updates)
+
+            val_indices = key_indices
+            val_updates = jnp.stack((vy, vc, vx), axis=0)
+            heap.val_store = heap.val_store.at[val_indices].set(val_updates)
 
             nc = y
             nl, nr = _lr(y)
