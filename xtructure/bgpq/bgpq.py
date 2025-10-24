@@ -359,13 +359,14 @@ class BGPQ:
         last_key = heap.key_store[last]
         last_val = heap.val_store[last]
 
-        heap.key_store = heap.key_store.at[last].set(jnp.inf)
-
         root_key, root_val, heap.key_buffer, heap.val_buffer = merge_sort_split(
             last_key, last_val, heap.key_buffer, heap.val_buffer
         )
 
-        heap.key_store = heap.key_store.at[0].set(root_key)
+        inf_row = jnp.full_like(last_key, jnp.inf)
+        key_indices = jnp.array([last, SIZE_DTYPE(0)], dtype=jnp.int32)
+        key_updates = jnp.stack((inf_row, root_key), axis=0)
+        heap.key_store = heap.key_store.at[key_indices].set(key_updates)
         heap.val_store = heap.val_store.at[0].set(root_val)
 
         def _lr(n):
@@ -411,7 +412,7 @@ class BGPQ:
             heap.key_store = heap.key_store.at[key_indices].set(key_updates)
 
             val_indices = key_indices
-            val_updates = jnp.stack((vy, vc, vx), axis=0)
+            val_updates = xnp.stack((vy, vc, vx), axis=0)
             heap.val_store = heap.val_store.at[val_indices].set(val_updates)
 
             nc = y
