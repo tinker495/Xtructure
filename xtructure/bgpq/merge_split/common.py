@@ -1,6 +1,5 @@
-import jax
 import jax.numpy as jnp
-from jax.experimental import pallas as pl
+from jax import lax
 
 from xtructure.core.xtructure_numpy.array_ops import _where_no_broadcast
 
@@ -72,7 +71,7 @@ def binary_search_partition(k, a, b):
             i_minus_one,
             jnp.zeros_like(i_minus_one),
         )
-        a_val_loaded = pl.load(a, (safe_a_idx,))
+        a_val_loaded = a[safe_a_idx]
         min_val_array = jnp.full_like(a_val_loaded, min_val)
         a_val = _where_no_broadcast(cond_safe_a, a_val_loaded, min_val_array)
 
@@ -83,7 +82,7 @@ def binary_search_partition(k, a, b):
             j_array,
             jnp.zeros_like(j_array),
         )
-        b_val_loaded = pl.load(b, (safe_b_idx,))
+        b_val_loaded = b[safe_b_idx]
         max_val_array = jnp.full_like(b_val_loaded, max_val)
         b_val = _where_no_broadcast(cond_safe_b, b_val_loaded, max_val_array)
 
@@ -102,5 +101,5 @@ def binary_search_partition(k, a, b):
         return new_low, new_high
 
     # The loop terminates when low == high, and `final_low` is our desired `i`.
-    final_low, _ = jax.lax.while_loop(cond_fn, body_fn, (low, high))
+    final_low, _ = lax.while_loop(cond_fn, body_fn, (low, high))
     return final_low, k - final_low

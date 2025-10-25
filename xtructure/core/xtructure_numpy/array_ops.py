@@ -1,6 +1,5 @@
 from typing import Any, Union
 
-import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -34,23 +33,34 @@ def _update_array_on_condition(
         )
         return result.reshape(original_array.shape)
 
-    condition = jnp.asarray(condition, dtype=bool)
-    num_updates = len(condition)
+    condition = jnp.asarray(condition, dtype=jnp.bool_)
+    num_updates = condition.size
     if num_updates == 0:
         return original_array
 
     indices_array = jnp.asarray(indices)
     indices_array = jnp.reshape(indices_array, (num_updates,))
-    invalid_index = jnp.array(original_array.shape[0], dtype=indices_array.dtype)
+    index_dtype = indices_array.dtype
+    invalid_index = jnp.array(original_array.shape[0], dtype=index_dtype)
+    sentinel_value = jnp.array(num_updates, dtype=index_dtype)
+
+    update_order = jnp.arange(num_updates, dtype=index_dtype)
     invalid_fill = jnp.full_like(indices_array, invalid_index)
-    # Drop False updates by mapping them to an out-of-bounds position.
-    safe_indices = _where_no_broadcast(condition, indices_array, invalid_fill)
-    # Reverse so that earlier True entries are applied last ("first True wins").
-    safe_indices = jnp.flip(safe_indices, axis=0)
+    true_indices = _where_no_broadcast(condition, indices_array, invalid_fill)
+
+    sentinel_fill = jnp.full_like(update_order, sentinel_value)
+    true_positions = _where_no_broadcast(condition, update_order, sentinel_fill)
+
+    first_true_pos = jnp.full((original_array.shape[0] + 1,), sentinel_value, dtype=index_dtype)
+    first_true_pos = first_true_pos.at[true_indices].min(true_positions, mode="drop")
+
+    first_true_for_updates = jnp.take(first_true_pos, indices_array, mode="clip")
+    apply_mask = condition & (first_true_for_updates == update_order)
+
+    apply_mask = jnp.asarray(apply_mask, dtype=jnp.bool_)
+    safe_indices = _where_no_broadcast(apply_mask, indices_array, invalid_fill)
 
     value_array = jnp.asarray(values_to_set, dtype=original_array.dtype)
-    if value_array.ndim > 0 and value_array.shape[0] == num_updates:
-        value_array = jnp.flip(value_array, axis=0)
 
     return original_array.at[safe_indices].set(value_array, mode="drop")
 

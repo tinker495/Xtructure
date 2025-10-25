@@ -35,8 +35,8 @@ def merge_parallel_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref):
 
     def main_loop_body(state):
         idx_a, idx_b, out_ptr = state
-        val_a = pl.load(ak_ref, (idx_a,))
-        val_b = pl.load(bk_ref, (idx_b,))
+        val_a = ak_ref[idx_a]
+        val_b = bk_ref[idx_b]
         is_a_le_b = val_a <= val_b
 
         cond = jnp.asarray(is_a_le_b, dtype=jnp.bool_)
@@ -52,12 +52,8 @@ def merge_parallel_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref):
         idx_to_store = _where_no_broadcast(cond, idx_true, idx_false)
 
         key_casted = key_to_store.astype(merged_keys_ref.dtype)
-        pl.store(merged_keys_ref, (pl.ds(out_ptr, 1),), jnp.expand_dims(key_casted, 0))
-        pl.store(
-            merged_indices_ref,
-            (pl.ds(out_ptr, 1),),
-            jnp.expand_dims(idx_to_store, 0),
-        )
+        merged_keys_ref[out_ptr] = key_casted
+        merged_indices_ref[out_ptr] = idx_to_store
 
         next_idx_a = _where_no_broadcast(
             cond,
@@ -83,18 +79,10 @@ def merge_parallel_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref):
 
     def ak_loop_body(state):
         current_idx_a, current_out_ptr = state
-        val_to_store = pl.load(ak_ref, (current_idx_a,))
+        val_to_store = ak_ref[current_idx_a]
         val_casted = val_to_store.astype(merged_keys_ref.dtype)
-        pl.store(
-            merged_keys_ref,
-            (pl.ds(current_out_ptr, 1),),
-            jnp.expand_dims(val_casted, 0),
-        )
-        pl.store(
-            merged_indices_ref,
-            (pl.ds(current_out_ptr, 1),),
-            jnp.expand_dims(current_idx_a, 0),
-        )
+        merged_keys_ref[current_out_ptr] = val_casted
+        merged_indices_ref[current_out_ptr] = current_idx_a
         return current_idx_a + 1, current_out_ptr + 1
 
     idx_a, out_ptr = jax.lax.while_loop(ak_loop_cond, ak_loop_body, initial_ak_loop_state)
@@ -107,18 +95,10 @@ def merge_parallel_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref):
 
     def bk_loop_body(state):
         current_idx_b, current_out_ptr = state
-        val_to_store = pl.load(bk_ref, (current_idx_b,))
+        val_to_store = bk_ref[current_idx_b]
         val_casted = val_to_store.astype(merged_keys_ref.dtype)
-        pl.store(
-            merged_keys_ref,
-            (pl.ds(current_out_ptr, 1),),
-            jnp.expand_dims(val_casted, 0),
-        )
-        pl.store(
-            merged_indices_ref,
-            (pl.ds(current_out_ptr, 1),),
-            jnp.expand_dims(n + current_idx_b, 0),
-        )
+        merged_keys_ref[current_out_ptr] = val_casted
+        merged_indices_ref[current_out_ptr] = n + current_idx_b
         return current_idx_b + 1, current_out_ptr + 1
 
     jax.lax.while_loop(bk_loop_cond, bk_loop_body, initial_bk_loop_state)
