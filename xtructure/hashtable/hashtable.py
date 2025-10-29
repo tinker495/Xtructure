@@ -17,6 +17,7 @@ from ..core.xtructure_numpy.array_ops import _where_no_broadcast
 
 SIZE_DTYPE = jnp.uint32
 HASH_TABLE_IDX_DTYPE = jnp.uint8
+DOUBLE_HASH_SECONDARY_DELTA = jnp.uint32(0x9E3779B1)
 
 T = TypeVar("T")
 
@@ -32,32 +33,50 @@ class HashIdx:
     index: FieldDescriptor[SIZE_DTYPE]
 
 
+def _normalize_probe_step(step: chex.Array, modulus: int) -> chex.Array:
+    step = jnp.asarray(step, dtype=SIZE_DTYPE)
+    modulus = jnp.asarray(modulus, dtype=SIZE_DTYPE)
+    step = step % modulus
+    step = jnp.where(step == 0, SIZE_DTYPE(1), step)
+    step = jnp.bitwise_or(step, SIZE_DTYPE(1))
+    return step
+
+
 def get_new_idx_from_uint32ed(
     input_uint32ed: chex.Array,
-    capacity: int,
+    modulus: int,
     seed: int,
-) -> int:
+) -> tuple[chex.Array, chex.Array]:
     """
-    Calculate new index for input state using the hash function from its uint32ed representation.
+    Calculate new index for input state using the hash function from its uint32ed representation
+    and reduce it modulo the provided table capacity.
     """
-    hash_value = uint32ed_to_hash(input_uint32ed, seed)
-    idx = hash_value % capacity
-    return idx
+    seed_u32 = jnp.asarray(seed, dtype=jnp.uint32)
+    primary_hash = uint32ed_to_hash(input_uint32ed, seed_u32)
+    secondary_seed = jnp.bitwise_xor(seed_u32, DOUBLE_HASH_SECONDARY_DELTA)
+    secondary_hash = uint32ed_to_hash(input_uint32ed, secondary_seed)
+    index = primary_hash % modulus
+    step = _normalize_probe_step(secondary_hash, modulus)
+    return index, step
 
 
 def get_new_idx_byterized(
     input: Xtructurable,
-    capacity: int,
+    modulus: int,
     seed: int,
-) -> tuple[int, chex.Array]:
+) -> tuple[chex.Array, chex.Array, chex.Array]:
     """
     Calculate new index and return uint32ed representation of input state.
     Similar to get_new_idx but also returns the uint32ed representation for
     equality comparison.
     """
     hash_value, uint32ed = input.hash_with_uint32ed(seed)
-    idx = hash_value % capacity
-    return idx, uint32ed
+    seed_u32 = jnp.asarray(seed, dtype=jnp.uint32)
+    secondary_seed = jnp.bitwise_xor(seed_u32, DOUBLE_HASH_SECONDARY_DELTA)
+    secondary_hash = uint32ed_to_hash(uint32ed, secondary_seed)
+    idx = hash_value % modulus
+    step = _normalize_probe_step(secondary_hash, modulus)
+    return idx, step, uint32ed
 
 
 @base_dataclass
@@ -128,9 +147,9 @@ class HashTable:
         input: Xtructurable,
         input_uint32ed: chex.Array,
         idx: CuckooIdx,
-        seed: int,
+        probe_step: chex.Array,
         found: bool,
-    ) -> tuple[int, CuckooIdx, bool]:
+    ) -> tuple[CuckooIdx, bool]:
         """
         Internal lookup method that searches for a state in the table.
         Uses cuckoo hashing technique to check multiple possible locations.
@@ -144,58 +163,58 @@ class HashTable:
             found: Whether the state has been found
 
         Returns:
-            Tuple of (seed, idx, table_idx, found)
+            Tuple of (idx, found)
         """
 
-        def _cond(val: tuple[int, CuckooIdx, bool]):
-            seed, idx, found = val
+        probe_step = jnp.asarray(probe_step, dtype=SIZE_DTYPE)
+        capacity = jnp.asarray(table._capacity, dtype=SIZE_DTYPE)
+
+        def _advance(idx: CuckooIdx) -> CuckooIdx:
+            next_table = idx.table_index >= (table.cuckoo_table_n - 1)
+
+            def _next_bucket():
+                next_index = jnp.mod(idx.index + probe_step, capacity)
+                return CuckooIdx(
+                    index=SIZE_DTYPE(next_index),
+                    table_index=HASH_TABLE_IDX_DTYPE(0),
+                )
+
+            def _same_bucket():
+                return CuckooIdx(
+                    index=idx.index,
+                    table_index=HASH_TABLE_IDX_DTYPE(idx.table_index + 1),
+                )
+
+            return jax.lax.cond(next_table, _next_bucket, _same_bucket)
+
+        def _cond(val: tuple[CuckooIdx, bool]) -> bool:
+            idx, found = val
             filled_idx = table.table_idx[idx.index]
             in_empty = idx.table_index >= filled_idx
             return jnp.logical_and(~found, ~in_empty)
 
-        def _while(val: tuple[int, CuckooIdx, bool]):
-            seed, idx, found = val
-
-            def get_new_idx_and_table_idx(seed, idx):
-                next_table = idx.table_index >= (table.cuckoo_table_n - 1)
-                seed, idx = jax.lax.cond(
-                    next_table,
-                    lambda: (
-                        seed + 1,
-                        CuckooIdx(
-                            index=get_new_idx_from_uint32ed(
-                                input_uint32ed, table.capacity, seed + 1
-                            ),
-                            table_index=HASH_TABLE_IDX_DTYPE(0),
-                        ),
-                    ),
-                    lambda: (
-                        seed,
-                        CuckooIdx(
-                            index=idx.index,
-                            table_index=idx.table_index + 1,
-                        ),
-                    ),
-                )
-                return seed, idx
-
-            state = table.table[
-                idx.index * table.cuckoo_table_n + idx.table_index
-            ]  # Modified indexing
-            is_filled = idx.table_index < table.table_idx[idx.index]
-            found = jnp.logical_and(is_filled, state == input)
-            seed, idx = jax.lax.cond(
-                found,
-                lambda: (seed, idx),
-                lambda: get_new_idx_and_table_idx(seed, idx),
+        def _body(val: tuple[CuckooIdx, bool]) -> tuple[CuckooIdx, bool]:
+            idx, found = val
+            flat_index = idx.index * table.cuckoo_table_n + idx.table_index
+            state = table.table[flat_index]
+            filled_limit = table.table_idx[idx.index]
+            is_filled = idx.table_index < filled_limit
+            matched = jnp.logical_and(is_filled, state == input)
+            new_found = jnp.logical_or(found, matched)
+            next_idx = _advance(idx)
+            updated_index = jnp.where(new_found, idx.index, next_idx.index)
+            updated_table_index = jnp.where(new_found, idx.table_index, next_idx.table_index)
+            updated_idx = CuckooIdx(
+                index=updated_index,
+                table_index=updated_table_index,
             )
-            return seed, idx, found
+            return updated_idx, new_found
 
-        state = table.table[idx.index * table.cuckoo_table_n + idx.table_index]  # Modified indexing
+        state = table.table[idx.index * table.cuckoo_table_n + idx.table_index]
         is_filled = idx.table_index < table.table_idx[idx.index]
         found = jnp.logical_or(found, jnp.logical_and(is_filled, state == input))
-        update_seed, idx, found = jax.lax.while_loop(_cond, _while, (seed, idx, found))
-        return update_seed, idx, found
+        idx, found = jax.lax.while_loop(_cond, _body, (idx, found))
+        return idx, found
 
     @jax.jit
     def lookup_cuckoo(table: "HashTable", input: Xtructurable) -> tuple[CuckooIdx, bool]:
@@ -214,9 +233,9 @@ class HashTable:
             If not found, idx and table_idx indicate the first empty slot encountered
             during the Cuckoo search path where an insertion could occur.
         """
-        index, input_uint32ed = get_new_idx_byterized(input, table.capacity, table.seed)
+        index, step, input_uint32ed = get_new_idx_byterized(input, table._capacity, table.seed)
         idx = CuckooIdx(index=index, table_index=HASH_TABLE_IDX_DTYPE(0))
-        _, idx, found = HashTable._lookup(table, input, input_uint32ed, idx, table.seed, False)
+        idx, found = HashTable._lookup(table, input, input_uint32ed, idx, step, False)
         return idx, found
 
     @jax.jit
@@ -236,9 +255,9 @@ class HashTable:
         inputs: Xtructurable,
         input_uint32eds: chex.Array,
         idxs: CuckooIdx,
-        seeds: chex.Array,
+        probe_steps: chex.Array,
         founds: chex.Array,
-    ) -> tuple[chex.Array, CuckooIdx, chex.Array]:
+    ) -> tuple[CuckooIdx, chex.Array]:
         """
         Internal lookup method that searches for states in the table in parallel.
         Uses cuckoo hashing technique to check multiple possible locations.
@@ -248,93 +267,91 @@ class HashTable:
             input: Xtructurable,
             input_uint32ed: chex.Array,
             idx: CuckooIdx,
-            seed: int,
+            probe_step: chex.Array,
             found: bool,
-        ) -> tuple[int, CuckooIdx, bool]:
-            # lookup but not copying the table
-            def _cond(val: tuple[int, CuckooIdx, bool]):
-                seed, idx, found = val
+        ) -> tuple[CuckooIdx, bool]:
+            probe_step = jnp.asarray(probe_step, dtype=SIZE_DTYPE)
+            capacity = jnp.asarray(table._capacity, dtype=SIZE_DTYPE)
+
+            def _advance(idx: CuckooIdx) -> CuckooIdx:
+                next_table = idx.table_index >= (table.cuckoo_table_n - 1)
+
+                def _next_bucket():
+                    next_index = jnp.mod(idx.index + probe_step, capacity)
+                    return CuckooIdx(
+                        index=SIZE_DTYPE(next_index),
+                        table_index=HASH_TABLE_IDX_DTYPE(0),
+                    )
+
+                def _same_bucket():
+                    return CuckooIdx(
+                        index=idx.index,
+                        table_index=HASH_TABLE_IDX_DTYPE(idx.table_index + 1),
+                    )
+
+                return jax.lax.cond(next_table, _next_bucket, _same_bucket)
+
+            def _cond(val: tuple[CuckooIdx, bool]) -> bool:
+                idx, found = val
                 filled_idx = table.table_idx[idx.index]
                 in_empty = idx.table_index >= filled_idx
                 return jnp.logical_and(~found, ~in_empty)
 
-            def _while(val: tuple[int, CuckooIdx, bool]):
-                seed, idx, found = val
-
-                def get_new_idx_and_table_idx(seed, idx):
-                    next_table = idx.table_index >= (table.cuckoo_table_n - 1)
-                    seed, idx = jax.lax.cond(
-                        next_table,
-                        lambda: (
-                            seed + 1,
-                            CuckooIdx(
-                                index=get_new_idx_from_uint32ed(
-                                    input_uint32ed, table.capacity, seed + 1
-                                ),
-                                table_index=HASH_TABLE_IDX_DTYPE(0),
-                            ),
-                        ),
-                        lambda: (
-                            seed,
-                            CuckooIdx(
-                                index=idx.index,
-                                table_index=idx.table_index + 1,
-                            ),
-                        ),
-                    )
-                    return seed, idx
-
-                state = table.table[
-                    idx.index * table.cuckoo_table_n + idx.table_index
-                ]  # Modified indexing
-                is_filled = idx.table_index < table.table_idx[idx.index]
-                found = jnp.logical_and(is_filled, state == input)
-                seed, idx = jax.lax.cond(
-                    found,
-                    lambda: (seed, idx),
-                    lambda: get_new_idx_and_table_idx(seed, idx),
+            def _body(val: tuple[CuckooIdx, bool]) -> tuple[CuckooIdx, bool]:
+                idx, found = val
+                flat_index = idx.index * table.cuckoo_table_n + idx.table_index
+                state = table.table[flat_index]
+                filled_limit = table.table_idx[idx.index]
+                is_filled = idx.table_index < filled_limit
+                matched = jnp.logical_and(is_filled, state == input)
+                new_found = jnp.logical_or(found, matched)
+                next_idx = _advance(idx)
+                updated_index = jnp.where(new_found, idx.index, next_idx.index)
+                updated_table_index = jnp.where(new_found, idx.table_index, next_idx.table_index)
+                updated_idx = CuckooIdx(
+                    index=updated_index,
+                    table_index=updated_table_index,
                 )
-                return seed, idx, found
+                return updated_idx, new_found
 
-            state = table.table[
-                idx.index * table.cuckoo_table_n + idx.table_index
-            ]  # Modified indexing
+            state = table.table[idx.index * table.cuckoo_table_n + idx.table_index]
             is_filled = idx.table_index < table.table_idx[idx.index]
             found = jnp.logical_or(found, jnp.logical_and(is_filled, state == input))
-            update_seed, idx, found = jax.lax.while_loop(_cond, _while, (seed, idx, found))
-            return update_seed, idx, found
+            idx, found = jax.lax.while_loop(_cond, _body, (idx, found))
+            return idx, found
 
-        seeds, idxs, founds = jax.vmap(_lu, in_axes=(0, 0, 0, 0, 0))(
-            inputs, input_uint32eds, idxs, seeds, founds
+        idxs, founds = jax.vmap(_lu, in_axes=(0, 0, 0, 0, 0))(
+            inputs, input_uint32eds, idxs, probe_steps, founds
         )
-        return seeds, idxs, founds
+        return idxs, founds
 
     @jax.jit
-    def lookup_parallel(table: "HashTable", inputs: Xtructurable) -> tuple[HashIdx, bool]:
+    def lookup_parallel(table: "HashTable", inputs: Xtructurable) -> tuple[HashIdx, chex.Array]:
         """
         Finds the state in the hash table using Cuckoo hashing.
+
+        Returns `(HashIdx, found_mask)` per input.
         """
-        initial_idx, input_uint32eds = jax.vmap(get_new_idx_byterized, in_axes=(0, None, None))(
-            inputs, table.capacity, table.seed
-        )
+        initial_idx, steps, input_uint32eds = jax.vmap(
+            get_new_idx_byterized, in_axes=(0, None, None)
+        )(inputs, table._capacity, table.seed)
 
         batch_size = inputs.shape.batch
 
         idxs = CuckooIdx(
             index=initial_idx, table_index=jnp.zeros(batch_size, dtype=HASH_TABLE_IDX_DTYPE)
         )
-        seeds = jnp.full(batch_size, table.seed, dtype=jnp.uint32)
         founds = jnp.zeros(batch_size, dtype=jnp.bool_)
 
-        _, idx, found = HashTable._lookup_parallel(
-            table, inputs, input_uint32eds, idxs, seeds, founds
-        )
+        idx, found = HashTable._lookup_parallel(table, inputs, input_uint32eds, idxs, steps, founds)
         return HashIdx(index=idx.index * table.cuckoo_table_n + idx.table_index), found
 
     @jax.jit
     def insert(table: "HashTable", input: Xtructurable) -> tuple["HashTable", bool, HashIdx]:
         """
         insert the state in the table
+
+        Returns `(table, inserted?, flat_idx)`.
         """
 
         def _update_table(table: "HashTable", input: Xtructurable, idx: CuckooIdx):
@@ -349,75 +366,72 @@ class HashTable:
 
         idx, found = HashTable.lookup_cuckoo(table, input)
         table = jax.lax.cond(found, lambda: table, lambda: _update_table(table, input, idx))
-        return table, ~found, HashIdx(index=idx.index * table.cuckoo_table_n + idx.table_index)
+        inserted = ~found
+        return table, inserted, HashIdx(index=idx.index * table.cuckoo_table_n + idx.table_index)
 
     @staticmethod
     def _parallel_insert(
         table: "HashTable",
         inputs: Xtructurable,
         inputs_uint32ed: chex.Array,
-        seeds: chex.Array,
+        probe_steps: chex.Array,
         index: CuckooIdx,
         updatable: chex.Array,
-    ):
-        def _next_idx(seeds: chex.Array, idxs: CuckooIdx, unupdateds: chex.Array):
-            def get_new_idx_and_table_idx(seed, idx, state_uint32ed):
-                next_table = idx.table_index >= (table.cuckoo_table_n - 1)
+    ) -> tuple["HashTable", CuckooIdx]:
+        capacity = jnp.asarray(table._capacity, dtype=SIZE_DTYPE)
+        probe_steps = jnp.asarray(probe_steps, dtype=SIZE_DTYPE)
 
-                def next_table_fn(seed, table):
-                    next_idx = get_new_idx_from_uint32ed(state_uint32ed, table.capacity, seed + 1)
-                    seed = seed + 1
-                    return seed, CuckooIdx(index=next_idx, table_index=table.table_idx[next_idx])
+        def _advance(idx: CuckooIdx, step: chex.Array) -> CuckooIdx:
+            next_table = idx.table_index >= (table.cuckoo_table_n - 1)
 
-                seed, idx = jax.lax.cond(
-                    next_table,
-                    next_table_fn,
-                    lambda seed, _: (
-                        seed,
-                        CuckooIdx(index=idx.index, table_index=idx.table_index + 1),
-                    ),
-                    seed,
-                    table,
+            def _next_bucket() -> CuckooIdx:
+                next_index = jnp.mod(idx.index + step, capacity)
+                bucket_fill = table.table_idx[next_index]
+                return CuckooIdx(
+                    index=SIZE_DTYPE(next_index),
+                    table_index=HASH_TABLE_IDX_DTYPE(bucket_fill),
                 )
-                return seed, idx
 
-            seeds, idxs = jax.vmap(
-                lambda unupdated, seed, idx, state_uint32ed: jax.lax.cond(
-                    unupdated,
-                    lambda: get_new_idx_and_table_idx(seed, idx, state_uint32ed),
-                    lambda: (seed, idx),
+            def _same_bucket() -> CuckooIdx:
+                return CuckooIdx(
+                    index=idx.index,
+                    table_index=HASH_TABLE_IDX_DTYPE(idx.table_index + 1),
                 )
-            )(unupdateds, seeds, idxs, inputs_uint32ed)
-            return seeds, idxs
 
-        def _cond(val: tuple[chex.Array, CuckooIdx, chex.Array]):
-            _, _, unupdated = val
-            return jnp.any(unupdated)
+            return jax.lax.cond(next_table, _next_bucket, _same_bucket)
 
-        def _while(val: tuple[chex.Array, CuckooIdx, chex.Array]):
-            seeds, idxs, unupdated = val
-            seeds, idxs = _next_idx(seeds, idxs, unupdated)
+        def _next_idx(idxs: CuckooIdx, unupdateds: chex.Array) -> CuckooIdx:
+            return jax.vmap(
+                lambda active, current_idx, step: jax.lax.cond(
+                    active,
+                    lambda: _advance(current_idx, step),
+                    lambda: current_idx,
+                )
+            )(unupdateds, idxs, probe_steps)
 
-            overflowed = jnp.logical_and(
-                idxs.table_index >= table.cuckoo_table_n, unupdated
-            )  # Overflowed index must be updated
-            not_uniques = jnp.logical_not(xnp.unique_mask(idxs, filled=updatable))
+        initial_not_uniques = jnp.logical_not(xnp.unique_mask(index, filled=updatable))
+        unupdated = jnp.logical_and(updatable, initial_not_uniques)
 
-            unupdated = jnp.logical_and(updatable, not_uniques)
-            unupdated = jnp.logical_or(unupdated, overflowed)
-            return seeds, idxs, unupdated
+        def _cond(val: tuple[CuckooIdx, chex.Array]) -> bool:
+            _, pending = val
+            return jnp.any(pending)
 
-        not_uniques = jnp.logical_not(xnp.unique_mask(index, filled=updatable))
-        unupdated = jnp.logical_and(
-            updatable, not_uniques
-        )  # remove the unique index from the unupdated index
+        def _body(val: tuple[CuckooIdx, chex.Array]) -> tuple[CuckooIdx, chex.Array]:
+            idxs, pending = val
+            updated_idxs = _next_idx(idxs, pending)
+            overflowed = jnp.logical_and(updated_idxs.table_index >= table.cuckoo_table_n, pending)
+            not_uniques = jnp.logical_not(xnp.unique_mask(updated_idxs, filled=updatable))
+            next_pending = jnp.logical_and(updatable, not_uniques)
+            next_pending = jnp.logical_or(next_pending, overflowed)
+            return updated_idxs, next_pending
 
-        seeds, index, _ = jax.lax.while_loop(_cond, _while, (seeds, index, unupdated))
+        index, _ = jax.lax.while_loop(_cond, _body, (index, unupdated))
 
+        successful = updatable
         flat_indices = index.index * table.cuckoo_table_n + index.table_index
-        table.table = table.table.at[flat_indices].set_as_condition(updatable, inputs)
-        table.table_idx = table.table_idx.at[index.index].add(updatable)
-        table.size += jnp.sum(updatable, dtype=SIZE_DTYPE)
+        table.table = table.table.at[flat_indices].set_as_condition(successful, inputs)
+        table.table_idx = table.table_idx.at[index.index].add(successful)
+        table.size += jnp.sum(successful, dtype=SIZE_DTYPE)
         return table, index
 
     @jax.jit
@@ -439,14 +453,14 @@ class HashTable:
                        key value will be marked as unique in unique_filled mask.
 
         Returns:
-            Tuple of (updated_table, updatable, unique_filled, idx, table_idx)
+            Tuple of (updated_table, updatable, unique_filled, idx)
         """
         if filled is None:
             filled = jnp.ones((len(inputs),), dtype=jnp.bool_)
 
-        # Get initial indices and byte representations
-        initial_idx, uint32eds = jax.vmap(get_new_idx_byterized, in_axes=(0, None, None))(
-            inputs, table.capacity, table.seed
+        # Get initial indices, probe steps, and byte representations
+        initial_idx, steps, uint32eds = jax.vmap(get_new_idx_byterized, in_axes=(0, None, None))(
+            inputs, table._capacity, table.seed
         )
 
         batch_len = filled.shape[0]
@@ -466,30 +480,33 @@ class HashTable:
             index=initial_idx, table_index=jnp.zeros((batch_len,), dtype=HASH_TABLE_IDX_DTYPE)
         )
 
-        seeds = jnp.full((batch_len,), table.seed, dtype=jnp.uint32)
-
-        seeds, idx, found = HashTable._lookup_parallel(
-            table, inputs, uint32eds, idx, seeds, ~unique_filled
-        )
+        initial_found = jnp.logical_not(unique_filled)
+        idx, found = HashTable._lookup_parallel(table, inputs, uint32eds, idx, steps, initial_found)
 
         updatable = jnp.logical_and(~found, unique_filled)
 
         # Perform parallel insertion
         table, inserted_idx = HashTable._parallel_insert(
-            table, inputs, uint32eds, seeds, idx, updatable
+            table, inputs, uint32eds, steps, idx, updatable
         )
 
-        # Provisional index: found -> idx, inserted -> inserted_idx
+        # Provisional index selection
         cond_found = jnp.asarray(found, dtype=jnp.bool_)
+
+        inserted_index = jnp.asarray(inserted_idx.index, dtype=idx.index.dtype)
+        inserted_table_index = jnp.asarray(inserted_idx.table_index, dtype=idx.table_index.dtype)
+        current_index = jnp.asarray(idx.index)
+        current_table_index = jnp.asarray(idx.table_index)
+
         provisional_index = _where_no_broadcast(
             cond_found,
-            jnp.asarray(idx.index),
-            jnp.asarray(inserted_idx.index, dtype=idx.index.dtype),
+            current_index,
+            inserted_index,
         )
         provisional_table_index = _where_no_broadcast(
             cond_found,
-            jnp.asarray(idx.table_index),
-            jnp.asarray(inserted_idx.table_index, dtype=idx.table_index.dtype),
+            current_table_index,
+            inserted_table_index,
         )
         provisional_idx = CuckooIdx(index=provisional_index, table_index=provisional_table_index)
 
