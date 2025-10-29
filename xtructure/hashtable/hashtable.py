@@ -11,13 +11,17 @@ import jax
 import jax.numpy as jnp
 
 from ..core import FieldDescriptor, Xtructurable, base_dataclass, xtructure_dataclass
-from ..core import xtructure_numpy as xnp
 from ..core.xtructure_decorators.hash import uint32ed_to_hash
-from ..core.xtructure_numpy.array_ops import _where_no_broadcast
+from ..core.xtructure_numpy.array_ops import (
+    _update_array_on_condition,
+    _where_no_broadcast,
+)
 
 SIZE_DTYPE = jnp.uint32
 HASH_TABLE_IDX_DTYPE = jnp.uint8
 DOUBLE_HASH_SECONDARY_DELTA = jnp.uint32(0x9E3779B1)
+FINGERPRINT_MIX_CONSTANT_A = jnp.uint32(0x85EBCA6B)
+FINGERPRINT_MIX_CONSTANT_B = jnp.uint32(0xC2B2AE35)
 
 T = TypeVar("T")
 
@@ -31,6 +35,88 @@ class CuckooIdx:
 @xtructure_dataclass
 class HashIdx:
     index: FieldDescriptor[SIZE_DTYPE]
+
+
+def _mix_fingerprint(primary: chex.Array, secondary: chex.Array, length: chex.Array) -> chex.Array:
+    mix = jnp.asarray(primary, dtype=jnp.uint32)
+    secondary = jnp.asarray(secondary, dtype=jnp.uint32)
+    length = jnp.asarray(length, dtype=jnp.uint32)
+
+    mix ^= jnp.uint32(0x9E3779B9)
+    mix = jnp.uint32(
+        mix + secondary * FINGERPRINT_MIX_CONSTANT_A + length * FINGERPRINT_MIX_CONSTANT_B
+    )
+    mix ^= mix >> jnp.uint32(16)
+    mix *= jnp.uint32(0x7FEB352D)
+    mix ^= mix >> jnp.uint32(15)
+    return mix
+
+
+def _first_occurrence_mask(
+    values: chex.Array, active: chex.Array, sentinel: chex.Array
+) -> chex.Array:
+    active = jnp.asarray(active, dtype=jnp.bool_)
+    values = jnp.asarray(values, dtype=jnp.uint32)
+    sentinel = jnp.asarray(sentinel, dtype=jnp.uint32)
+
+    safe_values = jnp.where(active, values, sentinel)
+    _, unique_indices = jnp.unique(
+        safe_values,
+        size=values.shape[0],
+        return_index=True,
+        return_inverse=False,
+        fill_value=sentinel,
+    )
+    mask = jnp.zeros_like(active, dtype=jnp.bool_).at[unique_indices].set(True)
+    return jnp.logical_and(mask, active)
+
+
+def _compute_unique_mask_from_uint32eds(
+    uint32eds: chex.Array,
+    filled: chex.Array,
+    unique_key: chex.Array | None,
+) -> tuple[chex.Array, chex.Array]:
+    filled = jnp.asarray(filled, dtype=jnp.bool_)
+    batch_len = filled.shape[0]
+
+    if uint32eds.ndim == 1:
+        uint32eds = uint32eds[:, None]
+
+    sentinel_row = jnp.full_like(uint32eds, jnp.uint32(0xFFFFFFFF))
+    safe_uint32eds = jnp.where(filled[:, None], uint32eds, sentinel_row)
+    fill_row = jnp.full((uint32eds.shape[1],), jnp.uint32(0xFFFFFFFF))
+    _, unique_indices, inverse = jnp.unique(
+        safe_uint32eds,
+        axis=0,
+        size=batch_len,
+        fill_value=fill_row,
+        return_index=True,
+        return_inverse=True,
+    )
+
+    indices = jnp.arange(batch_len, dtype=jnp.int32)
+
+    if unique_key is not None:
+        masked_key = jnp.where(filled, unique_key, jnp.inf)
+        min_keys = (
+            jnp.full((batch_len,), jnp.inf, dtype=masked_key.dtype).at[inverse].min(masked_key)
+        )
+        candidate_indices = jnp.where(masked_key == min_keys[inverse], indices, batch_len)
+    else:
+        candidate_indices = jnp.where(filled, indices, batch_len)
+
+    representative_per_group = (
+        jnp.full((batch_len,), batch_len, dtype=jnp.int32).at[inverse].min(candidate_indices)
+    )
+    representative_per_group = jnp.where(
+        representative_per_group == batch_len, 0, representative_per_group
+    )
+
+    representative_indices = representative_per_group[inverse]
+    representative_indices = jnp.where(filled, representative_indices, 0)
+
+    unique_mask = jnp.logical_and(filled, indices == representative_indices)
+    return unique_mask, representative_indices
 
 
 def _normalize_probe_step(step: chex.Array, modulus: int) -> chex.Array:
@@ -57,7 +143,8 @@ def get_new_idx_from_uint32ed(
     secondary_hash = uint32ed_to_hash(input_uint32ed, secondary_seed)
     index = primary_hash % modulus
     step = _normalize_probe_step(secondary_hash, modulus)
-    fingerprint = jnp.asarray(primary_hash, dtype=jnp.uint32)
+    length = jnp.uint32(input_uint32ed.size)
+    fingerprint = _mix_fingerprint(primary_hash, secondary_hash, length)
     return index, step, fingerprint
 
 
@@ -77,7 +164,8 @@ def get_new_idx_byterized(
     secondary_hash = uint32ed_to_hash(uint32ed, secondary_seed)
     idx = hash_value % modulus
     step = _normalize_probe_step(secondary_hash, modulus)
-    fingerprint = jnp.asarray(hash_value, dtype=jnp.uint32)
+    length = jnp.uint32(uint32ed.size)
+    fingerprint = _mix_fingerprint(hash_value, secondary_hash, length)
     return idx, step, uint32ed, fingerprint
 
 
@@ -266,7 +354,7 @@ class HashTable:
             - idx (CuckooIdx): Index information for the slot examined.
             - found (bool): True if the state was found, False otherwise.
             - fingerprint (uint32): Hash fingerprint of the probed state (internal use).
-            If not found, idx and table_idx indicate the first empty slot encountered
+            If not found, idx indicates the first empty slot encountered
             during the Cuckoo search path where an insertion could occur.
         """
         index, step, input_uint32ed, fingerprint = get_new_idx_byterized(
@@ -490,8 +578,10 @@ class HashTable:
                 )
             )(unupdateds, idxs, probe_steps)
 
-        initial_not_uniques = jnp.logical_not(xnp.unique_mask(index, filled=updatable))
-        unupdated = jnp.logical_and(updatable, initial_not_uniques)
+        flat_initial_slots = index.index * table.cuckoo_table_n + index.table_index
+        sentinel_slot = SIZE_DTYPE(table._capacity * table.cuckoo_table_n + 1)
+        initial_unique_mask = _first_occurrence_mask(flat_initial_slots, updatable, sentinel_slot)
+        unupdated = jnp.logical_and(updatable, jnp.logical_not(initial_unique_mask))
 
         def _cond(val: tuple[CuckooIdx, chex.Array]) -> bool:
             _, pending = val
@@ -501,7 +591,13 @@ class HashTable:
             idxs, pending = val
             updated_idxs = _next_idx(idxs, pending)
             overflowed = jnp.logical_and(updated_idxs.table_index >= table.cuckoo_table_n, pending)
-            not_uniques = jnp.logical_not(xnp.unique_mask(updated_idxs, filled=updatable))
+            flat_updated_slots = (
+                updated_idxs.index * table.cuckoo_table_n + updated_idxs.table_index
+            )
+            updated_unique_mask = _first_occurrence_mask(
+                flat_updated_slots, updatable, sentinel_slot
+            )
+            not_uniques = jnp.logical_not(updated_unique_mask)
             next_pending = jnp.logical_and(updatable, not_uniques)
             next_pending = jnp.logical_or(next_pending, overflowed)
             return updated_idxs, next_pending
@@ -512,11 +608,12 @@ class HashTable:
         flat_indices = index.index * table.cuckoo_table_n + index.table_index
         table.table = table.table.at[flat_indices].set_as_condition(successful, inputs)
 
-        current_fp = table.fingerprints[flat_indices]
-        delta_fp = jnp.where(
-            successful, fingerprints.astype(jnp.uint32) - current_fp, jnp.uint32(0)
+        table.fingerprints = _update_array_on_condition(
+            table.fingerprints,
+            flat_indices,
+            successful,
+            fingerprints.astype(jnp.uint32),
         )
-        table.fingerprints = table.fingerprints.at[flat_indices].add(delta_fp)
         table.table_idx = table.table_idx.at[index.index].add(successful)
         table.size += jnp.sum(successful, dtype=SIZE_DTYPE)
         return table, index
@@ -552,14 +649,10 @@ class HashTable:
 
         batch_len = filled.shape[0]
 
-        # Find unique states to avoid duplicates using enhanced unique_mask with filled optimization
-        unique_filled, unique_uint32eds_idx, inverse_indices = xnp.unique_mask(
-            val=inputs,
-            key=unique_key,
+        unique_filled, representative_indices = _compute_unique_mask_from_uint32eds(
+            uint32eds=uint32eds,
             filled=filled,
-            batch_len=batch_len,
-            return_index=True,
-            return_inverse=True,
+            unique_key=unique_key,
         )
 
         # Look up each state
@@ -599,15 +692,10 @@ class HashTable:
         )
         provisional_idx = CuckooIdx(index=provisional_index, table_index=provisional_table_index)
 
-        # Only keep indices for unique elements
-        correct_indices_for_uniques = CuckooIdx(
-            index=provisional_idx.index[unique_uint32eds_idx],
-            table_index=provisional_idx.table_index[unique_uint32eds_idx],
-        )
-        # Broadcast to all batch elements using inverse_indices
+        representative_indices = jnp.asarray(representative_indices, dtype=jnp.int32)
         final_idx = CuckooIdx(
-            index=correct_indices_for_uniques.index[inverse_indices],
-            table_index=correct_indices_for_uniques.table_index[inverse_indices],
+            index=provisional_idx.index[representative_indices],
+            table_index=provisional_idx.table_index[representative_indices],
         )
 
         return (
