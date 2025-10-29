@@ -46,7 +46,7 @@ def get_new_idx_from_uint32ed(
     input_uint32ed: chex.Array,
     modulus: int,
     seed: int,
-) -> tuple[chex.Array, chex.Array]:
+) -> tuple[chex.Array, chex.Array, chex.Array]:
     """
     Calculate new index for input state using the hash function from its uint32ed representation
     and reduce it modulo the provided table capacity.
@@ -57,14 +57,15 @@ def get_new_idx_from_uint32ed(
     secondary_hash = uint32ed_to_hash(input_uint32ed, secondary_seed)
     index = primary_hash % modulus
     step = _normalize_probe_step(secondary_hash, modulus)
-    return index, step
+    fingerprint = jnp.asarray(primary_hash, dtype=jnp.uint32)
+    return index, step, fingerprint
 
 
 def get_new_idx_byterized(
     input: Xtructurable,
     modulus: int,
     seed: int,
-) -> tuple[chex.Array, chex.Array, chex.Array]:
+) -> tuple[chex.Array, chex.Array, chex.Array, chex.Array]:
     """
     Calculate new index and return uint32ed representation of input state.
     Similar to get_new_idx but also returns the uint32ed representation for
@@ -76,7 +77,8 @@ def get_new_idx_byterized(
     secondary_hash = uint32ed_to_hash(uint32ed, secondary_seed)
     idx = hash_value % modulus
     step = _normalize_probe_step(secondary_hash, modulus)
-    return idx, step, uint32ed
+    fingerprint = jnp.asarray(hash_value, dtype=jnp.uint32)
+    return idx, step, uint32ed, fingerprint
 
 
 @base_dataclass
@@ -103,6 +105,7 @@ class HashTable:
     size: int
     table: Xtructurable  # shape = State("args" = (capacity, cuckoo_len, ...), ...)
     table_idx: chex.Array  # shape = (capacity, ) is the index of the table in the cuckoo table.
+    fingerprints: chex.Array  # shape = ((capacity + 1) * cuckoo_len,)
 
     @staticmethod
     @partial(jax.jit, static_argnums=(0, 1, 2, 3, 4))
@@ -131,6 +134,7 @@ class HashTable:
         # Initialize table with default states
         table = dataclass.default(((_capacity + 1) * cuckoo_table_n,))
         table_idx = jnp.zeros((_capacity + 1), dtype=HASH_TABLE_IDX_DTYPE)
+        fingerprints = jnp.zeros(((_capacity + 1) * cuckoo_table_n,), dtype=jnp.uint32)
         return HashTable(
             seed=seed,
             capacity=capacity,
@@ -139,6 +143,7 @@ class HashTable:
             size=size,
             table=table,
             table_idx=table_idx,
+            fingerprints=fingerprints,
         )
 
     @staticmethod
@@ -148,6 +153,7 @@ class HashTable:
         input_uint32ed: chex.Array,
         idx: CuckooIdx,
         probe_step: chex.Array,
+        input_fingerprint: chex.Array,
         found: bool,
     ) -> tuple[CuckooIdx, bool]:
         """
@@ -159,7 +165,8 @@ class HashTable:
             input: State to look up
             input_uint32ed: uint32ed representation of the state to look up
             idx: Initial index to check
-            seed: Initial seed
+            probe_step: Increment used for double hashing
+            input_fingerprint: 32-bit fingerprint of the input state
             found: Whether the state has been found
 
         Returns:
@@ -199,7 +206,20 @@ class HashTable:
             state = table.table[flat_index]
             filled_limit = table.table_idx[idx.index]
             is_filled = idx.table_index < filled_limit
-            matched = jnp.logical_and(is_filled, state == input)
+            stored_fp = table.fingerprints[flat_index]
+            fingerprints_match = jnp.logical_and(is_filled, stored_fp == input_fingerprint)
+
+            def _compare(_: None) -> jnp.bool_:
+                return jnp.asarray(state == input, dtype=jnp.bool_)
+
+            value_equal = jax.lax.cond(
+                fingerprints_match,
+                _compare,
+                lambda _: jnp.bool_(False),
+                operand=None,
+            )
+
+            matched = jnp.logical_and(is_filled, value_equal)
             new_found = jnp.logical_or(found, matched)
             next_idx = _advance(idx)
             updated_index = jnp.where(new_found, idx.index, next_idx.index)
@@ -210,14 +230,30 @@ class HashTable:
             )
             return updated_idx, new_found
 
-        state = table.table[idx.index * table.cuckoo_table_n + idx.table_index]
+        flat_index = idx.index * table.cuckoo_table_n + idx.table_index
+        state = table.table[flat_index]
         is_filled = idx.table_index < table.table_idx[idx.index]
-        found = jnp.logical_or(found, jnp.logical_and(is_filled, state == input))
+        stored_fp = table.fingerprints[flat_index]
+        fingerprints_match = jnp.logical_and(is_filled, stored_fp == input_fingerprint)
+
+        def _compare_initial(_: None) -> jnp.bool_:
+            return jnp.asarray(state == input, dtype=jnp.bool_)
+
+        initial_equal = jax.lax.cond(
+            fingerprints_match,
+            _compare_initial,
+            lambda _: jnp.bool_(False),
+            operand=None,
+        )
+
+        found = jnp.logical_or(found, initial_equal)
         idx, found = jax.lax.while_loop(_cond, _body, (idx, found))
         return idx, found
 
     @jax.jit
-    def lookup_cuckoo(table: "HashTable", input: Xtructurable) -> tuple[CuckooIdx, bool]:
+    def lookup_cuckoo(
+        table: "HashTable", input: Xtructurable
+    ) -> tuple[CuckooIdx, bool, chex.Array]:
         """
         Finds the state in the hash table using Cuckoo hashing.
 
@@ -226,17 +262,19 @@ class HashTable:
             input: The Xtructurable state to look up.
 
         Returns:
-            A tuple (idx, table_idx, found):
-            - idx (int): The primary hash index in the table.
-            - table_idx (int): The cuckoo table index (which hash function/slot was used or probed).
+            A tuple (idx, found, fingerprint):
+            - idx (CuckooIdx): Index information for the slot examined.
             - found (bool): True if the state was found, False otherwise.
+            - fingerprint (uint32): Hash fingerprint of the probed state (internal use).
             If not found, idx and table_idx indicate the first empty slot encountered
             during the Cuckoo search path where an insertion could occur.
         """
-        index, step, input_uint32ed = get_new_idx_byterized(input, table._capacity, table.seed)
+        index, step, input_uint32ed, fingerprint = get_new_idx_byterized(
+            input, table._capacity, table.seed
+        )
         idx = CuckooIdx(index=index, table_index=HASH_TABLE_IDX_DTYPE(0))
-        idx, found = HashTable._lookup(table, input, input_uint32ed, idx, step, False)
-        return idx, found
+        idx, found = HashTable._lookup(table, input, input_uint32ed, idx, step, fingerprint, False)
+        return idx, found, fingerprint
 
     @jax.jit
     def lookup(table: "HashTable", input: Xtructurable) -> tuple[HashIdx, bool]:
@@ -246,7 +284,7 @@ class HashTable:
         Returns a tuple of `(HashIdx, found)` where `HashIdx.index` is the flat
         index into `table.table`, and `found` indicates existence.
         """
-        idx, found = HashTable.lookup_cuckoo(table, input)
+        idx, found, _ = HashTable.lookup_cuckoo(table, input)
         return HashIdx(index=idx.index * table.cuckoo_table_n + idx.table_index), found
 
     @staticmethod
@@ -256,6 +294,7 @@ class HashTable:
         input_uint32eds: chex.Array,
         idxs: CuckooIdx,
         probe_steps: chex.Array,
+        fingerprints: chex.Array,
         founds: chex.Array,
     ) -> tuple[CuckooIdx, chex.Array]:
         """
@@ -268,6 +307,7 @@ class HashTable:
             input_uint32ed: chex.Array,
             idx: CuckooIdx,
             probe_step: chex.Array,
+            fingerprint: chex.Array,
             found: bool,
         ) -> tuple[CuckooIdx, bool]:
             probe_step = jnp.asarray(probe_step, dtype=SIZE_DTYPE)
@@ -303,7 +343,20 @@ class HashTable:
                 state = table.table[flat_index]
                 filled_limit = table.table_idx[idx.index]
                 is_filled = idx.table_index < filled_limit
-                matched = jnp.logical_and(is_filled, state == input)
+                stored_fp = table.fingerprints[flat_index]
+                fingerprints_match = jnp.logical_and(is_filled, stored_fp == fingerprint)
+
+                def _compare(_: None) -> jnp.bool_:
+                    return jnp.asarray(state == input, dtype=jnp.bool_)
+
+                value_equal = jax.lax.cond(
+                    fingerprints_match,
+                    _compare,
+                    lambda _: jnp.bool_(False),
+                    operand=None,
+                )
+
+                matched = jnp.logical_and(is_filled, value_equal)
                 new_found = jnp.logical_or(found, matched)
                 next_idx = _advance(idx)
                 updated_index = jnp.where(new_found, idx.index, next_idx.index)
@@ -314,14 +367,28 @@ class HashTable:
                 )
                 return updated_idx, new_found
 
-            state = table.table[idx.index * table.cuckoo_table_n + idx.table_index]
+            flat_index = idx.index * table.cuckoo_table_n + idx.table_index
+            state = table.table[flat_index]
             is_filled = idx.table_index < table.table_idx[idx.index]
-            found = jnp.logical_or(found, jnp.logical_and(is_filled, state == input))
+            stored_fp = table.fingerprints[flat_index]
+            fingerprints_match = jnp.logical_and(is_filled, stored_fp == fingerprint)
+
+            def _compare_initial(_: None) -> jnp.bool_:
+                return jnp.asarray(state == input, dtype=jnp.bool_)
+
+            initial_equal = jax.lax.cond(
+                fingerprints_match,
+                _compare_initial,
+                lambda _: jnp.bool_(False),
+                operand=None,
+            )
+
+            found = jnp.logical_or(found, initial_equal)
             idx, found = jax.lax.while_loop(_cond, _body, (idx, found))
             return idx, found
 
-        idxs, founds = jax.vmap(_lu, in_axes=(0, 0, 0, 0, 0))(
-            inputs, input_uint32eds, idxs, probe_steps, founds
+        idxs, founds = jax.vmap(_lu, in_axes=(0, 0, 0, 0, 0, 0))(
+            inputs, input_uint32eds, idxs, probe_steps, fingerprints, founds
         )
         return idxs, founds
 
@@ -332,7 +399,7 @@ class HashTable:
 
         Returns `(HashIdx, found_mask)` per input.
         """
-        initial_idx, steps, input_uint32eds = jax.vmap(
+        initial_idx, steps, input_uint32eds, fingerprints = jax.vmap(
             get_new_idx_byterized, in_axes=(0, None, None)
         )(inputs, table._capacity, table.seed)
 
@@ -343,7 +410,9 @@ class HashTable:
         )
         founds = jnp.zeros(batch_size, dtype=jnp.bool_)
 
-        idx, found = HashTable._lookup_parallel(table, inputs, input_uint32eds, idxs, steps, founds)
+        idx, found = HashTable._lookup_parallel(
+            table, inputs, input_uint32eds, idxs, steps, fingerprints, founds
+        )
         return HashIdx(index=idx.index * table.cuckoo_table_n + idx.table_index), found
 
     @jax.jit
@@ -354,18 +423,29 @@ class HashTable:
         Returns `(table, inserted?, flat_idx)`.
         """
 
-        def _update_table(table: "HashTable", input: Xtructurable, idx: CuckooIdx):
+        def _update_table(
+            table: "HashTable", input: Xtructurable, idx: CuckooIdx, fingerprint: chex.Array
+        ):
             """
             insert the state in the table
             """
             table.table = table.table.at[idx.index * table.cuckoo_table_n + idx.table_index].set(
                 input
             )
+            flat_index = idx.index * table.cuckoo_table_n + idx.table_index
+            table.fingerprints = table.fingerprints.at[flat_index].set(fingerprint)
             table.table_idx = table.table_idx.at[idx.index].add(1)
             return table
 
-        idx, found = HashTable.lookup_cuckoo(table, input)
-        table = jax.lax.cond(found, lambda: table, lambda: _update_table(table, input, idx))
+        idx, found, fingerprint = HashTable.lookup_cuckoo(table, input)
+
+        def _no_insert():
+            return table
+
+        def _do_insert():
+            return _update_table(table, input, idx, fingerprint)
+
+        table = jax.lax.cond(found, _no_insert, _do_insert)
         inserted = ~found
         return table, inserted, HashIdx(index=idx.index * table.cuckoo_table_n + idx.table_index)
 
@@ -377,6 +457,7 @@ class HashTable:
         probe_steps: chex.Array,
         index: CuckooIdx,
         updatable: chex.Array,
+        fingerprints: chex.Array,
     ) -> tuple["HashTable", CuckooIdx]:
         capacity = jnp.asarray(table._capacity, dtype=SIZE_DTYPE)
         probe_steps = jnp.asarray(probe_steps, dtype=SIZE_DTYPE)
@@ -430,6 +511,12 @@ class HashTable:
         successful = updatable
         flat_indices = index.index * table.cuckoo_table_n + index.table_index
         table.table = table.table.at[flat_indices].set_as_condition(successful, inputs)
+
+        current_fp = table.fingerprints[flat_indices]
+        delta_fp = jnp.where(
+            successful, fingerprints.astype(jnp.uint32) - current_fp, jnp.uint32(0)
+        )
+        table.fingerprints = table.fingerprints.at[flat_indices].add(delta_fp)
         table.table_idx = table.table_idx.at[index.index].add(successful)
         table.size += jnp.sum(successful, dtype=SIZE_DTYPE)
         return table, index
@@ -459,9 +546,9 @@ class HashTable:
             filled = jnp.ones((len(inputs),), dtype=jnp.bool_)
 
         # Get initial indices, probe steps, and byte representations
-        initial_idx, steps, uint32eds = jax.vmap(get_new_idx_byterized, in_axes=(0, None, None))(
-            inputs, table._capacity, table.seed
-        )
+        initial_idx, steps, uint32eds, fingerprints = jax.vmap(
+            get_new_idx_byterized, in_axes=(0, None, None)
+        )(inputs, table._capacity, table.seed)
 
         batch_len = filled.shape[0]
 
@@ -481,13 +568,15 @@ class HashTable:
         )
 
         initial_found = jnp.logical_not(unique_filled)
-        idx, found = HashTable._lookup_parallel(table, inputs, uint32eds, idx, steps, initial_found)
+        idx, found = HashTable._lookup_parallel(
+            table, inputs, uint32eds, idx, steps, fingerprints, initial_found
+        )
 
         updatable = jnp.logical_and(~found, unique_filled)
 
         # Perform parallel insertion
         table, inserted_idx = HashTable._parallel_insert(
-            table, inputs, uint32eds, steps, idx, updatable
+            table, inputs, uint32eds, steps, idx, updatable, fingerprints
         )
 
         # Provisional index selection
