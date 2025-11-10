@@ -414,7 +414,9 @@ def where(condition: jnp.ndarray, x: Xtructurable, y: Union[Xtructurable, Any]) 
                     y_array = jnp.broadcast_to(y_array, x_field.shape)
                 except ValueError as err:
                     raise ValueError(
-                        f"`y` field with shape {y_array.shape} cannot be broadcast to match `x` field shape {x_field.shape}."
+                        f"`y` field with shape {y_array.shape} cannot be"
+                        "broadcast to match `x` field shape {x_field.shape}."
+                        f"Original `y` shape: {y_array.shape}, `x` shape: {x_field.shape}."
                     ) from err
             target_dtype = jnp.result_type(x_field.dtype, y_array.dtype)
             return _where_no_broadcast(
@@ -434,7 +436,9 @@ def where(condition: jnp.ndarray, x: Xtructurable, y: Union[Xtructurable, Any]) 
                 y_array = jnp.broadcast_to(scalar_value, x_field.shape)
             except ValueError as err:
                 raise ValueError(
-                    f"`y` value with shape {scalar_value.shape} cannot be broadcast to match `x` field shape {x_field.shape}."
+                    f"`y` value with shape {scalar_value.shape} cannot be"
+                    "broadcast to match `x` field shape {x_field.shape}."
+                    f"Original `y` shape: {scalar_value.shape}, `x` shape: {x_field.shape}."
                 ) from err
             target_dtype = jnp.result_type(x_field.dtype, y_array.dtype)
             return _where_no_broadcast(
@@ -470,7 +474,9 @@ def where_no_broadcast(
     """
 
     if type(x) is not type(y):
-        raise TypeError("`x` and `y` must be instances of the same dataclass for where_no_broadcast.")
+        raise TypeError(
+            "`x` and `y` must be instances of the same dataclass for where_no_broadcast."
+        )
 
     condition_is_dataclass = hasattr(condition, "__dataclass_fields__")
 
@@ -666,6 +672,61 @@ def take(dataclass_instance: T, indices: jnp.ndarray, axis: int = 0) -> T:
         >>> # result will have batch shape (3, 2) with elements at indices 1, 3 along axis 1
     """
     return jax.tree_util.tree_map(lambda x: jnp.take(x, indices, axis=axis), dataclass_instance)
+
+
+def take_along_axis(dataclass_instance: T, indices: jnp.ndarray, axis: int) -> T:
+    """
+    Take values from a dataclass along an axis using indices whose shape matches the result.
+
+    This mirrors jnp.take_along_axis by applying it to every leaf array in the dataclass.
+    The indices array must have the same shape as the output and match the input shape
+    everywhere except at the specified axis.
+
+    Args:
+        dataclass_instance: Dataclass to gather values from.
+        indices: Index array broadcastable to the output shape (see jnp.take_along_axis).
+        axis: Axis along which values are gathered.
+
+    Returns:
+        Dataclass instance with gathered values along the requested axis.
+
+    Examples:
+        >>> data = MyData.default((3, 4))
+        >>> idx = jnp.array([[0, 2, 1, 3]]).T  # shape (4, 1)
+        >>> result = xnp.take_along_axis(data, idx, axis=1)
+    """
+    indices_array = jnp.asarray(indices)
+
+    def _reorder_leaf(leaf: jnp.ndarray) -> jnp.ndarray:
+        axis_in_leaf = axis if axis >= 0 else axis + leaf.ndim
+        if axis_in_leaf < 0 or axis_in_leaf >= leaf.ndim:
+            raise ValueError(f"`axis` {axis} is out of bounds for array with ndim {leaf.ndim}.")
+
+        if indices_array.ndim > leaf.ndim:
+            raise ValueError(
+                "`indices` must not have more dimensions than the target field. "
+                f"indices.ndim={indices_array.ndim}, field.ndim={leaf.ndim}."
+            )
+
+        expanded = indices_array
+        # Grow trailing singleton axes so expanded.ndim matches the leaf ndim.
+        for _ in range(leaf.ndim - expanded.ndim):
+            expanded = expanded[..., None]
+
+        # Broadcast indices over the extra field dimensions (pattern from user snippet).
+        target_shape = list(leaf.shape)
+        target_shape[axis_in_leaf] = expanded.shape[axis_in_leaf]
+        try:
+            expanded = jnp.broadcast_to(expanded, tuple(target_shape))
+        except ValueError as err:
+            raise ValueError(
+                "`indices` shape cannot be broadcast to match field shape "
+                f"{leaf.shape} outside axis {axis}. Original indices shape: {indices_array.shape}."
+            ) from err
+
+        return jnp.take_along_axis(leaf, expanded, axis=axis_in_leaf)
+
+    return jax.tree_util.tree_map(_reorder_leaf, dataclass_instance)
 
 
 def tile(dataclass_instance: T, reps: Union[int, tuple[int, ...]]) -> T:
