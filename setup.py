@@ -14,7 +14,7 @@ setuptools.setup(
     url="https://github.com/tinker495/Xtructure",
     packages=setuptools.find_packages(),
     install_requires=[
-        "jax[cuda]>=0.4.0, <0.8.0",
+        "jax[cuda]>=0.4.0",
         "chex>=0.1.0",
         "tabulate>=0.9.0",
         "numpy>=2.2.0",

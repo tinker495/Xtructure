@@ -4,7 +4,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from xtructure.core.field_descriptors import FieldDescriptor
+from xtructure.core.field_descriptors import FieldDescriptor, get_field_descriptors
 from xtructure.core.structuredtype import StructuredType
 
 T = TypeVar("T")
@@ -46,14 +46,14 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
     """
     assert hasattr(cls, "default"), "There is no default method."
 
-    field_descriptors: dict[str, FieldDescriptor] = cls.__annotations__
+    field_descriptors: dict[str, FieldDescriptor] = get_field_descriptors(cls)
     default_shape = dict([(fn, fd.intrinsic_shape) for fn, fd in field_descriptors.items()])
     default_dtype = dict([(fn, fd.dtype) for fn, fd in field_descriptors.items()])
 
     # Pre-calculate generation configurations for the random method
     _field_generation_configs = []
     # Ensure consistent order for key splitting, matching __annotations__
-    _field_names_for_random = list(cls.__annotations__.keys())
+    _field_names_for_random = list(field_descriptors.keys())
 
     for field_name_cfg in _field_names_for_random:
         cfg = {}
@@ -66,7 +66,7 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
             # This field is a nested xtructure_data instance
             cfg["type"] = "xtructure"
             # Store the actual nested class type (e.g., Parent, Current)
-            cfg["nested_class_type"] = cls.__annotations__[field_name_cfg].dtype
+            cfg["nested_class_type"] = field_descriptors[field_name_cfg].dtype
             # Store the namedtuple of dtypes for the nested structure
             cfg["actual_dtype"] = actual_dtype_or_nested_dtype_tuple
         else:

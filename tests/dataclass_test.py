@@ -4,6 +4,7 @@ import unittest
 import jax
 import jax.numpy as jnp
 import numpy as np
+import pytest
 
 from xtructure import FieldDescriptor, StructuredType, xtructure_dataclass
 from xtructure.core.xtructure_decorators.indexing import add_indexing_methods
@@ -685,6 +686,52 @@ class TestIndexingDecorator(unittest.TestCase):
             jnp.array_equal(updated_instance.y, jnp.array(expected_x)),
             "Randomized test with scalar value failed for field 'y'",
         )
+        
+
+@xtructure_dataclass(validate=True)
+class ValidatedScalarData:
+    value: FieldDescriptor[jnp.float32]
+
+
+@xtructure_dataclass(validate=True)
+class ValidatedVectorData:
+    vector: FieldDescriptor[jnp.float32, (3,)]
+
+
+@xtructure_dataclass(validate=True)
+class ValidatedNestedData:
+    simple: FieldDescriptor[SimpleData]
+
+
+@xtructure_dataclass(validate=True)
+class ValidatedWithPostInit:
+    value: FieldDescriptor[jnp.float32]
+
+    def __post_init__(self):
+        self.value = self.value + 1.0
+
+
+def test_validate_dtype_mismatch():
+    ValidatedScalarData(value=jnp.array(1.0, dtype=jnp.float32))
+    with pytest.raises(TypeError):
+        ValidatedScalarData(value=jnp.array(1.0, dtype=jnp.int32))
+
+
+def test_validate_shape_mismatch():
+    ValidatedVectorData(vector=jnp.ones((2, 3), dtype=jnp.float32))
+    with pytest.raises(ValueError):
+        ValidatedVectorData(vector=jnp.ones((2,), dtype=jnp.float32))
+
+
+def test_validate_nested_type():
+    ValidatedNestedData(simple=SimpleData.default())
+    with pytest.raises(TypeError):
+        ValidatedNestedData(simple=VectorData.default())
+
+
+def test_validate_preserves_existing_post_init():
+    data = ValidatedWithPostInit(value=jnp.array(1.0, dtype=jnp.float32))
+    assert jnp.array_equal(data.value, jnp.array(2.0, dtype=jnp.float32))
 
 
 if __name__ == "__main__":

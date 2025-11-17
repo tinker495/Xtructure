@@ -3,7 +3,7 @@ from typing import Type, TypeVar
 
 import jax.numpy as jnp
 
-from xtructure.core.field_descriptors import FieldDescriptor
+from xtructure.core.field_descriptors import FieldDescriptor, get_field_descriptors
 from xtructure.core.protocol import StructuredType
 
 T = TypeVar("T")
@@ -20,12 +20,13 @@ def add_shape_dtype_len(cls: Type[T]) -> Type[T]:
     dimension of the first field of the instance, which is often useful
     for determining batch sizes.
     """
-    shape_tuple = namedtuple("shape", ["batch"] + list(cls.__annotations__.keys()))
-    field_descriptors: dict[str, FieldDescriptor] = cls.__annotations__
-    default_shape = namedtuple("default_shape", cls.__annotations__.keys())(
+    field_descriptors: dict[str, FieldDescriptor] = get_field_descriptors(cls)
+    field_names = list(field_descriptors.keys())
+    shape_tuple = namedtuple("shape", ["batch"] + field_names)
+    default_shape = namedtuple("default_shape", field_names)(
         *[fd.intrinsic_shape for fd in field_descriptors.values()]
     )
-    default_dtype = namedtuple("default_dtype", cls.__annotations__.keys())(
+    default_dtype = namedtuple("default_dtype", field_names)(
         *[fd.dtype for fd in field_descriptors.values()]
     )
 
@@ -41,7 +42,7 @@ def add_shape_dtype_len(cls: Type[T]) -> Type[T]:
         # Otherwise, batch is ().
         field_shapes = []
         batch_shapes = []
-        for field_name in cls.__annotations__.keys():
+        for field_name in field_names:
             field_value = getattr(self, field_name)
             # Check if the field is a nested xtructure instance before attempting to convert to array
             if hasattr(field_value, "is_xtructed"):
@@ -88,13 +89,11 @@ def add_shape_dtype_len(cls: Type[T]) -> Type[T]:
 
     setattr(cls, "shape", property(get_shape))
 
-    type_tuple = namedtuple("dtype", cls.__annotations__.keys())
+    type_tuple = namedtuple("dtype", field_names)
 
     def get_type(self) -> type_tuple:
         """Get dtypes of all fields in the dataclass"""
-        return type_tuple(
-            *[getattr(self, field_name).dtype for field_name in cls.__annotations__.keys()]
-        )
+        return type_tuple(*[getattr(self, field_name).dtype for field_name in field_names])
 
     setattr(cls, "dtype", property(get_type))
 

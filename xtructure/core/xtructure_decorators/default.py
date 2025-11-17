@@ -4,7 +4,7 @@ from typing import Type, TypeVar, Union
 
 import jax.numpy as jnp
 
-from xtructure.core.field_descriptors import FieldDescriptor
+from xtructure.core.field_descriptors import FieldDescriptor, get_field_descriptors
 
 T = TypeVar("T")
 
@@ -27,36 +27,27 @@ class FieldInfo(NamedTuple):
     descriptor: Union[FieldDescriptor, None]
     dtype: Any
     fill_value: Any
+    fill_value_factory: Union[Callable[[TypingTuple[int, ...], Any], Any], None]
     intrinsic_shape: TypingTuple[int, ...]
     nested_class_type: Union[Type, None]
 
 
 def add_default_method(cls: Type[T]) -> Type[T]:
-
-    if any([not isinstance(i, FieldDescriptor) for i in cls.__annotations__.values()]):
-        invalid_annotations = [
-            (name, type(annotation).__name__)
-            for name, annotation in cls.__annotations__.items()
-            if not isinstance(annotation, FieldDescriptor)
-        ]
-        raise ValueError(
-            f"xtructure_dataclass can only have FieldDescriptor annotations."
-            f"Found invalid annotations: {invalid_annotations}"
-        )
+    field_descriptors = get_field_descriptors(cls)
 
     # add default method to class
-    setattr(cls, "default", _create_default_method(cls))
+    setattr(cls, "default", _create_default_method(cls, field_descriptors))
     return cls
 
 
-def _create_default_method(cls_to_modify: Type[T]) -> Callable[..., T]:
-    annotations = getattr(cls_to_modify, "__annotations__", {})
+def _create_default_method(
+    cls_to_modify: Type[T], field_descriptors: Dict[str, FieldDescriptor]
+) -> Callable[..., T]:
 
     # Pre-compute field information during method creation
     field_infos: List[FieldInfo] = []
 
-    for field_name, annotation_obj in annotations.items():
-        descriptor = annotation_obj
+    for field_name, descriptor in field_descriptors.items():
         dtype_of_field_descriptor = descriptor.dtype
 
         if is_xtructure_class(dtype_of_field_descriptor):
@@ -81,6 +72,7 @@ def _create_default_method(cls_to_modify: Type[T]) -> Callable[..., T]:
                     descriptor=descriptor,
                     dtype=None,
                     fill_value=None,
+                    fill_value_factory=None,
                     intrinsic_shape=intrinsic_shape,
                     nested_class_type=nested_class_type,
                 )
@@ -110,6 +102,7 @@ def _create_default_method(cls_to_modify: Type[T]) -> Callable[..., T]:
                         descriptor=descriptor,
                         dtype=dtype_of_field_descriptor,
                         fill_value=descriptor.fill_value,
+                        fill_value_factory=descriptor.fill_value_factory,
                         intrinsic_shape=intrinsic_shape,
                         nested_class_type=None,
                     )
@@ -137,6 +130,7 @@ def _create_default_method(cls_to_modify: Type[T]) -> Callable[..., T]:
                     descriptor=descriptor,
                     dtype=dtype_of_field_descriptor,
                     fill_value=descriptor.fill_value,
+                    fill_value_factory=descriptor.fill_value_factory,
                     intrinsic_shape=intrinsic_shape,
                     nested_class_type=None,
                 )
@@ -156,19 +150,26 @@ def _create_default_method(cls_to_modify: Type[T]) -> Callable[..., T]:
     def default(cls: Type[T], shape: TypingTuple[int, ...] = ()) -> T:
         default_values: Dict[str, Any] = {}
 
+        def resolve_fill_value(field_info: FieldInfo, field_shape: TypingTuple[int, ...]) -> Any:
+            if field_info.fill_value_factory is not None:
+                return field_info.fill_value_factory(field_shape, field_info.dtype)
+            return field_info.fill_value
+
         # Use pre-computed field information for efficient value generation
         for field_info in field_infos:
             if field_info.field_type == "jax_primitive_descriptor":
                 field_shape = shape + field_info.intrinsic_shape
                 default_values[field_info.name] = jnp.full(
                     field_shape,
-                    field_info.fill_value,
+                    resolve_fill_value(field_info, field_shape),
                     dtype=field_info.dtype,
                 )
             elif field_info.field_type == "jax_dtype_descriptor":
                 field_shape = shape + field_info.intrinsic_shape
                 default_values[field_info.name] = jnp.full(
-                    field_shape, field_info.fill_value, dtype=field_info.dtype
+                    field_shape,
+                    resolve_fill_value(field_info, field_shape),
+                    dtype=field_info.dtype,
                 )
             elif field_info.field_type == "nested_class_descriptor":
                 field_shape = shape + field_info.intrinsic_shape

@@ -83,6 +83,97 @@ Defines the type and shape of each field within an `@xtructure_dataclass`.
         *   `fill_value` (optional): The value used when `cls.default()` is called.
         *   Defaults: maximum representable value for unsigned integers, `jnp.inf` for signed integers and floats. `None` for nested structures (their own default applies).
 
+### Choosing between legacy and Annotated syntax
+
+Use whichever option fits your tooling. Static analyzers (pyright, mypy, IDEs) often prefer the
+`typing.Annotated` form because it exposes the actual runtime type while retaining descriptor metadata.
+
+```python
+from typing import Annotated
+import jax.numpy as jnp
+from xtructure import FieldDescriptor, xtructure_dataclass
+
+
+@xtructure_dataclass
+class LegacySyntax:
+    # Field type appears to the type-checker as FieldDescriptor
+    value: FieldDescriptor[jnp.float32, (3,)]
+
+
+@xtructure_dataclass
+class AnnotatedSyntax:
+    # Field type is seen as jnp.ndarray by IDEs, metadata comes from FieldDescriptor
+    value: Annotated[jnp.ndarray, FieldDescriptor(jnp.float32, (3,))]
+```
+
+Both styles produce identical runtime behavior, so feel free to mix them as you incrementally migrate older
+code toward the Annotated form.
+
+### Nested structures
+
+Descriptors can point to another `@xtructure_dataclass`, enabling deeply nested shapes without writing
+custom initialization logic. Each nested field uses its own `.default()` for sentinel values, and batch
+shapes flow recursively.
+
+```python
+@xtructure_dataclass
+class SimpleData:
+    id: FieldDescriptor[jnp.uint32]
+    value: FieldDescriptor[jnp.float32]
+
+
+@xtructure_dataclass
+class Container:
+    # Nested dataclasses get their own descriptor
+    simple: FieldDescriptor[SimpleData]
+    history: FieldDescriptor[jnp.float32, (4,)]
+
+# Automatically builds nested defaults
+instance = Container.default(shape=(8,))
+assert instance.simple.value.shape == (8,)
+```
+
+### Custom defaults via `fill_value_factory`
+
+When the default sentinel depends on the requested batch shape (e.g., NaNs for floats or structured masks),
+use `fill_value_factory`. The callable receives `(field_shape, dtype)` and returns the array or value used
+by `Container.default(shape=...)`.
+
+```python
+def nan_fill(field_shape, dtype):
+    return jnp.full(field_shape, jnp.nan, dtype=dtype)
+
+
+@xtructure_dataclass
+class WithFactory:
+    metrics: FieldDescriptor(
+        jnp.float32,
+        (3,),
+        fill_value_factory=nan_fill,
+    )
+```
+
+### Runtime validation mode
+
+Pass `validate=True` to `@xtructure_dataclass` to opt into runtime checks that ensure every field matches its
+descriptor’s dtype and trailing shape. Validation runs after each initialization (including user-defined
+`__post_init__` logic) and raises informative errors when something drifts out of spec.
+
+```python
+@xtructure_dataclass(validate=True)
+class StrictData:
+    vector: FieldDescriptor[jnp.float32, (3,)]
+
+
+StrictData(vector=jnp.ones((5, 3), dtype=jnp.float32))  # OK
+
+# Raises: StrictData.vector expected dtype float32, got int32
+StrictData(vector=jnp.ones((5, 3), dtype=jnp.int32))
+```
+
+Validation is optional to avoid runtime cost when deserializing known-good data, but it is extremely helpful
+while iterating on new structures or integrating external inputs.
+
 ## SoA storage with AoS ergonomics
 
 For a detailed explanation of how Xtructure pairs Structure-of-Arrays storage
