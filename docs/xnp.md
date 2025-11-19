@@ -15,7 +15,7 @@ from xtructure import xtructure_numpy as xnp
 
 # Available functions in xnp:
 # concat, concatenate (same function), pad, stack, reshape, flatten,
-# where, where_no_broadcast, unique_mask, take, update_on_condition,
+# where, where_no_broadcast, unique_mask, take, take_along_axis, update_on_condition,
 # tile, transpose, swap_axes
 
 
@@ -70,7 +70,11 @@ data = data.replace(id=jnp.arange(10), value=jnp.arange(10, dtype=jnp.float32))
 taken = xnp.take(data, jnp.array([0, 2, 4, 6, 8]))
 print(f"Taken IDs: {taken.id}")  # [0, 2, 4, 6, 8]
 
-# 7. Update values conditionally with "first True wins" semantics
+# 7. Tile dataclasses (repeat data)
+tiled = xnp.tile(data1, 3)
+print(f"Tiled batch shape: {tiled.shape.batch}")  # (3,)
+
+# 8. Update values conditionally with "first True wins" semantics
 original = jnp.zeros(5)
 indices = jnp.array([0, 2, 0])  # Note: index 0 appears twice
 condition = jnp.array([True, True, True])
@@ -78,7 +82,7 @@ values = jnp.array([1.0, 2.0, 3.0])  # Last value (3.0) wins for index 0
 result_array = xnp.update_on_condition(original, indices, condition, values)
 print(f"Conditional update result: {result_array}")  # [3.0, 0.0, 2.0, 0.0, 0.0]
 
-# 8. Advanced padding with different modes
+# 9. Advanced padding with different modes
 data = SimpleData.default(shape=(3,))
 data = data.replace(id=jnp.array([1, 2, 3]), value=jnp.array([1.0, 2.0, 3.0]))
 
@@ -88,10 +92,19 @@ padded_const = xnp.pad(data, (0, 2), constant_values=99)
 # Edge padding (repeat edge values)
 padded_edge = xnp.pad(data, (0, 2), mode="edge")
 
-# 9. Reshape and flatten (wrappers for dataclass methods)
+# 10. Reshape, flatten, transpose, and swap_axes
 batched_data = SimpleData.default(shape=(6,))
 reshaped = xnp.reshape(batched_data, (2, 3))
+transposed = xnp.transpose(reshaped)  # (3, 2)
+swapped = xnp.swap_axes(reshaped, 0, 1)  # (3, 2)
 flattened = xnp.flatten(reshaped)
+
+# 11. Take along axis
+data = VectorData.default((3, 4))
+# Create indices with shape (3, 1) to take one element per row along axis 1
+indices = jnp.zeros((3, 1), dtype=jnp.int32)
+taken_along = xnp.take_along_axis(data, indices, axis=1)
+print(f"Take along axis shape: {taken_along.shape.batch}")  # (3, 1)
 ```
 
 ## Key `xnp` Operations
@@ -191,6 +204,34 @@ flattened = xnp.flatten(reshaped)
     # result will have batch shape (3, 2) with elements at indices 1, 3 along axis 1
     ```
 
+### **`xnp.take_along_axis(dataclass_instance, indices, axis)`**
+*   Takes values from a dataclass along an axis using indices, similar to `jnp.take_along_axis`.
+*   **Input**:
+    *   `dataclass_instance`: Dataclass to gather values from.
+    *   `indices`: Index array broadcastable to the output shape. Must have same rank as the fields.
+    *   `axis`: Axis along which values are gathered.
+*   **Output**: Dataclass instance with gathered values.
+*   **Behavior**:
+    *   Applies `jnp.take_along_axis` to each field.
+    *   `indices` array must match the field shape except at the specified `axis`.
+*   **Examples**:
+    ```python
+    data = MyData.default((3, 4))
+    idx = jnp.array([[0, 2, 1, 3]]).T  # shape (4, 1)
+    # result = xnp.take_along_axis(data, idx, axis=1)
+    ```
+
+### **`xnp.tile(dataclass_instance, reps)`**
+*   Constructs a new dataclass by repeating an instance the number of times given by `reps`.
+*   **Input**:
+    *   `dataclass_instance`: The dataclass instance to tile.
+    *   `reps`: The number of repetitions of `dataclass_instance` along each axis.
+*   **Output**: A new dataclass instance with tiled data.
+*   **Behavior**:
+    *   Applies `jnp.tile` to each field of the dataclass.
+    *   If `reps` is an integer, it is treated as a 1-tuple.
+    *   Similar to `jnp.tile` but preserves the dataclass structure.
+
 ### **`xnp.update_on_condition(dataclass_instance, indices, condition, values_to_set)`**
 *   Updates values in a dataclass based on a condition, ensuring "first True wins" for duplicate indices.
 *   **Input**:
@@ -224,6 +265,27 @@ flattened = xnp.flatten(reshaped)
 *   Wrapper for the dataclass `flatten` method.
 *   **Input**: `@xtructure_dataclass` instance.
 *   **Output**: Flattened dataclass instance with batch dimensions collapsed.
+
+### **`xnp.transpose(dataclass_instance, axes=None)`**
+*   Transposes the batch dimensions of a dataclass instance.
+*   **Input**:
+    *   `dataclass_instance`: The dataclass instance to transpose.
+    *   `axes`: Tuple or list of ints, permutation of batch axes. If `None`, reverses batch axes.
+*   **Output**: Transposed dataclass instance.
+*   **Behavior**:
+    *   Applies transpose **only to the batch dimensions** of each field.
+    *   Preserves field-specific dimensions (e.g., vector dimensions in a field remain unchanged and non-transposed relative to batch axes).
+
+### **`xnp.swap_axes(dataclass_instance, axis1, axis2)`**
+*   Swaps two batch axes of a dataclass instance.
+*   **Input**:
+    *   `dataclass_instance`: The dataclass instance.
+    *   `axis1`: First batch axis to swap.
+    *   `axis2`: Second batch axis to swap.
+*   **Output**: Dataclass instance with swapped batch axes.
+*   **Behavior**:
+    *   Applies swap operations **only to the batch dimensions** of each field.
+    *   Preserves field-specific dimensions.
 
 ## Import Options
 
