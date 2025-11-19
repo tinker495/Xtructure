@@ -23,6 +23,9 @@ setuptools.setup(
     extras_require={
         "dev": [
             "pytest>=7.0.0",
+            "sphinx>=7.0.0",
+            "sphinx-rtd-theme>=1.0.0",
+            "myst-parser>=2.0.0",
         ]
     },
     classifiers=[
