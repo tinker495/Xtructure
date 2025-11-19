@@ -2,9 +2,14 @@ from .dataclass_ops import concat
 from .dataclass_ops import concat as concatenate
 from .dataclass_ops import (
     flatten,
+    full_like,
+    ones_like,
     pad,
+    repeat,
     reshape,
+    split,
     stack,
+    squeeze,
     swap_axes,
     take,
     take_along_axis,
@@ -14,6 +19,8 @@ from .dataclass_ops import (
     update_on_condition,
     where,
     where_no_broadcast,
+    zeros_like,
+    expand_dims,
 )
 
 __all__ = [
@@ -32,4 +39,11 @@ __all__ = [
     "swap_axes",
     "unique_mask",
     "update_on_condition",
+    "expand_dims",
+    "squeeze",
+    "repeat",
+    "split",
+    "zeros_like",
+    "ones_like",
+    "full_like",
 ]

@@ -16,7 +16,8 @@ from xtructure import xtructure_numpy as xnp
 # Available functions in xnp:
 # concat, concatenate (same function), pad, stack, reshape, flatten,
 # where, where_no_broadcast, unique_mask, take, take_along_axis, update_on_condition,
-# tile, transpose, swap_axes
+# tile, transpose, swap_axes, expand_dims, squeeze, repeat, split,
+# zeros_like, ones_like, full_like
 
 
 # Define example data structures
@@ -101,10 +102,16 @@ flattened = xnp.flatten(reshaped)
 
 # 11. Take along axis
 data = VectorData.default((3, 4))
-# Create indices with shape (3, 1) to take one element per row along axis 1
 indices = jnp.zeros((3, 1), dtype=jnp.int32)
 taken_along = xnp.take_along_axis(data, indices, axis=1)
 print(f"Take along axis shape: {taken_along.shape.batch}")  # (3, 1)
+
+# 12. Expand dims and Squeeze
+expanded = xnp.expand_dims(reshaped, axis=0) # (1, 2, 3)
+squeezed = xnp.squeeze(expanded) # (2, 3)
+
+# 13. Split
+splits = xnp.split(batched_data, 2) # list of 2 dataclasses each with shape (3,)
 ```
 
 ## Key `xnp` Operations
@@ -191,18 +198,6 @@ print(f"Take along axis shape: {taken_along.shape.batch}")  # (3, 1)
     *   Applies `jnp.take` to each field of the dataclass.
     *   Maintains the structure and field relationships of the original dataclass.
     *   Works with both single and batched dataclasses.
-*   **Examples**:
-    ```python
-    # Take specific elements from a batched dataclass
-    data = MyData.default((5,))
-    result = xnp.take(data, jnp.array([0, 2, 4]))
-    # result will have batch shape (3,) with elements at indices 0, 2, 4
-
-    # Take elements along a different axis
-    data = MyData.default((3, 4))
-    result = xnp.take(data, jnp.array([1, 3]), axis=1)
-    # result will have batch shape (3, 2) with elements at indices 1, 3 along axis 1
-    ```
 
 ### **`xnp.take_along_axis(dataclass_instance, indices, axis)`**
 *   Takes values from a dataclass along an axis using indices, similar to `jnp.take_along_axis`.
@@ -214,12 +209,6 @@ print(f"Take along axis shape: {taken_along.shape.batch}")  # (3, 1)
 *   **Behavior**:
     *   Applies `jnp.take_along_axis` to each field.
     *   `indices` array must match the field shape except at the specified `axis`.
-*   **Examples**:
-    ```python
-    data = MyData.default((3, 4))
-    idx = jnp.array([[0, 2, 1, 3]]).T  # shape (4, 1)
-    # result = xnp.take_along_axis(data, idx, axis=1)
-    ```
 
 ### **`xnp.tile(dataclass_instance, reps)`**
 *   Constructs a new dataclass by repeating an instance the number of times given by `reps`.
@@ -247,14 +236,6 @@ print(f"Take along axis shape: {taken_along.shape.batch}")  # (3, 1)
     *   Automatically detects if `values_to_set` is a dataclass or scalar.
     *   If `values_to_set` is a dataclass: applies update field-wise between dataclasses.
     *   If `values_to_set` is a scalar: applies the scalar value to all fields.
-*   **Examples**:
-    ```python
-    # Update with scalar value
-    updated = xnp.update_on_condition(dataclass, indices, condition, -1)
-
-    # Update with another dataclass
-    updated = xnp.update_on_condition(dataclass, indices, condition, new_values)
-    ```
 
 ### **`xnp.reshape(dataclass, new_shape)`**
 *   Wrapper for the dataclass `reshape` method.
@@ -286,6 +267,43 @@ print(f"Take along axis shape: {taken_along.shape.batch}")  # (3, 1)
 *   **Behavior**:
     *   Applies swap operations **only to the batch dimensions** of each field.
     *   Preserves field-specific dimensions.
+
+### **`xnp.expand_dims(dataclass_instance, axis)`**
+*   Inserts a new axis at the specified axis position.
+*   **Input**:
+    *   `dataclass_instance`: The dataclass instance.
+    *   `axis`: Position where new axis is placed.
+*   **Output**: Dataclass instance with expanded dimensions.
+
+### **`xnp.squeeze(dataclass_instance, axis=None)`**
+*   Removes axes of length one from the dataclass.
+*   **Input**:
+    *   `dataclass_instance`: The dataclass instance.
+    *   `axis`: Selects a subset of the single-dimensional entries in the shape.
+*   **Output**: Dataclass instance with squeezed dimensions.
+
+### **`xnp.repeat(dataclass_instance, repeats, axis=None)`**
+*   Repeats elements of a dataclass.
+*   **Input**:
+    *   `dataclass_instance`: The dataclass instance.
+    *   `repeats`: The number of repetitions for each element.
+    *   `axis`: The axis along which to repeat values.
+*   **Output**: Dataclass instance with repeated elements.
+
+### **`xnp.split(dataclass_instance, indices_or_sections, axis=0)`**
+*   Splits a dataclass into multiple sub-dataclasses.
+*   **Input**:
+    *   `dataclass_instance`: The dataclass instance.
+    *   `indices_or_sections`: Integer or array of sorted integers indicating split points.
+    *   `axis`: The axis along which to split.
+*   **Output**: List of sub-dataclasses.
+
+### **`xnp.zeros_like(dataclass_instance)` / `xnp.ones_like(dataclass_instance)` / `xnp.full_like(dataclass_instance, fill_value)`**
+*   Creates a new dataclass with the same structure and shape, filled with zeros, ones, or a specific value.
+*   **Input**:
+    *   `dataclass_instance`: The prototype dataclass instance.
+    *   `fill_value` (for full_like): The value to fill with.
+*   **Output**: New initialized dataclass instance.
 
 ## Import Options
 

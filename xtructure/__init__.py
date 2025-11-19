@@ -1,19 +1,22 @@
-from . import io, numpy, xtructure_numpy
+from . import io, xtructure_numpy
 from .bgpq import BGPQ
 from .core import (
     FieldDescriptor,
     StructuredType,
     Xtructurable,
+    base_dataclass,
     broadcast_intrinsic_shape,
     clone_field_descriptor,
     descriptor_metadata,
-    base_dataclass,
     with_intrinsic_shape,
     xtructure_dataclass,
 )
 from .hashtable import HashIdx, HashTable
 from .queue import Queue
 from .stack import Stack
+
+# Alias xtructure_numpy as numpy for cleaner imports (e.g., from xtructure import numpy as xnp)
+numpy = xtructure_numpy
 
 __all__ = [
     # bgpq.py
@@ -36,7 +39,7 @@ __all__ = [
     "with_intrinsic_shape",
     "broadcast_intrinsic_shape",
     "descriptor_metadata",
-    # numpy.py
+    # numpy alias
     "numpy",
     # xtructure_numpy.py (top-level xnp module)
     "xtructure_numpy",

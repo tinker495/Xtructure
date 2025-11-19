@@ -8,9 +8,15 @@ You can import it as: import xtructure.xtructure_numpy as xnp
 from .core.xtructure_numpy import (
     concat,
     concatenate,
+    expand_dims,
     flatten,
+    full_like,
+    ones_like,
     pad,
+    repeat,
     reshape,
+    split,
+    squeeze,
     stack,
     swap_axes,
     take,
@@ -21,6 +27,7 @@ from .core.xtructure_numpy import (
     update_on_condition,
     where,
     where_no_broadcast,
+    zeros_like,
 )
 
 __all__ = [
@@ -39,4 +46,11 @@ __all__ = [
     "swap_axes",
     "unique_mask",
     "update_on_condition",
+    "expand_dims",
+    "squeeze",
+    "repeat",
+    "split",
+    "zeros_like",
+    "ones_like",
+    "full_like",
 ]

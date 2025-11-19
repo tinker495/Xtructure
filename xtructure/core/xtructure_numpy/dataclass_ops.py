@@ -947,3 +947,121 @@ def swap_axes(dataclass_instance: T, axis1: int, axis2: int) -> T:
             return jnp.swapaxes(field, axis1_norm, axis2_norm)
 
     return jax.tree_util.tree_map(swap_batch_axes_only, dataclass_instance)
+
+
+def expand_dims(dataclass_instance: T, axis: int) -> T:
+    """
+    Insert a new axis that will appear at the axis position in the expanded array shape.
+
+    Args:
+        dataclass_instance: The dataclass instance to expand dimensions.
+        axis: Position in the expanded axes where the new axis (or axes) is placed.
+
+    Returns:
+        A new dataclass instance with expanded dimensions.
+    """
+    return jax.tree_util.tree_map(lambda x: jnp.expand_dims(x, axis=axis), dataclass_instance)
+
+
+def squeeze(dataclass_instance: T, axis: Union[int, tuple[int, ...], None] = None) -> T:
+    """
+    Remove axes of length one from the dataclass.
+
+    Args:
+        dataclass_instance: The dataclass instance to squeeze.
+        axis: Selects a subset of the single-dimensional entries in the shape.
+
+    Returns:
+        A new dataclass instance with squeezed dimensions.
+    """
+    return jax.tree_util.tree_map(lambda x: jnp.squeeze(x, axis=axis), dataclass_instance)
+
+
+def repeat(dataclass_instance: T, repeats: Union[int, jnp.ndarray], axis: int = None) -> T:
+    """
+    Repeat elements of a dataclass.
+
+    Args:
+        dataclass_instance: The dataclass instance to repeat.
+        repeats: The number of repetitions for each element.
+        axis: The axis along which to repeat values.
+
+    Returns:
+        A new dataclass instance with repeated elements.
+    """
+    return jax.tree_util.tree_map(lambda x: jnp.repeat(x, repeats, axis=axis), dataclass_instance)
+
+
+def split(
+    dataclass_instance: T, indices_or_sections: Union[int, jnp.ndarray], axis: int = 0
+) -> List[T]:
+    """
+    Split a dataclass into multiple sub-dataclasses as specified by indices_or_sections.
+
+    Args:
+        dataclass_instance: The dataclass instance to split.
+        indices_or_sections: If an integer, N, the array will be divided into N equal arrays
+            along axis. If an 1-D array of sorted integers, the entries indicate where along
+            axis the array is split.
+        axis: The axis along which to split.
+
+    Returns:
+        A list of sub-dataclasses.
+    """
+    leaves, treedef = jax.tree_util.tree_flatten(dataclass_instance)
+    # Split each leaf array
+    split_leaves = [jnp.split(leaf, indices_or_sections, axis=axis) for leaf in leaves]
+
+    # Transpose: list of splits of leaves -> list of leaves (for each split)
+    # split_leaves is [[part1_leaf1, part2_leaf1], [part1_leaf2, part2_leaf2]]
+    # We want: [[part1_leaf1, part1_leaf2], [part2_leaf1, part2_leaf2]]
+    if not split_leaves:
+        return []
+
+    num_splits = len(split_leaves[0])
+    result_dataclasses = []
+    for i in range(num_splits):
+        new_leaves = [sl[i] for sl in split_leaves]
+        result_dataclasses.append(jax.tree_util.tree_unflatten(treedef, new_leaves))
+
+    return result_dataclasses
+
+
+def full_like(dataclass_instance: T, fill_value: Any) -> T:
+    """
+    Return a new dataclass with the same shape and type as a given dataclass, filled with fill_value.
+
+    Args:
+        dataclass_instance: The prototype dataclass instance.
+        fill_value: Fill value.
+
+    Returns:
+        A new dataclass instance filled with fill_value.
+    """
+    return jax.tree_util.tree_map(lambda x: jnp.full_like(x, fill_value), dataclass_instance)
+
+
+def zeros_like(dataclass_instance: T) -> T:
+    """
+    Return a new dataclass with the same shape and type as a given dataclass, filled with zeros.
+
+    Args:
+        dataclass_instance: The prototype dataclass instance.
+
+    Returns:
+        A new dataclass instance filled with zeros.
+    """
+    return jax.tree_util.tree_map(jnp.zeros_like, dataclass_instance)
+
+
+def ones_like(dataclass_instance: T) -> T:
+    """
+    Return a new dataclass with the same shape and type as a given dataclass, filled with ones.
+
+    Args:
+        dataclass_instance: The prototype dataclass instance.
+
+    Returns:
+        A new dataclass instance filled with ones.
+    """
+    return jax.tree_util.tree_map(jnp.ones_like, dataclass_instance)
