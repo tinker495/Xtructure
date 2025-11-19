@@ -84,10 +84,10 @@ class BenchmarkValue:
     representative workload.
     """
 
-    id: FieldDescriptor[jnp.uint32]
-    timestamp: FieldDescriptor[jnp.uint32]
-    position: FieldDescriptor[jnp.float32, (3,)]
-    embedding: FieldDescriptor[jnp.float16, (128,)]
+    id: FieldDescriptor.scalar(dtype=jnp.uint32)
+    timestamp: FieldDescriptor.scalar(dtype=jnp.uint32)
+    position: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))
+    embedding: FieldDescriptor.tensor(dtype=jnp.float16, shape=(128,))
 
 
 def jax_timer(func: Callable[[], Any], trials: int = 10) -> Tuple[float, float]:

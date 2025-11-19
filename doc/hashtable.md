@@ -11,9 +11,9 @@ from xtructure import HashTable, xtructure_dataclass, FieldDescriptor
 # Define a data structure (as an example from core_concepts.md)
 @xtructure_dataclass
 class MyDataValue:
-    id: FieldDescriptor[jnp.uint32]
-    position: FieldDescriptor[jnp.float32, (3,)]
-    flags: FieldDescriptor[jnp.bool_, (4,)]
+    id: FieldDescriptor.scalar(dtype=jnp.uint32)
+    position: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))
+    flags: FieldDescriptor.tensor(dtype=jnp.bool_, shape=(4,))
 
 
 # 1. Build the HashTable

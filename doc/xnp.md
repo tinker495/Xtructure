@@ -22,14 +22,14 @@ from xtructure import xtructure_numpy as xnp
 # Define example data structures
 @xtructure_dataclass
 class SimpleData:
-    id: FieldDescriptor[jnp.uint32]
-    value: FieldDescriptor[jnp.float32]
+    id: FieldDescriptor.scalar(dtype=jnp.uint32)
+    value: FieldDescriptor.scalar(dtype=jnp.float32)
 
 
 @xtructure_dataclass
 class VectorData:
-    position: FieldDescriptor[jnp.float32, (3,)]
-    velocity: FieldDescriptor[jnp.float32, (3,)]
+    position: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))
+    velocity: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))
 
 
 # 1. Concatenate dataclasses

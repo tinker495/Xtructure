@@ -13,26 +13,26 @@ from xtructure.core.xtructure_decorators.indexing import add_indexing_methods
 # Test data structures
 @xtructure_dataclass
 class SimpleData:
-    id: FieldDescriptor[jnp.uint32]
-    value: FieldDescriptor[jnp.float32]
+    id: FieldDescriptor.scalar(dtype=jnp.uint32)
+    value: FieldDescriptor.scalar(dtype=jnp.float32)
 
 
 @xtructure_dataclass
 class VectorData:
-    position: FieldDescriptor[jnp.float32, (3,)]
-    velocity: FieldDescriptor[jnp.float32, (3,)]
+    position: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))
+    velocity: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))
 
 
 @xtructure_dataclass
 class MatrixData:
-    matrix: FieldDescriptor[jnp.float32, (2, 2)]
-    flags: FieldDescriptor[jnp.bool_, (4,), False]
+    matrix: FieldDescriptor.tensor(dtype=jnp.float32, shape=(2, 2))
+    flags: FieldDescriptor.tensor(dtype=jnp.bool_, shape=(4,), fill_value=False)
 
 
 @xtructure_dataclass
 class NestedData:
-    simple: FieldDescriptor[SimpleData]
-    vector: FieldDescriptor[VectorData]
+    simple: FieldDescriptor.scalar(dtype=SimpleData)
+    vector: FieldDescriptor.scalar(dtype=VectorData)
 
 
 def test_dataclass_default():
@@ -690,22 +690,22 @@ class TestIndexingDecorator(unittest.TestCase):
 
 @xtructure_dataclass(validate=True)
 class ValidatedScalarData:
-    value: FieldDescriptor[jnp.float32]
+    value: FieldDescriptor.scalar(dtype=jnp.float32)
 
 
 @xtructure_dataclass(validate=True)
 class ValidatedVectorData:
-    vector: FieldDescriptor[jnp.float32, (3,)]
+    vector: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))
 
 
 @xtructure_dataclass(validate=True)
 class ValidatedNestedData:
-    simple: FieldDescriptor[SimpleData]
+    simple: FieldDescriptor.scalar(dtype=SimpleData)
 
 
 @xtructure_dataclass(validate=True)
 class ValidatedWithPostInit:
-    value: FieldDescriptor[jnp.float32]
+    value: FieldDescriptor.scalar(dtype=jnp.float32)
 
     def __post_init__(self):
         self.value = self.value + 1.0

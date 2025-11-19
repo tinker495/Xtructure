@@ -20,6 +20,7 @@ def clone_field_descriptor(
     intrinsic_shape: Iterable[int] | Tuple[int, ...] | None = _UNSET,
     fill_value: Any = _UNSET,
     fill_value_factory: Any = _UNSET,
+    validator: Any = _UNSET,
 ) -> FieldDescriptor:
     """
     Create a new FieldDescriptor derived from ``descriptor`` while overriding
@@ -46,11 +47,14 @@ def clone_field_descriptor(
         next_fill_value = fill_value
         next_fill_value_factory = None
 
+    next_validator = descriptor.validator if validator is _UNSET else validator
+
     return FieldDescriptor(
         dtype=next_dtype,
         intrinsic_shape=next_intrinsic_shape,
         fill_value=next_fill_value,
         fill_value_factory=next_fill_value_factory,
+        validator=next_validator,
     )
 
 
@@ -80,5 +84,6 @@ def descriptor_metadata(descriptor: FieldDescriptor) -> dict[str, Any]:
         "intrinsic_shape": descriptor.intrinsic_shape,
         "fill_value": descriptor.fill_value,
         "fill_value_factory": descriptor.fill_value_factory,
+        "validator": descriptor.validator,
     }
 

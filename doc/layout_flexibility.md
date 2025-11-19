@@ -41,8 +41,8 @@ from xtructure import FieldDescriptor, xtructure_dataclass
 
 @xtructure_dataclass
 class AgentState:
-    pos: FieldDescriptor[jnp.float32, (3,)]
-    cost: FieldDescriptor[jnp.float32]
+    pos: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))
+    cost: FieldDescriptor.scalar(dtype=jnp.float32)
 
 
 key = jax.random.PRNGKey(0)

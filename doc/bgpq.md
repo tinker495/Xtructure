@@ -11,8 +11,8 @@ from xtructure import BGPQ, xtructure_dataclass, FieldDescriptor
 # Define a data structure for BGPQ values (as an example from core_concepts.md)
 @xtructure_dataclass
 class MyHeapItem:
-    task_id: FieldDescriptor[jnp.int32]
-    payload: FieldDescriptor[jnp.float64, (2, 2)]
+    task_id: FieldDescriptor.scalar(dtype=jnp.int32)
+    payload: FieldDescriptor.tensor(dtype=jnp.float64, shape=(2, 2))
 
 
 # 1. Build a BGPQ

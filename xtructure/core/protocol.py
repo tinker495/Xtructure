@@ -133,6 +133,10 @@ class Xtructurable(Protocol[T]):
     def load(cls: Type[T], path: str) -> T:
         ...
 
+    # Method added by add_runtime_validation
+    def check_invariants(self) -> None:
+        ...
+
 
 class AtIndexer(Protocol[T]):
     def __getitem__(self: T, index: Any) -> "Updater":

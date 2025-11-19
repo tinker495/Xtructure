@@ -13,9 +13,6 @@ T = TypeVar("T")
 
 def add_runtime_validation(cls: Type[T], *, enabled: bool) -> Type[T]:
     """Inject a post-init validator that checks dtype and trailing shape."""
-    if not enabled:
-        return cls
-
     field_descriptors = get_field_descriptors(cls)
 
     def _validate_array_field(field_name: str, descriptor: FieldDescriptor, value: Any):
@@ -54,9 +51,13 @@ def add_runtime_validation(cls: Type[T], *, enabled: bool) -> Type[T]:
                     f"but got {trailing_shape}."
                 )
 
-    def _validate_instance(instance: T):
+    def check_invariants(self):
         for field_name, descriptor in field_descriptors.items():
-            value = getattr(instance, field_name)
+            value = getattr(self, field_name)
+
+            if descriptor.validator is not None:
+                descriptor.validator(value)
+
             if is_xtructure_class(descriptor.dtype):
                 if not isinstance(value, descriptor.dtype):
                     raise TypeError(
@@ -66,13 +67,17 @@ def add_runtime_validation(cls: Type[T], *, enabled: bool) -> Type[T]:
                 continue
             _validate_array_field(field_name, descriptor, value)
 
+    setattr(cls, "check_invariants", check_invariants)
+
+    if not enabled:
+        return cls
+
     original_init = cls.__init__
 
     @functools.wraps(original_init)
     def _validated_init(self, *args, **kwargs):
         original_init(self, *args, **kwargs)
-        _validate_instance(self)
+        self.check_invariants()
 
     setattr(cls, "__init__", _validated_init)
     return cls
-

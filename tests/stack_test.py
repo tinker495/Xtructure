@@ -8,8 +8,8 @@ from xtructure import FieldDescriptor, Stack, xtructure_dataclass
 
 @xtructure_dataclass
 class Point:
-    x: FieldDescriptor[jnp.uint32]
-    y: FieldDescriptor[jnp.uint32]
+    x: FieldDescriptor.scalar(dtype=jnp.uint32)
+    y: FieldDescriptor.scalar(dtype=jnp.uint32)
 
 
 # Use a much larger max_size for more robust testing

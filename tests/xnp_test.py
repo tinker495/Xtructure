@@ -10,20 +10,20 @@ from xtructure import xtructure_dataclass
 # Test dataclasses for the new operations
 @xtructure_dataclass
 class SimpleData:
-    id: FieldDescriptor[jnp.uint32]
-    value: FieldDescriptor[jnp.float32]
+    id: FieldDescriptor.scalar(dtype=jnp.uint32)
+    value: FieldDescriptor.scalar(dtype=jnp.float32)
 
 
 @xtructure_dataclass
 class VectorData:
-    position: FieldDescriptor[jnp.float32, (3,)]
-    velocity: FieldDescriptor[jnp.float32, (3,)]
+    position: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))
+    velocity: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))
 
 
 @xtructure_dataclass
 class NestedData:
-    simple: FieldDescriptor[SimpleData]
-    vector: FieldDescriptor[VectorData]
+    simple: FieldDescriptor.scalar(dtype=SimpleData)
+    vector: FieldDescriptor.scalar(dtype=VectorData)
 
 
 def test_update_on_condition_basic():
@@ -1172,8 +1172,8 @@ def test_where_no_broadcast_rejects_shape_mismatch():
 class HashableData:
     """Test dataclass with hashable fields for unique_mask testing."""
 
-    id: FieldDescriptor[jnp.uint32]
-    value: FieldDescriptor[jnp.float32]
+    id: FieldDescriptor.scalar(dtype=jnp.uint32)
+    value: FieldDescriptor.scalar(dtype=jnp.float32)
 
 
 def test_unique_mask_basic_uniqueness():

@@ -8,8 +8,8 @@ from xtructure import FieldDescriptor, Queue, xtructure_dataclass
 
 @xtructure_dataclass
 class Point:
-    x: FieldDescriptor[jnp.uint32]
-    y: FieldDescriptor[jnp.uint32]
+    x: FieldDescriptor.scalar(dtype=jnp.uint32)
+    y: FieldDescriptor.scalar(dtype=jnp.uint32)
 
 
 LARGE_MAX_SIZE = 100_000

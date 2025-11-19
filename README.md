@@ -59,8 +59,8 @@ from xtructure import numpy as xnp  # Recommended import method
 # Define a custom data structure using xtructure_dataclass
 @xtructure_dataclass
 class MyDataValue:
-    a: FieldDescriptor[jnp.uint8]
-    b: FieldDescriptor[jnp.uint32, (1, 2)]
+    a: FieldDescriptor.scalar(dtype=jnp.uint8)
+    b: FieldDescriptor.tensor(dtype=jnp.uint32, shape=(1, 2))
 
 
 # --- HashTable Example ---

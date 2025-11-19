@@ -28,13 +28,13 @@ T = TypeVar("T")
 
 @xtructure_dataclass
 class CuckooIdx:
-    index: FieldDescriptor[SIZE_DTYPE]
-    table_index: FieldDescriptor[HASH_TABLE_IDX_DTYPE]
+    index: FieldDescriptor.scalar(dtype=SIZE_DTYPE)
+    table_index: FieldDescriptor.scalar(dtype=HASH_TABLE_IDX_DTYPE)
 
 
 @xtructure_dataclass
 class HashIdx:
-    index: FieldDescriptor[SIZE_DTYPE]
+    index: FieldDescriptor.scalar(dtype=SIZE_DTYPE)
 
 
 def _mix_fingerprint(primary: chex.Array, secondary: chex.Array, length: chex.Array) -> chex.Array:

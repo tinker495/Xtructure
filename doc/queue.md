@@ -11,8 +11,8 @@ from xtructure import Queue, xtructure_dataclass, FieldDescriptor
 # Define a data structure to store in the queue
 @xtructure_dataclass
 class Point:
-    x: FieldDescriptor[jnp.uint32]
-    y: FieldDescriptor[jnp.uint32]
+    x: FieldDescriptor.scalar(dtype=jnp.uint32)
+    y: FieldDescriptor.scalar(dtype=jnp.uint32)
 
 
 # 1. Build the Queue
