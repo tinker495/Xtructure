@@ -19,7 +19,7 @@ A Python package providing JAX-optimized data structures, including a batched pr
 
 Xtructure stores every `@xtructure_dataclass` in **Structure of Arrays (SoA)**
 form for JAX performance, yet exposes **Array of Structures (AoS)** semantics to
-callers. See [Structure Layout Flexibility](./doc/layout_flexibility.md) for the
+callers. See [Structure Layout Flexibility](https://tinker495.github.io/Xtructure/layout_flexibility.html) for the
 full rationale, breakdown of supporting utilities, and a worked example.
 
 ## Installation
@@ -33,15 +33,15 @@ Currently under active development, with frequent updates and potential bug fixe
 
 ## Documentation
 
-Detailed documentation on how to use Xtructure is available in the `doc/` directory:
+Detailed documentation on how to use Xtructure is available at [https://tinker495.github.io/Xtructure/](https://tinker495.github.io/Xtructure/).
 
-*   **[Core Concepts](./doc/core_concepts.md)**: Learn how to define custom data structures using `@xtructure_dataclass` and `FieldDescriptor`.
-*   **[Stack Usage](./doc/stack.md)**: Guide to using the Stack data structure.
-*   **[Queue Usage](./doc/queue.md)**: Guide to using the Queue data structure.
-*   **[BGPQ Usage](./doc/bgpq.md)**: Guide to using the Batched GPU Priority Queue.
-*   **[HashTable Usage](./doc/hashtable.md)**: Guide to using the Cuckoo hash table.
-*   **[Xtructure NumPy Operations](./doc/xnp.md)**: Guide to using `xtructure_numpy` (`xnp`) operations for dataclass manipulation.
-*   **[Structure Layout Flexibility](./doc/layout_flexibility.md)**: How SoA storage and AoS semantics coexist in Xtructure.
+*   **[Core Concepts](https://tinker495.github.io/Xtructure/core_concepts.html)**: Learn how to define custom data structures using `@xtructure_dataclass` and `FieldDescriptor`.
+*   **[Stack Usage](https://tinker495.github.io/Xtructure/stack.html)**: Guide to using the Stack data structure.
+*   **[Queue Usage](https://tinker495.github.io/Xtructure/queue.html)**: Guide to using the Queue data structure.
+*   **[BGPQ Usage](https://tinker495.github.io/Xtructure/bgpq.html)**: Guide to using the Batched GPU Priority Queue.
+*   **[HashTable Usage](https://tinker495.github.io/Xtructure/hashtable.html)**: Guide to using the Cuckoo hash table.
+*   **[Xtructure NumPy Operations](https://tinker495.github.io/Xtructure/xnp.html)**: Guide to using `xtructure_numpy` (`xnp`) operations for dataclass manipulation.
+*   **[Structure Layout Flexibility](https://tinker495.github.io/Xtructure/layout_flexibility.html)**: How SoA storage and AoS semantics coexist in Xtructure.
 
 Quick examples can still be found below for a brief overview.
 
