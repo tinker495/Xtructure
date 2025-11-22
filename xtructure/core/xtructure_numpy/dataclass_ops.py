@@ -569,10 +569,19 @@ def unique_mask(
     if key is not None and len(key) != batch_len:
         raise ValueError(f"key length {len(key)} must match batch_len {batch_len}")
 
+    unique_keys = hash_bytes
+    if filled is not None:
+        # Flatten keys to (batch_len, -1) and append filled status
+        # This ensures that unfilled items (filled=False) are treated as distinct
+        # from filled items (filled=True), preventing invalid data from shadowing valid data.
+        flat_keys = unique_keys.reshape(batch_len, -1)
+        filled_col = filled.reshape(batch_len, 1).astype(flat_keys.dtype)
+        unique_keys = jnp.concatenate([flat_keys, filled_col], axis=1)
+
     # 2. Group by Hash
     # The size argument is crucial for JIT compilation
     _, unique_indices, inv = jnp.unique(
-        hash_bytes,
+        unique_keys,
         axis=0,
         size=batch_len,
         return_index=True,
