@@ -194,3 +194,65 @@ def test_heap_insert_and_delete_random_size(heap_setup, N):
         f"\nincorrect_keys: ({all_keys[jnp.where(decreasing)[0]]},"
         f"{all_keys[jnp.where(decreasing)[0] + 1]})"
     )
+
+
+def test_heap_overflow_eviction():
+    """
+    Test that the heap correctly evicts the lowest priority elements (largest keys)
+    when it is full, even if those elements are not on the default insertion path.
+    """
+    batch_size = 4
+    # branch_size = 3 -> total_size = 12
+    total_size = 12
+    heap = BGPQ.build(total_size, batch_size, XtructureValue, jnp.float32)
+
+    # Initialize keys for 3 batches
+    # 1. 100s (Worst elements)
+    k1 = jnp.full((batch_size,), 100.0, dtype=jnp.float32)
+    v1 = XtructureValue.default((batch_size,))
+
+    # 2. 80s (Best elements, will be at Root)
+    k2 = jnp.full((batch_size,), 80.0, dtype=jnp.float32)
+    v2 = XtructureValue.default((batch_size,))
+
+    # 3. 90s (Middle elements)
+    k3 = jnp.full((batch_size,), 90.0, dtype=jnp.float32)
+    v3 = XtructureValue.default((batch_size,))
+
+    # Insert to fill the heap
+    # Order matters to place 100s off the default path
+    # Path for size=0 -> 0
+    heap = heap.insert(k3, v3)  # Root: 90s
+    # Path for size=1 -> 1 (child)
+    heap = heap.insert(k2, v2)  # Root: 80s, Node 1: 90s
+    # Path for size=2 -> 2 (child)
+    heap = heap.insert(k1, v1)  # Root: 80s, Node 1: 90s, Node 2: 100s
+
+    # Verify state before overflow
+    assert jnp.all(heap.key_store[0] == 80.0)
+    assert jnp.all(heap.key_store[1] == 90.0)
+    assert jnp.all(heap.key_store[2] == 100.0)
+    assert heap.heap_size == 2  # 0-based index of last node (so size is 3 branches)
+
+    # Now insert 95s (Better than 100s, worse than 80s and 90s)
+    k_new = jnp.full((batch_size,), 95.0, dtype=jnp.float32)
+    v_new = XtructureValue.default((batch_size,))
+
+    heap = heap.insert(k_new, v_new)
+
+    # Expectation: 100s should be evicted, 95s should be retained.
+    # Since 100s were at Node 2, and 95s > 80s, 95s should not replace root.
+    # It should eventually find its way to replace 100s.
+
+    # Check all keys in the heap
+    all_keys = heap.key_store.flatten()
+    # Filter out Infs if any (shouldn't be any)
+    valid_keys = all_keys[jnp.isfinite(all_keys)]
+
+    assert jnp.all(valid_keys <= 95.0), f"Found keys > 95.0: {valid_keys[valid_keys > 95.0]}"
+    assert jnp.sum(valid_keys == 95.0) == batch_size, "New keys (95.0) not found in heap"
+    assert jnp.sum(valid_keys == 100.0) == 0, "Old worst keys (100.0) failed to be evicted"
+
+    # Also verify structure (implementation detail check, but good for debugging)
+    # 95s should be at Node 2 now
+    assert jnp.all(heap.key_store[2] == 95.0)

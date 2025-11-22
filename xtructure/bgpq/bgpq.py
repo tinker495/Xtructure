@@ -161,12 +161,8 @@ class BGPQ:
     @property
     def size(self):
         cond = jnp.asarray(self.heap_size == 0, dtype=jnp.bool_)
-        empty_branch = jnp.asarray(
-            jnp.sum(jnp.isfinite(self.key_store[0])) + self.buffer_size
-        )
-        non_empty_branch = jnp.asarray(
-            (self.heap_size + 1) * self.batch_size + self.buffer_size
-        )
+        empty_branch = jnp.asarray(jnp.sum(jnp.isfinite(self.key_store[0])) + self.buffer_size)
+        non_empty_branch = jnp.asarray((self.heap_size + 1) * self.batch_size + self.buffer_size)
         target_dtype = jnp.result_type(empty_branch.dtype, non_empty_branch.dtype)
         return _where_no_broadcast(
             cond,
@@ -262,7 +258,15 @@ class BGPQ:
                 - Updated heap
                 - Boolean indicating if insertion was successful
         """
-        last_node = SIZE_DTYPE(heap.heap_size + 1)
+        is_full = heap.heap_size >= (heap.branch_size - 1)
+
+        def _get_target_full(h):
+            # Find the leaf with the largest max key (worst leaf) to challenge
+            return jnp.argmax(h.key_store[:, -1]).astype(SIZE_DTYPE)
+
+        last_node = jax.lax.cond(
+            is_full, _get_target_full, lambda h: SIZE_DTYPE(h.heap_size + 1), heap
+        )
 
         def _cond(var):
             """Continue while not reached last node"""
@@ -290,16 +294,24 @@ class BGPQ:
             ),
         )
 
-        def _size_not_full(heap, keys, values):
-            """Insert remaining elements if heap not full"""
-            heap.key_store = heap.key_store.at[last_node].set(keys)
-            heap.val_store = heap.val_store.at[last_node].set(values)
+        def _update_node(heap, keys, values):
+            # Merge with existing content (handles both Inf for new nodes and values for eviction)
+            head, hvalues, _, _ = merge_sort_split(
+                heap.key_store[last_node], heap.val_store[last_node], keys, values
+            )
+            heap.key_store = heap.key_store.at[last_node].set(head)
+            heap.val_store = heap.val_store.at[last_node].set(hvalues)
             return heap
 
-        added = last_node < heap.branch_size
-        heap = jax.lax.cond(
-            added, _size_not_full, lambda heap, keys, values: heap, heap, keys, values
-        )
+        # If last_node is valid, we update it.
+        # If is_full, last_node is a valid leaf.
+        # If not full, last_node is the next slot.
+        valid_node = last_node < heap.branch_size
+
+        heap = jax.lax.cond(valid_node, _update_node, lambda heap, k, v: heap, heap, keys, values)
+
+        # Only increment size if we filled a NEW node (not full and valid)
+        added = valid_node & (~is_full)
         return heap, added
 
     @jax.jit
