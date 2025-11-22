@@ -209,15 +209,21 @@ def test_heap_overflow_eviction():
     # Initialize keys for 3 batches
     # 1. 100s (Worst elements)
     k1 = jnp.full((batch_size,), 100.0, dtype=jnp.float32)
+    # v1 ID = 1
     v1 = XtructureValue.default((batch_size,))
+    v1.a = jnp.full((batch_size,), 1, dtype=jnp.uint8)
 
     # 2. 80s (Best elements, will be at Root)
     k2 = jnp.full((batch_size,), 80.0, dtype=jnp.float32)
+    # v2 ID = 2
     v2 = XtructureValue.default((batch_size,))
+    v2.a = jnp.full((batch_size,), 2, dtype=jnp.uint8)
 
     # 3. 90s (Middle elements)
     k3 = jnp.full((batch_size,), 90.0, dtype=jnp.float32)
+    # v3 ID = 3
     v3 = XtructureValue.default((batch_size,))
+    v3.a = jnp.full((batch_size,), 3, dtype=jnp.uint8)
 
     # Insert to fill the heap
     # Order matters to place 100s off the default path
@@ -230,13 +236,21 @@ def test_heap_overflow_eviction():
 
     # Verify state before overflow
     assert jnp.all(heap.key_store[0] == 80.0)
+    assert jnp.all(heap.val_store.a[0] == 2)
+
     assert jnp.all(heap.key_store[1] == 90.0)
+    assert jnp.all(heap.val_store.a[1] == 3)
+
     assert jnp.all(heap.key_store[2] == 100.0)
+    assert jnp.all(heap.val_store.a[2] == 1)
+
     assert heap.heap_size == 2  # 0-based index of last node (so size is 3 branches)
 
     # Now insert 95s (Better than 100s, worse than 80s and 90s)
     k_new = jnp.full((batch_size,), 95.0, dtype=jnp.float32)
+    # v_new ID = 4
     v_new = XtructureValue.default((batch_size,))
+    v_new.a = jnp.full((batch_size,), 4, dtype=jnp.uint8)
 
     heap = heap.insert(k_new, v_new)
 
@@ -256,3 +270,48 @@ def test_heap_overflow_eviction():
     # Also verify structure (implementation detail check, but good for debugging)
     # 95s should be at Node 2 now
     assert jnp.all(heap.key_store[2] == 95.0)
+
+    # --- rigorous state verification ---
+
+    # 1. Verify Heap Size invariant
+    # The heap was full (size=2, i.e., 3 batches) before insertion.
+    # After insertion (overflow), it should still be size=2.
+    assert heap.heap_size == 2, f"Heap size changed from 2 to {heap.heap_size}"
+
+    # 2. Verify Buffer Size invariant
+    # We inserted full batches, so buffer should be empty/zero.
+    assert heap.buffer_size == 0, f"Buffer size is {heap.buffer_size}, expected 0"
+
+    # 3. Verify Key-Value integrity
+    # Check that values moved with their keys.
+    # We expect:
+    # Node 0: Key 80, Val ID 2
+    # Node 1: Key 90, Val ID 3
+    # Node 2: Key 95, Val ID 4
+    # (Node 2 was 100/ID 1, should be replaced by 95/ID 4)
+
+    assert jnp.all(
+        heap.val_store.a[0] == 2
+    ), f"Node 0 value mismatch. Expected 2, got {heap.val_store.a[0]}"
+    assert jnp.all(
+        heap.val_store.a[1] == 3
+    ), f"Node 1 value mismatch. Expected 3, got {heap.val_store.a[1]}"
+    assert jnp.all(
+        heap.val_store.a[2] == 4
+    ), f"Node 2 value mismatch. Expected 4, got {heap.val_store.a[2]}"
+
+    # 4. Verify Min-Heap Property
+    # For every node i, key[i] <= key[2*i + 1] and key[i] <= key[2*i + 2]
+    # Indices: 0 (root), 1 (left), 2 (right)
+    # We only need to check 0 vs 1 and 0 vs 2 because 1 and 2 are leaves.
+
+    max_root = jnp.max(heap.key_store[0])
+    min_left = jnp.min(heap.key_store[1])
+    min_right = jnp.min(heap.key_store[2])
+
+    assert (
+        max_root <= min_left
+    ), f"Heap property violated: Root max {max_root} > Left min {min_left}"
+    assert (
+        max_root <= min_right
+    ), f"Heap property violated: Root max {max_root} > Right min {min_right}"
