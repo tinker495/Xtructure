@@ -384,19 +384,24 @@ class HashTable:
         probe_steps: chex.Array,
         fingerprints: chex.Array,
         founds: chex.Array,
+        active: chex.Array | None = None,
     ) -> tuple[CuckooIdx, chex.Array]:
         """
         Internal lookup method that searches for states in the table in parallel.
         Uses cuckoo hashing technique to check multiple possible locations.
         """
+        if active is None:
+            active = jnp.ones(inputs.shape.batch, dtype=jnp.bool_)
 
         def _lu(
+            table: "HashTable",
             input: Xtructurable,
             input_uint32ed: chex.Array,
             idx: CuckooIdx,
             probe_step: chex.Array,
             fingerprint: chex.Array,
             found: bool,
+            active: bool,
         ) -> tuple[CuckooIdx, bool]:
             probe_step = jnp.asarray(probe_step, dtype=SIZE_DTYPE)
             capacity = jnp.asarray(table._capacity, dtype=SIZE_DTYPE)
@@ -423,7 +428,7 @@ class HashTable:
                 idx, found = val
                 filled_idx = table.table_idx[idx.index]
                 in_empty = idx.table_index >= filled_idx
-                return jnp.logical_and(~found, ~in_empty)
+                return jnp.logical_and(active, jnp.logical_and(~found, ~in_empty))
 
             def _body(val: tuple[CuckooIdx, bool]) -> tuple[CuckooIdx, bool]:
                 idx, found = val
@@ -455,6 +460,14 @@ class HashTable:
                 )
                 return updated_idx, new_found
 
+            # Guard initial access with active check to avoid potential issues
+            # However, we don't want to use cond if possible.
+            # If active is False, we just want to proceed to return (idx, False).
+            # The loop _cond will check active and terminate immediately.
+            # So we just need to handle the initial check.
+
+            # We can skip initial check logic if we are careful, or just execute it masking result.
+
             flat_index = idx.index * table.cuckoo_table_n + idx.table_index
             state = table.table[flat_index]
             is_filled = idx.table_index < table.table_idx[idx.index]
@@ -472,36 +485,61 @@ class HashTable:
             )
 
             found = jnp.logical_or(found, initial_equal)
+            # If not active, force found=False before loop?
+            # No, found is passed in. If active=False, we assume caller handles output usage.
+            # But we should ensure we don't return True for inactive.
+            found = jnp.logical_and(found, active)
+
             idx, found = jax.lax.while_loop(_cond, _body, (idx, found))
             return idx, found
 
-        idxs, founds = jax.vmap(_lu, in_axes=(0, 0, 0, 0, 0, 0))(
-            inputs, input_uint32eds, idxs, probe_steps, fingerprints, founds
+        table_in_axes = jax.tree_util.tree_map(lambda _: None, table)
+        idxs, founds = jax.vmap(_lu, in_axes=(table_in_axes, 0, 0, 0, 0, 0, 0, 0))(
+            table, inputs, input_uint32eds, idxs, probe_steps, fingerprints, founds, active
         )
         return idxs, founds
 
     @jax.jit
-    def lookup_parallel(table: "HashTable", inputs: Xtructurable) -> tuple[HashIdx, chex.Array]:
+    def lookup_parallel(
+        table: "HashTable", inputs: Xtructurable, filled: chex.Array | bool = True
+    ) -> tuple[HashIdx, chex.Array]:
         """
         Finds the state in the hash table using Cuckoo hashing.
 
         Returns `(HashIdx, found_mask)` per input.
         """
-        initial_idx, steps, input_uint32eds, fingerprints = jax.vmap(
-            get_new_idx_byterized, in_axes=(0, None, None)
-        )(inputs, table._capacity, table.seed)
-
+        filled = jnp.asarray(filled)
         batch_size = inputs.shape.batch
 
-        idxs = CuckooIdx(
-            index=initial_idx, table_index=jnp.zeros(batch_size, dtype=HASH_TABLE_IDX_DTYPE)
-        )
-        founds = jnp.zeros(batch_size, dtype=jnp.bool_)
+        def _process_batch(filled_mask):
+            initial_idx, steps, input_uint32eds, fingerprints = jax.vmap(
+                get_new_idx_byterized, in_axes=(0, None, None)
+            )(inputs, table._capacity, table.seed)
 
-        idx, found = HashTable._lookup_parallel(
-            table, inputs, input_uint32eds, idxs, steps, fingerprints, founds
-        )
-        return HashIdx(index=idx.index * table.cuckoo_table_n + idx.table_index), found
+            idxs = CuckooIdx(
+                index=initial_idx, table_index=jnp.zeros(batch_size, dtype=HASH_TABLE_IDX_DTYPE)
+            )
+            founds = jnp.zeros(batch_size, dtype=jnp.bool_)
+
+            idx, found = HashTable._lookup_parallel(
+                table, inputs, input_uint32eds, idxs, steps, fingerprints, founds, filled_mask
+            )
+            return HashIdx(index=idx.index * table.cuckoo_table_n + idx.table_index), found
+
+        def _empty_result(_):
+            return (
+                HashIdx(index=jnp.zeros(batch_size, dtype=SIZE_DTYPE)),
+                jnp.zeros(batch_size, dtype=jnp.bool_),
+            )
+
+        if filled.ndim == 0:
+            return jax.lax.cond(
+                filled,
+                lambda: _process_batch(jnp.ones(batch_size, dtype=jnp.bool_)),
+                lambda: _empty_result(None),
+            )
+        else:
+            return _process_batch(filled)
 
     @jax.jit
     def insert(table: "HashTable", input: Xtructurable) -> tuple["HashTable", bool, HashIdx]:
@@ -622,7 +660,7 @@ class HashTable:
     def parallel_insert(
         table: "HashTable",
         inputs: Xtructurable,
-        filled: chex.Array = None,
+        filled: chex.Array | bool = None,
         unique_key: chex.Array = None,
     ):
         """
@@ -640,70 +678,93 @@ class HashTable:
             Tuple of (updated_table, updatable, unique_filled, idx)
         """
         if filled is None:
-            filled = jnp.ones((len(inputs),), dtype=jnp.bool_)
+            filled = jnp.ones(inputs.shape.batch, dtype=jnp.bool_)
 
-        # Get initial indices, probe steps, and byte representations
-        initial_idx, steps, uint32eds, fingerprints = jax.vmap(
-            get_new_idx_byterized, in_axes=(0, None, None)
-        )(inputs, table._capacity, table.seed)
+        filled = jnp.asarray(filled)
+        batch_len = inputs.shape.batch
 
-        batch_len = filled.shape[0]
+        def _process_insert(filled_mask):
+            # Get initial indices, probe steps, and byte representations
+            initial_idx, steps, uint32eds, fingerprints = jax.vmap(
+                get_new_idx_byterized, in_axes=(0, None, None)
+            )(inputs, table._capacity, table.seed)
 
-        unique_filled, representative_indices = _compute_unique_mask_from_uint32eds(
-            uint32eds=uint32eds,
-            filled=filled,
-            unique_key=unique_key,
-        )
+            unique_filled, representative_indices = _compute_unique_mask_from_uint32eds(
+                uint32eds=uint32eds,
+                filled=filled_mask,
+                unique_key=unique_key,
+            )
 
-        # Look up each state
-        idx = CuckooIdx(
-            index=initial_idx, table_index=jnp.zeros((batch_len,), dtype=HASH_TABLE_IDX_DTYPE)
-        )
+            # Look up each state
+            idx = CuckooIdx(
+                index=initial_idx, table_index=jnp.zeros(batch_len, dtype=HASH_TABLE_IDX_DTYPE)
+            )
 
-        initial_found = jnp.logical_not(unique_filled)
-        idx, found = HashTable._lookup_parallel(
-            table, inputs, uint32eds, idx, steps, fingerprints, initial_found
-        )
+            initial_found = jnp.logical_not(unique_filled)
+            idx, found = HashTable._lookup_parallel(
+                table, inputs, uint32eds, idx, steps, fingerprints, initial_found
+            )
 
-        updatable = jnp.logical_and(~found, unique_filled)
+            updatable = jnp.logical_and(~found, unique_filled)
 
-        # Perform parallel insertion
-        table, inserted_idx = HashTable._parallel_insert(
-            table, inputs, uint32eds, steps, idx, updatable, fingerprints
-        )
+            # Perform parallel insertion
+            updated_table, inserted_idx = HashTable._parallel_insert(
+                table, inputs, uint32eds, steps, idx, updatable, fingerprints
+            )
 
-        # Provisional index selection
-        cond_found = jnp.asarray(found, dtype=jnp.bool_)
+            # Provisional index selection
+            cond_found = jnp.asarray(found, dtype=jnp.bool_)
 
-        inserted_index = jnp.asarray(inserted_idx.index, dtype=idx.index.dtype)
-        inserted_table_index = jnp.asarray(inserted_idx.table_index, dtype=idx.table_index.dtype)
-        current_index = jnp.asarray(idx.index)
-        current_table_index = jnp.asarray(idx.table_index)
+            inserted_index = jnp.asarray(inserted_idx.index, dtype=idx.index.dtype)
+            inserted_table_index = jnp.asarray(
+                inserted_idx.table_index, dtype=idx.table_index.dtype
+            )
+            current_index = jnp.asarray(idx.index)
+            current_table_index = jnp.asarray(idx.table_index)
 
-        provisional_index = _where_no_broadcast(
-            cond_found,
-            current_index,
-            inserted_index,
-        )
-        provisional_table_index = _where_no_broadcast(
-            cond_found,
-            current_table_index,
-            inserted_table_index,
-        )
-        provisional_idx = CuckooIdx(index=provisional_index, table_index=provisional_table_index)
+            provisional_index = _where_no_broadcast(
+                cond_found,
+                current_index,
+                inserted_index,
+            )
+            provisional_table_index = _where_no_broadcast(
+                cond_found,
+                current_table_index,
+                inserted_table_index,
+            )
+            provisional_idx = CuckooIdx(
+                index=provisional_index, table_index=provisional_table_index
+            )
 
-        representative_indices = jnp.asarray(representative_indices, dtype=jnp.int32)
-        final_idx = CuckooIdx(
-            index=provisional_idx.index[representative_indices],
-            table_index=provisional_idx.table_index[representative_indices],
-        )
+            representative_indices = jnp.asarray(representative_indices, dtype=jnp.int32)
+            final_idx = CuckooIdx(
+                index=provisional_idx.index[representative_indices],
+                table_index=provisional_idx.table_index[representative_indices],
+            )
 
-        return (
-            table,
-            updatable,
-            unique_filled,
-            HashIdx(index=final_idx.index * table.cuckoo_table_n + final_idx.table_index),
-        )
+            return (
+                updated_table,
+                updatable,
+                unique_filled,
+                HashIdx(index=final_idx.index * table.cuckoo_table_n + final_idx.table_index),
+            )
+
+        def _empty_insert(_):
+            return (
+                table,
+                jnp.zeros(batch_len, dtype=jnp.bool_),
+                jnp.zeros(batch_len, dtype=jnp.bool_),
+                HashIdx(index=jnp.zeros(batch_len, dtype=SIZE_DTYPE)),
+            )
+
+        if filled.ndim == 0:
+            return jax.lax.cond(
+                filled,
+                lambda: _process_insert(jnp.ones(batch_len, dtype=jnp.bool_)),
+                lambda: _empty_insert(None),
+            )
+        else:
+            return _process_insert(filled)
 
     @jax.jit
     def __getitem__(self, idx: HashIdx) -> Xtructurable:
