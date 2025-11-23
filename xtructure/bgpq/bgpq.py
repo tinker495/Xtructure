@@ -88,6 +88,270 @@ def _next(current, target):
     return next_index_1based - 1
 
 
+@partial(jax.jit, static_argnums=(0, 1, 2, 3))
+def _bgpq_build_jit(total_size, batch_size, value_class=Xtructurable, key_dtype=jnp.float16):
+    total_size = total_size
+    # Calculate branch size, rounding up if total_size not divisible by batch_size
+    branch_size = (
+        total_size // batch_size if total_size % batch_size == 0 else total_size // batch_size + 1
+    )
+    max_size = branch_size * batch_size
+    heap_size = SIZE_DTYPE(0)
+    buffer_size = SIZE_DTYPE(0)
+
+    # Initialize storage arrays with infinity for unused slots
+    key_store = jnp.full((branch_size, batch_size), jnp.inf, dtype=key_dtype)
+    val_store = value_class.default((branch_size, batch_size))
+    key_buffer = jnp.full((batch_size - 1,), jnp.inf, dtype=key_dtype)
+    val_buffer = value_class.default((batch_size - 1,))
+
+    return BGPQ(
+        max_size=max_size,
+        heap_size=heap_size,
+        buffer_size=buffer_size,
+        branch_size=branch_size,
+        batch_size=batch_size,
+        key_store=key_store,
+        val_store=val_store,
+        key_buffer=key_buffer,
+        val_buffer=val_buffer,
+    )
+
+
+@jax.jit
+def _bgpq_merge_buffer_jit(heap: "BGPQ", blockk: chex.Array, blockv: Xtructurable):
+    n = blockk.shape[0]
+    # Concatenate block and buffer
+    sorted_key, sorted_idx = merge_array_backend(blockk, heap.key_buffer)
+    val = xnp.concatenate([blockv, heap.val_buffer], axis=0)
+    val = val[sorted_idx]
+
+    # Check for active elements (non-infinity)
+    filled = jnp.isfinite(sorted_key)
+    n_filled = jnp.sum(filled)
+    buffer_overflow = n_filled >= n
+
+    def overflowed(key, val):
+        """Handle case where buffer overflows"""
+        return key[:n], val[:n], key[n:], val[n:]
+
+    def not_overflowed(key, val):
+        return key[-n:], val[-n:], key[:-n], val[:-n]
+
+    blockk, blockv, key_buffer, val_buffer = jax.lax.cond(
+        buffer_overflow,
+        overflowed,
+        not_overflowed,
+        sorted_key,
+        val,
+    )
+
+    buffer_size = jnp.sum(jnp.isfinite(key_buffer), dtype=SIZE_DTYPE)
+    heap = heap.replace(key_buffer=key_buffer, val_buffer=val_buffer, buffer_size=buffer_size)
+    return heap, blockk, blockv, buffer_overflow
+
+
+@partial(jax.jit, static_argnums=(2))
+def _bgpq_make_batched_jit(key: chex.Array, val: Xtructurable, batch_size: int):
+    n = key.shape[0]
+    # Pad arrays to match batch size
+    key = jnp.pad(key, (0, batch_size - n), mode="constant", constant_values=jnp.inf)
+    val = xnp.pad(val, (0, batch_size - n))
+    return key, val
+
+
+def _bgpq_insert_heapify_internal(heap: "BGPQ", block_key: chex.Array, block_val: Xtructurable):
+    is_full = heap.heap_size >= (heap.branch_size - 1)
+
+    def _get_target_full(h):
+        # Find the leaf with the largest max key (worst leaf) to challenge
+        return jnp.argmax(h.key_store[:, -1]).astype(SIZE_DTYPE)
+
+    last_node = jax.lax.cond(is_full, _get_target_full, lambda h: SIZE_DTYPE(h.heap_size + 1), heap)
+
+    def _cond(var):
+        """Continue while not reached last node"""
+        _, _, _, n = var
+        return n < last_node
+
+    def insert_heapify(var):
+        """Perform one step of heapification"""
+        heap, keys, values, n = var
+        head, hvalues, keys, values = merge_sort_split(
+            heap.key_store[n], heap.val_store[n], keys, values
+        )
+        # To maintain purity, we need to update the heap instance properly.
+        # But here heap is being updated in a loop.
+        # We can update the components.
+        new_key_store = heap.key_store.at[n].set(head)
+        new_val_store = heap.val_store.at[n].set(hvalues)
+        heap = heap.replace(key_store=new_key_store, val_store=new_val_store)
+        return heap, keys, values, _next(n, last_node)
+
+    heap, keys, values, _ = jax.lax.while_loop(
+        _cond,
+        insert_heapify,
+        (
+            heap,
+            block_key,
+            block_val,
+            _next(SIZE_DTYPE(0), last_node),
+        ),
+    )
+
+    def _update_node(heap, keys, values):
+        # Merge with existing content (handles both Inf for new nodes and values for eviction)
+        head, hvalues, _, _ = merge_sort_split(
+            heap.key_store[last_node], heap.val_store[last_node], keys, values
+        )
+        new_key_store = heap.key_store.at[last_node].set(head)
+        new_val_store = heap.val_store.at[last_node].set(hvalues)
+        return heap.replace(key_store=new_key_store, val_store=new_val_store)
+
+    # If last_node is valid, we update it.
+    # If is_full, last_node is a valid leaf.
+    # If not full, last_node is the next slot.
+    valid_node = last_node < heap.branch_size
+
+    heap = jax.lax.cond(valid_node, _update_node, lambda heap, k, v: heap, heap, keys, values)
+
+    # Only increment size if we filled a NEW node (not full and valid)
+    added = valid_node & (~is_full)
+    return heap, added
+
+
+@jax.jit
+def _bgpq_insert_jit(heap: "BGPQ", block_key: chex.Array, block_val: Xtructurable):
+    block_key, block_val = sort_arrays(block_key, block_val)
+    # Merge with root node
+    root_key, root_val, block_key, block_val = merge_sort_split(
+        heap.key_store[0], heap.val_store[0], block_key, block_val
+    )
+    heap = heap.replace(
+        key_store=heap.key_store.at[0].set(root_key), val_store=heap.val_store.at[0].set(root_val)
+    )
+
+    # Handle buffer overflow
+    heap, block_key, block_val, buffer_overflow = _bgpq_merge_buffer_jit(heap, block_key, block_val)
+
+    # Perform heapification if needed
+    heap, added = jax.lax.cond(
+        buffer_overflow,
+        _bgpq_insert_heapify_internal,
+        lambda heap, block_key, block_val: (heap, False),
+        heap,
+        block_key,
+        block_val,
+    )
+    heap = heap.replace(heap_size=SIZE_DTYPE(heap.heap_size + added))
+    return heap
+
+
+def _bgpq_delete_heapify_internal(heap: "BGPQ"):
+    last = heap.heap_size
+    heap = heap.replace(heap_size=SIZE_DTYPE(last - 1))
+
+    # Move last node to root and clear last position
+    last_key = heap.key_store[last]
+    last_val = heap.val_store[last]
+
+    root_key, root_val, key_buffer, val_buffer = merge_sort_split(
+        last_key, last_val, heap.key_buffer, heap.val_buffer
+    )
+    heap = heap.replace(key_buffer=key_buffer, val_buffer=val_buffer)
+
+    inf_row = jnp.full_like(last_key, jnp.inf)
+    key_indices = jnp.array([last, SIZE_DTYPE(0)], dtype=jnp.int32)
+    key_updates = jnp.stack((inf_row, root_key), axis=0)
+    heap = heap.replace(
+        key_store=heap.key_store.at[key_indices].set(key_updates),
+        val_store=heap.val_store.at[0].set(root_val),
+    )
+
+    def _lr(n):
+        """Get left and right child indices"""
+        left_child = n * 2 + 1
+        right_child = n * 2 + 2
+        return left_child, right_child
+
+    def _cond(var):
+        """Continue while heap property is violated"""
+        heap, c, l, r = var
+        max_c = heap.key_store[c][-1]
+        min_l = heap.key_store[l][0]
+        min_r = heap.key_store[r][0]
+        min_lr = jnp.minimum(min_l, min_r)
+        return max_c > min_lr
+
+    def _f(var):
+        """Perform one step of heapification"""
+        heap, current_node, left_child, right_child = var
+        max_left_child = heap.key_store[left_child][-1]
+        max_right_child = heap.key_store[right_child][-1]
+
+        # Choose child with smaller key
+        x, y = jax.lax.cond(
+            max_left_child > max_right_child,
+            lambda: (left_child, right_child),
+            lambda: (right_child, left_child),
+        )
+
+        # Merge and swap nodes
+        ky, vy, kx, vx = merge_sort_split(
+            heap.key_store[left_child],
+            heap.val_store[left_child],
+            heap.key_store[right_child],
+            heap.val_store[right_child],
+        )
+        kc, vc, ky, vy = merge_sort_split(
+            heap.key_store[current_node], heap.val_store[current_node], ky, vy
+        )
+        key_indices = jnp.stack((y, current_node, x)).astype(jnp.int32)
+        key_updates = jnp.stack((ky, kc, kx), axis=0)
+        new_key_store = heap.key_store.at[key_indices].set(key_updates)
+
+        val_indices = key_indices
+        val_updates = xnp.stack((vy, vc, vx), axis=0)
+        new_val_store = heap.val_store.at[val_indices].set(val_updates)
+
+        heap = heap.replace(key_store=new_key_store, val_store=new_val_store)
+
+        nc = y
+        nl, nr = _lr(y)
+        return heap, nc, nl, nr
+
+    c = SIZE_DTYPE(0)
+    l, r = _lr(c)
+    heap, _, _, _ = jax.lax.while_loop(_cond, _f, (heap, c, l, r))
+    return heap
+
+
+@jax.jit
+def _bgpq_delete_mins_jit(heap: "BGPQ"):
+    min_keys = heap.key_store[0]
+    min_values = heap.val_store[0]
+
+    def make_empty(heap: "BGPQ"):
+        """Handle case where heap becomes empty"""
+        root_key, root_val, key_buffer, val_buffer = merge_sort_split(
+            jnp.full_like(heap.key_store[0], jnp.inf),
+            heap.val_store[0],
+            heap.key_buffer,
+            heap.val_buffer,
+        )
+        heap = heap.replace(
+            key_store=heap.key_store.at[0].set(root_key),
+            val_store=heap.val_store.at[0].set(root_val),
+            buffer_size=SIZE_DTYPE(0),
+            key_buffer=key_buffer,
+            val_buffer=val_buffer,
+        )
+        return heap
+
+    heap = jax.lax.cond(heap.heap_size == 0, make_empty, _bgpq_delete_heapify_internal, heap)
+    return heap, min_keys, min_values
+
+
 @base_dataclass
 class BGPQ:
     """
@@ -116,8 +380,7 @@ class BGPQ:
     val_buffer: Xtructurable  # shape = (batch_size - 1, ...)
 
     @staticmethod
-    @partial(jax.jit, static_argnums=(0, 1, 2, 3))
-    def build(total_size, batch_size, value_class=Xtructurable, key_dtype=jnp.float16):
+    def build(total_size, batch_size, value_class=Xtructurable, key_dtype=jnp.float16) -> "BGPQ":
         """
         Create a new BGPQ instance with specified capacity.
 
@@ -129,34 +392,7 @@ class BGPQ:
         Returns:
             BGPQ: A new priority queue instance initialized with empty storage
         """
-        total_size = total_size
-        # Calculate branch size, rounding up if total_size not divisible by batch_size
-        branch_size = (
-            total_size // batch_size
-            if total_size % batch_size == 0
-            else total_size // batch_size + 1
-        )
-        max_size = branch_size * batch_size
-        heap_size = SIZE_DTYPE(0)
-        buffer_size = SIZE_DTYPE(0)
-
-        # Initialize storage arrays with infinity for unused slots
-        key_store = jnp.full((branch_size, batch_size), jnp.inf, dtype=key_dtype)
-        val_store = value_class.default((branch_size, batch_size))
-        key_buffer = jnp.full((batch_size - 1,), jnp.inf, dtype=key_dtype)
-        val_buffer = value_class.default((batch_size - 1,))
-
-        return BGPQ(
-            max_size=max_size,
-            heap_size=heap_size,
-            buffer_size=buffer_size,
-            branch_size=branch_size,
-            batch_size=batch_size,
-            key_store=key_store,
-            val_store=val_store,
-            key_buffer=key_buffer,
-            val_buffer=val_buffer,
-        )
+        return _bgpq_build_jit(total_size, batch_size, value_class, key_dtype)
 
     @property
     def size(self):
@@ -170,8 +406,7 @@ class BGPQ:
             non_empty_branch.astype(target_dtype),
         )
 
-    @jax.jit
-    def merge_buffer(heap: "BGPQ", blockk: chex.Array, blockv: Xtructurable):
+    def merge_buffer(self, blockk: chex.Array, blockv: Xtructurable):
         """
         Merge buffer contents with block contents, handling overflow conditions.
 
@@ -192,36 +427,9 @@ class BGPQ:
                 - Updated buffer values
                 - Boolean indicating if buffer overflow occurred
         """
-        n = blockk.shape[0]
-        # Concatenate block and buffer
-        sorted_key, sorted_idx = merge_array_backend(blockk, heap.key_buffer)
-        val = xnp.concatenate([blockv, heap.val_buffer], axis=0)
-        val = val[sorted_idx]
-
-        # Check for active elements (non-infinity)
-        filled = jnp.isfinite(sorted_key)
-        n_filled = jnp.sum(filled)
-        buffer_overflow = n_filled >= n
-
-        def overflowed(key, val):
-            """Handle case where buffer overflows"""
-            return key[:n], val[:n], key[n:], val[n:]
-
-        def not_overflowed(key, val):
-            return key[-n:], val[-n:], key[:-n], val[:-n]
-
-        blockk, blockv, heap.key_buffer, heap.val_buffer = jax.lax.cond(
-            buffer_overflow,
-            overflowed,
-            not_overflowed,
-            sorted_key,
-            val,
-        )
-        heap.buffer_size = jnp.sum(jnp.isfinite(heap.key_buffer), dtype=SIZE_DTYPE)
-        return heap, blockk, blockv, buffer_overflow
+        return _bgpq_merge_buffer_jit(self, blockk, blockv)
 
     @staticmethod
-    @partial(jax.jit, static_argnums=(2))
     def make_batched(key: chex.Array, val: Xtructurable, batch_size: int):
         """
         Convert unbatched arrays into batched format suitable for the queue.
@@ -236,92 +444,14 @@ class BGPQ:
                 - Batched key array
                 - Batched value array
         """
-        n = key.shape[0]
-        # Pad arrays to match batch size
-        key = jnp.pad(key, (0, batch_size - n), mode="constant", constant_values=jnp.inf)
-        val = xnp.pad(val, (0, batch_size - n))
-        return key, val
+        return _bgpq_make_batched_jit(key, val, batch_size)
 
-    @staticmethod
-    def _insert_heapify(heap: "BGPQ", block_key: chex.Array, block_val: Xtructurable):
-        """
-        Internal method to maintain heap property after insertion.
-        Performs heapification by traversing up the tree and merging nodes.
-
-        Args:
-            heap: The priority queue instance
-            block_key: Keys to insert
-            block_val: Values to insert
-
-        Returns:
-            tuple containing:
-                - Updated heap
-                - Boolean indicating if insertion was successful
-        """
-        is_full = heap.heap_size >= (heap.branch_size - 1)
-
-        def _get_target_full(h):
-            # Find the leaf with the largest max key (worst leaf) to challenge
-            return jnp.argmax(h.key_store[:, -1]).astype(SIZE_DTYPE)
-
-        last_node = jax.lax.cond(
-            is_full, _get_target_full, lambda h: SIZE_DTYPE(h.heap_size + 1), heap
-        )
-
-        def _cond(var):
-            """Continue while not reached last node"""
-            _, _, _, n = var
-            return n < last_node
-
-        def insert_heapify(var):
-            """Perform one step of heapification"""
-            heap, keys, values, n = var
-            head, hvalues, keys, values = merge_sort_split(
-                heap.key_store[n], heap.val_store[n], keys, values
-            )
-            heap.key_store = heap.key_store.at[n].set(head)
-            heap.val_store = heap.val_store.at[n].set(hvalues)
-            return heap, keys, values, _next(n, last_node)
-
-        heap, keys, values, _ = jax.lax.while_loop(
-            _cond,
-            insert_heapify,
-            (
-                heap,
-                block_key,
-                block_val,
-                _next(SIZE_DTYPE(0), last_node),
-            ),
-        )
-
-        def _update_node(heap, keys, values):
-            # Merge with existing content (handles both Inf for new nodes and values for eviction)
-            head, hvalues, _, _ = merge_sort_split(
-                heap.key_store[last_node], heap.val_store[last_node], keys, values
-            )
-            heap.key_store = heap.key_store.at[last_node].set(head)
-            heap.val_store = heap.val_store.at[last_node].set(hvalues)
-            return heap
-
-        # If last_node is valid, we update it.
-        # If is_full, last_node is a valid leaf.
-        # If not full, last_node is the next slot.
-        valid_node = last_node < heap.branch_size
-
-        heap = jax.lax.cond(valid_node, _update_node, lambda heap, k, v: heap, heap, keys, values)
-
-        # Only increment size if we filled a NEW node (not full and valid)
-        added = valid_node & (~is_full)
-        return heap, added
-
-    @jax.jit
-    def insert(heap: "BGPQ", block_key: chex.Array, block_val: Xtructurable):
+    def insert(self, block_key: chex.Array, block_val: Xtructurable) -> "BGPQ":
         """
         Insert new elements into the priority queue.
         Maintains heap property through merge operations and heapification.
 
         Args:
-            heap: The priority queue instance
             block_key: Keys to insert
             block_val: Values to insert
             added_size: Optional size of insertion (calculated if None)
@@ -329,120 +459,11 @@ class BGPQ:
         Returns:
             Updated heap instance
         """
-        block_key, block_val = sort_arrays(block_key, block_val)
-        # Merge with root node
-        root_key, root_val, block_key, block_val = merge_sort_split(
-            heap.key_store[0], heap.val_store[0], block_key, block_val
-        )
-        heap.key_store = heap.key_store.at[0].set(root_key)
-        heap.val_store = heap.val_store.at[0].set(root_val)
+        return _bgpq_insert_jit(self, block_key, block_val)
 
-        # Handle buffer overflow
-        heap, block_key, block_val, buffer_overflow = heap.merge_buffer(block_key, block_val)
-
-        # Perform heapification if needed
-        heap, added = jax.lax.cond(
-            buffer_overflow,
-            BGPQ._insert_heapify,
-            lambda heap, block_key, block_val: (heap, False),
-            heap,
-            block_key,
-            block_val,
-        )
-        heap.heap_size = SIZE_DTYPE(heap.heap_size + added)
-        return heap
-
-    @staticmethod
-    def delete_heapify(heap: "BGPQ"):
-        """
-        Maintain heap property after deletion of minimum elements.
-
-        Args:
-            heap: The priority queue instance
-
-        Returns:
-            Updated heap instance
-        """
-
-        last = heap.heap_size
-        heap.heap_size = SIZE_DTYPE(last - 1)
-
-        # Move last node to root and clear last position
-        last_key = heap.key_store[last]
-        last_val = heap.val_store[last]
-
-        root_key, root_val, heap.key_buffer, heap.val_buffer = merge_sort_split(
-            last_key, last_val, heap.key_buffer, heap.val_buffer
-        )
-
-        inf_row = jnp.full_like(last_key, jnp.inf)
-        key_indices = jnp.array([last, SIZE_DTYPE(0)], dtype=jnp.int32)
-        key_updates = jnp.stack((inf_row, root_key), axis=0)
-        heap.key_store = heap.key_store.at[key_indices].set(key_updates)
-        heap.val_store = heap.val_store.at[0].set(root_val)
-
-        def _lr(n):
-            """Get left and right child indices"""
-            left_child = n * 2 + 1
-            right_child = n * 2 + 2
-            return left_child, right_child
-
-        def _cond(var):
-            """Continue while heap property is violated"""
-            heap, c, l, r = var
-            max_c = heap.key_store[c][-1]
-            min_l = heap.key_store[l][0]
-            min_r = heap.key_store[r][0]
-            min_lr = jnp.minimum(min_l, min_r)
-            return max_c > min_lr
-
-        def _f(var):
-            """Perform one step of heapification"""
-            heap, current_node, left_child, right_child = var
-            max_left_child = heap.key_store[left_child][-1]
-            max_right_child = heap.key_store[right_child][-1]
-
-            # Choose child with smaller key
-            x, y = jax.lax.cond(
-                max_left_child > max_right_child,
-                lambda: (left_child, right_child),
-                lambda: (right_child, left_child),
-            )
-
-            # Merge and swap nodes
-            ky, vy, kx, vx = merge_sort_split(
-                heap.key_store[left_child],
-                heap.val_store[left_child],
-                heap.key_store[right_child],
-                heap.val_store[right_child],
-            )
-            kc, vc, ky, vy = merge_sort_split(
-                heap.key_store[current_node], heap.val_store[current_node], ky, vy
-            )
-            key_indices = jnp.stack((y, current_node, x)).astype(jnp.int32)
-            key_updates = jnp.stack((ky, kc, kx), axis=0)
-            heap.key_store = heap.key_store.at[key_indices].set(key_updates)
-
-            val_indices = key_indices
-            val_updates = xnp.stack((vy, vc, vx), axis=0)
-            heap.val_store = heap.val_store.at[val_indices].set(val_updates)
-
-            nc = y
-            nl, nr = _lr(y)
-            return heap, nc, nl, nr
-
-        c = SIZE_DTYPE(0)
-        l, r = _lr(c)
-        heap, _, _, _ = jax.lax.while_loop(_cond, _f, (heap, c, l, r))
-        return heap
-
-    @jax.jit
-    def delete_mins(heap: "BGPQ"):
+    def delete_mins(self):
         """
         Remove and return the minimum elements from the queue.
-
-        Args:
-            heap: The priority queue instance
 
         Returns:
             tuple containing:
@@ -450,21 +471,4 @@ class BGPQ:
                 - Array of minimum keys removed
                 - Xtructurable of corresponding values
         """
-        min_keys = heap.key_store[0]
-        min_values = heap.val_store[0]
-
-        def make_empty(heap: "BGPQ"):
-            """Handle case where heap becomes empty"""
-            root_key, root_val, heap.key_buffer, heap.val_buffer = merge_sort_split(
-                jnp.full_like(heap.key_store[0], jnp.inf),
-                heap.val_store[0],
-                heap.key_buffer,
-                heap.val_buffer,
-            )
-            heap.key_store = heap.key_store.at[0].set(root_key)
-            heap.val_store = heap.val_store.at[0].set(root_val)
-            heap.buffer_size = SIZE_DTYPE(0)
-            return heap
-
-        heap = jax.lax.cond(heap.heap_size == 0, make_empty, BGPQ.delete_heapify, heap)
-        return heap, min_keys, min_values
+        return _bgpq_delete_mins_jit(self)

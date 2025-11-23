@@ -8,6 +8,59 @@ from ..core import Xtructurable, base_dataclass
 SIZE_DTYPE = jnp.uint32
 
 
+@partial(jax.jit, static_argnums=(0, 1))
+def _stack_build_jit(max_size: int, value_class: Xtructurable):
+    size = SIZE_DTYPE(0)
+    val_store = value_class.default((max_size,))
+    return Stack(max_size=max_size, size=size, val_store=val_store)
+
+
+@jax.jit
+def _stack_push_jit(stack, items: Xtructurable):
+    batch_size = items.shape.batch
+    if batch_size == ():
+        new_size = stack.size + 1
+        indices = stack.size
+    else:
+        assert len(batch_size) == 1, "Batch size must be 1"
+        new_size = stack.size + batch_size[0]
+        indices = stack.size + jnp.arange(batch_size[0])
+    val_store = stack.val_store.at[indices].set(items)
+    # Since Stack is a dataclass (chex.ArrayTree), we need to return a new instance
+    # or if it's mutable (which it isn't usually in JAX), we construct a new one.
+    # The original code was modifying self attributes which is not pure JAX if it was a python class
+    # but here it's @base_dataclass which is likely a Pytree.
+    # The original code did: self.val_store = ...; return self.
+    # We should reconstruct.
+    return stack.replace(val_store=val_store, size=new_size)
+
+
+@partial(jax.jit, static_argnums=(1,))
+def _stack_pop_jit(stack, num_items: int = 1):
+    new_size = stack.size - num_items
+    if num_items == 1:
+        indices = stack.size - 1
+    else:
+        indices = stack.size - jnp.arange(num_items, 0, -1)
+    popped_items = stack.val_store[indices]
+    return stack.replace(size=new_size), popped_items
+
+
+@partial(jax.jit, static_argnums=(1,))
+def _stack_peek_jit(stack, num_items: int = 1):
+    if num_items == 1:
+        indices = stack.size - 1
+    else:
+        indices = stack.size - jnp.arange(num_items, 0, -1)
+    peeked_items = stack.val_store[indices]
+    return peeked_items
+
+
+@jax.jit
+def _stack_getitem_jit(stack, idx: SIZE_DTYPE) -> Xtructurable:
+    return stack.val_store[idx]
+
+
 @base_dataclass
 class Stack:
     """
@@ -25,8 +78,7 @@ class Stack:
     val_store: Xtructurable
 
     @staticmethod
-    @partial(jax.jit, static_argnums=(0, 1))
-    def build(max_size: int, value_class: Xtructurable):
+    def build(max_size: int, value_class: Xtructurable) -> "Stack":
         """
         Creates a new Stack instance.
 
@@ -38,12 +90,9 @@ class Stack:
         Returns:
             A new, empty Stack instance.
         """
-        size = SIZE_DTYPE(0)
-        val_store = value_class.default((max_size,))
-        return Stack(max_size=max_size, size=size, val_store=val_store)
+        return _stack_build_jit(max_size, value_class)
 
-    @jax.jit
-    def push(self, items: Xtructurable):
+    def push(self, items: Xtructurable) -> "Stack":
         """
         Pushes a batch of items onto the stack.
 
@@ -54,20 +103,9 @@ class Stack:
         Returns:
             A new Stack instance with the items pushed onto it.
         """
-        batch_size = items.shape.batch
-        if batch_size == ():
-            new_size = self.size + 1
-            indices = self.size
-        else:
-            assert len(batch_size) == 1, "Batch size must be 1"
-            new_size = self.size + batch_size[0]
-            indices = self.size + jnp.arange(batch_size[0])
-        self.val_store = self.val_store.at[indices].set(items)
-        self.size = new_size
-        return self
+        return _stack_push_jit(self, items)
 
-    @partial(jax.jit, static_argnums=(1,))
-    def pop(self, num_items: int = 1):
+    def pop(self, num_items: int = 1) -> tuple["Stack", Xtructurable]:
         """
         Pops a number of items from the stack.
 
@@ -79,17 +117,9 @@ class Stack:
                 - A new Stack instance with items removed.
                 - The popped items.
         """
-        new_size = self.size - num_items
-        if num_items == 1:
-            indices = self.size - 1
-        else:
-            indices = self.size - jnp.arange(num_items, 0, -1)
-        popped_items = self.val_store[indices]
-        self.size = new_size
-        return self, popped_items
+        return _stack_pop_jit(self, num_items)
 
-    @partial(jax.jit, static_argnums=(1,))
-    def peek(self, num_items: int = 1):
+    def peek(self, num_items: int = 1) -> Xtructurable:
         """
         Peeks at the top items of the stack without removing them.
 
@@ -99,17 +129,10 @@ class Stack:
         Returns:
             The top `num_items` from the stack.
         """
-        if num_items == 1:
-            indices = self.size - 1
-        else:
-            indices = self.size - jnp.arange(num_items, 0, -1)
-        peeked_items = self.val_store[indices]
-        return peeked_items
+        return _stack_peek_jit(self, num_items)
 
-    @jax.jit
     def __getitem__(self, idx: SIZE_DTYPE) -> Xtructurable:
         """
         Returns the item at the logical stack index (0-based, relative to bottom).
         """
-        # Map logical stack index to actual storage index (bottom = 0, top = size-1)
-        return self.val_store[idx]
+        return _stack_getitem_jit(self, idx)

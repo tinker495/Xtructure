@@ -8,6 +8,62 @@ from ..core import Xtructurable, base_dataclass
 SIZE_DTYPE = jnp.uint32
 
 
+@partial(jax.jit, static_argnums=(0, 1))
+def _queue_build_jit(max_size: int, value_class: Xtructurable):
+    val_store = value_class.default((max_size,))
+    head = SIZE_DTYPE(0)
+    tail = SIZE_DTYPE(0)
+    return Queue(max_size=max_size, val_store=val_store, head=head, tail=tail)
+
+
+@jax.jit
+def _queue_enqueue_jit(queue, items: Xtructurable):
+    batch_size = items.shape.batch
+    if batch_size == ():
+        num_to_enqueue = 1
+        indices = queue.tail
+    else:
+        assert len(batch_size) == 1, "Batch size must be 1"
+        num_to_enqueue = batch_size[0]
+        indices = queue.tail + jnp.arange(num_to_enqueue)
+    val_store = queue.val_store.at[indices].set(items)
+    new_tail = queue.tail + num_to_enqueue
+    return queue.replace(val_store=val_store, tail=new_tail)
+
+
+@partial(jax.jit, static_argnums=(1,))
+def _queue_dequeue_jit(queue, num_items: int = 1):
+    if num_items == 1:
+        indices = queue.head
+    else:
+        indices = queue.head + jnp.arange(num_items)
+
+    dequeued_items = queue.val_store[indices]
+    new_head = queue.head + num_items
+    return queue.replace(head=new_head), dequeued_items
+
+
+@partial(jax.jit, static_argnums=(1,))
+def _queue_peek_jit(queue, num_items: int = 1):
+    if num_items == 1:
+        indices = queue.head
+    else:
+        indices = queue.head + jnp.arange(num_items)
+    peeked_items = queue.val_store[indices]
+    return peeked_items
+
+
+@jax.jit
+def _queue_clear_jit(queue):
+    return queue.replace(head=SIZE_DTYPE(0), tail=SIZE_DTYPE(0))
+
+
+@jax.jit
+def _queue_getitem_jit(queue, idx: SIZE_DTYPE) -> Xtructurable:
+    storage_idx = queue.head + idx
+    return queue.val_store[storage_idx]
+
+
 @base_dataclass
 class Queue:
     """
@@ -31,73 +87,38 @@ class Queue:
         return self.tail - self.head
 
     @staticmethod
-    @partial(jax.jit, static_argnums=(0, 1))
-    def build(max_size: int, value_class: Xtructurable):
+    def build(max_size: int, value_class: Xtructurable) -> "Queue":
         """
         Creates a new Queue instance.
         """
-        val_store = value_class.default((max_size,))
-        head = SIZE_DTYPE(0)
-        tail = SIZE_DTYPE(0)
-        return Queue(max_size=max_size, val_store=val_store, head=head, tail=tail)
+        return _queue_build_jit(max_size, value_class)
 
-    @jax.jit
-    def enqueue(self, items: Xtructurable):
+    def enqueue(self, items: Xtructurable) -> "Queue":
         """
         Enqueues a number of items into the queue.
         """
-        batch_size = items.shape.batch
-        if batch_size == ():
-            num_to_enqueue = 1
-            indices = self.tail
-        else:
-            assert len(batch_size) == 1, "Batch size must be 1"
-            num_to_enqueue = batch_size[0]
-            indices = self.tail + jnp.arange(num_to_enqueue)
-        self.val_store = self.val_store.at[indices].set(items)
-        self.tail = self.tail + num_to_enqueue
-        return self
+        return _queue_enqueue_jit(self, items)
 
-    @partial(jax.jit, static_argnums=(1,))
-    def dequeue(self, num_items: int = 1):
+    def dequeue(self, num_items: int = 1) -> tuple["Queue", Xtructurable]:
         """
         Dequeues a number of items from the queue.
         """
-        if num_items == 1:
-            indices = self.head
-        else:
-            indices = self.head + jnp.arange(num_items)
+        return _queue_dequeue_jit(self, num_items)
 
-        dequeued_items = self.val_store[indices]
-        self.head = self.head + num_items
-        return self, dequeued_items
-
-    @partial(jax.jit, static_argnums=(1,))
-    def peek(self, num_items: int = 1):
+    def peek(self, num_items: int = 1) -> Xtructurable:
         """
         Peeks at the front items of the queue without removing them.
         """
-        if num_items == 1:
-            indices = self.head
-        else:
-            indices = self.head + jnp.arange(num_items)
-        peeked_items = self.val_store[indices]
-        return peeked_items
+        return _queue_peek_jit(self, num_items)
 
-    @jax.jit
-    def clear(self):
+    def clear(self) -> "Queue":
         """
         Clears the queue.
         """
-        self.head = SIZE_DTYPE(0)
-        self.tail = SIZE_DTYPE(0)
-        return self
+        return _queue_clear_jit(self)
 
-    @jax.jit
     def __getitem__(self, idx: SIZE_DTYPE) -> Xtructurable:
         """
         Returns the item at the logical queue index (0-based, relative to head).
         """
-        # Map logical queue index to actual storage index
-        storage_idx = self.head + idx
-        return self.val_store[storage_idx]
+        return _queue_getitem_jit(self, idx)
