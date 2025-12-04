@@ -33,6 +33,10 @@ This will:
 3. Generate performance comparison graphs from the data.
 4. Save the graphs as `.png` image files.
 
+Fairness controls:
+- `--mode kernel` measures just the kernel execution; `--mode e2e` also keeps data marshaling/device transfer costs inside the timed region for both xtructure and Python baselines.
+- Heap benchmarks now default to `--python-heap-insert-mode auto`, timing both bulk heapify and incremental pushes and choosing the faster path as the baseline.
+
 ## Output
 
 All output files are saved in the `xtructure_benchmarks/results/` directory.

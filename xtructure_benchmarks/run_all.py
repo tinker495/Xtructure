@@ -86,6 +86,14 @@ def run_script(script_path: Path, extra_args: Optional[List[str]] = None):
     project_root = Path(__file__).parent.parent
     env["PYTHONPATH"] = str(project_root) + os.pathsep + env.get("PYTHONPATH", "")
 
+    # Enforce deterministic hash seed for fair comparison
+    env["PYTHONHASHSEED"] = "42"
+
+    # Check if we need to enable JAX 64-bit mode
+    # We pass this via environment variable so it's set before any JAX import in the subprocess
+    if "JAX_ENABLE_X64" in os.environ:
+        env["JAX_ENABLE_X64"] = os.environ["JAX_ENABLE_X64"]
+
     try:
         cmd = [sys.executable, str(script_path)]
         if extra_args:
@@ -133,15 +141,27 @@ def main():
     )
     parser.add_argument(
         "--python-heap-insert-mode",
-        choices=["bulk", "incremental"],
-        default="bulk",
+        choices=["auto", "bulk", "incremental"],
+        default="auto",
         help="Choose Python heap insert algorithm for fairness",
+    )
+    parser.add_argument(
+        "--use-float32",
+        action="store_true",
+        help="Use JAX default precision (float32) instead of strict float64 (Default is strict mode)",
     )
     args, _ = parser.parse_known_args()
 
     common_args: List[str] = ["--mode", args.mode, "--trials", str(args.trials)]
     if args.batch_sizes:
         common_args += ["--batch-sizes", args.batch_sizes]
+
+    if not args.use_float32:
+        # Set environment variable for this process and all subprocesses
+        os.environ["JAX_ENABLE_X64"] = "True"
+        print("🚀 Strict Fairness Mode (Default): JAX 64-bit floats ENABLED")
+    else:
+        print("⚠️  Relaxed Mode: Using JAX default precision (float32)")
 
     for script in benchmark_scripts:
         extra = list(common_args)

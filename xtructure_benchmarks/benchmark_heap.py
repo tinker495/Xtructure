@@ -1,7 +1,6 @@
 import argparse
 import heapq
 import json
-import time
 from typing import Any, Dict, List, Optional
 
 import jax
@@ -10,7 +9,13 @@ import jax.numpy as jnp
 from xtructure import BGPQ
 from xtructure_benchmarks.common import (
     BenchmarkValue,
+    check_system_load,
+    get_system_info,
     print_results_table,
+    run_jax_trials,
+    run_python_trials,
+    throughput_stats,
+    to_python_values,
     validate_results_schema,
 )
 
@@ -28,67 +33,32 @@ def key_gen(x: BenchmarkValue) -> float:
 vmapped_key_gen = jax.jit(jax.vmap(key_gen))
 
 
-def benchmark_bgpq_insert(heap: BGPQ, keys: jnp.ndarray, values: BenchmarkValue, trials: int = 10):
+def benchmark_bgpq_insert(
+    heap: BGPQ,
+    keys: jnp.ndarray,
+    values: BenchmarkValue,
+    trials: int = 10,
+    args_supplier=None,
+):
     """Benchmarks the batched insertion into the xtructure BGPQ."""
 
-    def insert_op():
-        return heap.insert(keys, values)
-
-    # JIT compile and warm up
-    jitted_insert = jax.jit(insert_op)
-    new_heap = jitted_insert()
-    jax.block_until_ready(new_heap)
-
-    # Time multiple trials
-    times = []
-    for _ in range(trials):
-        start_time = time.perf_counter()
-        new_heap = jitted_insert()
-        jax.block_until_ready(new_heap)
-        end_time = time.perf_counter()
-        times.append(end_time - start_time)
-
-    import numpy as np
-
-    times = np.array(times)
-    median_time = np.median(times)
-    q75, q25 = np.percentile(times, [75, 25])
-    iqr_time = q75 - q25
-
-    return median_time, iqr_time
+    durations = run_jax_trials(
+        lambda batch_keys, batch_values: heap.insert(batch_keys, batch_values),
+        trials=trials,
+        args_supplier=args_supplier or (lambda: (keys, values)),
+    )
+    return durations
 
 
 def benchmark_bgpq_delete(heap: BGPQ, trials: int = 10, include_host_transfer: bool = False):
     """Benchmarks the batched deletion from the xtructure BGPQ."""
 
-    def delete_op():
-        return BGPQ.delete_mins(heap)
-
-    # JIT compile and warm up
-    jitted_delete = jax.jit(delete_op)
-    new_heap, _, _ = jitted_delete()
-    jax.block_until_ready(new_heap)
-
-    # Time multiple trials
-    times = []
-    for _ in range(trials):
-        start_time = time.perf_counter()
-        new_heap, deleted_keys, deleted_values = jitted_delete()
-        jax.block_until_ready(new_heap)
-        if include_host_transfer:
-            # Include device-to-host transfer cost outside JIT
-            _ = jax.device_get((deleted_keys, deleted_values))
-        end_time = time.perf_counter()
-        times.append(end_time - start_time)
-
-    import numpy as np
-
-    times = np.array(times)
-    median_time = np.median(times)
-    q75, q25 = np.percentile(times, [75, 25])
-    iqr_time = q75 - q25
-
-    return median_time, iqr_time
+    durations = run_jax_trials(
+        lambda: BGPQ.delete_mins(heap),
+        trials=trials,
+        include_device_transfer=include_host_transfer,
+    )
+    return durations
 
 
 def benchmark_heapq_insert(
@@ -99,85 +69,71 @@ def benchmark_heapq_insert(
     include_preprocessing: bool = False,
 ):
     """Benchmarks insertion into Python's heapq."""
-    # Optionally include preprocessing in the timed region
-    if not include_preprocessing:
-        native_keys = keys.tolist()
-        value_bytes = [v.tobytes() for v in jax.vmap(lambda x: x.bytes)(values)]
+    # Precompute equivalent Python objects
+    cached_values = to_python_values(values)
+    cached_keys = jax.device_get(keys).tolist()
 
-    times = []
-    for _ in range(trials):
-        if bulk_mode:
-            # Bulk build using heapify - O(n) instead of O(n log n)
-            nk = keys.tolist() if include_preprocessing else native_keys
-            vb = (
-                [v.tobytes() for v in jax.vmap(lambda x: x.bytes)(values)]
-                if include_preprocessing
-                else value_bytes
+    def payload_supplier():
+        if include_preprocessing:
+            return (
+                jax.device_get(keys).tolist(),
+                to_python_values(values),
             )
-            items = [(nk[i], i, vb[i]) for i in range(len(nk))]
-            start_time = time.perf_counter()
-            heapq.heapify(items)
-            end_time = time.perf_counter()
-        else:
-            # Incremental insert with integer tiebreaker to avoid expensive bytes comparison
-            nk = keys.tolist() if include_preprocessing else native_keys
-            vb = (
-                [v.tobytes() for v in jax.vmap(lambda x: x.bytes)(values)]
-                if include_preprocessing
-                else value_bytes
-            )
-            data_heap = []  # Fresh heap per trial
-            start_time = time.perf_counter()
-            for i in range(len(nk)):
-                heapq.heappush(data_heap, (nk[i], i, vb[i]))
-            end_time = time.perf_counter()
-        times.append(end_time - start_time)
+        return cached_keys, cached_values
 
-    import numpy as np
+    def bulk_op():
+        nk, vals = payload_supplier()
+        # Python's heapq stores (priority, tie_breaker, value)
+        items = [(nk[i], i, vals[i]) for i in range(len(nk))]
+        heapq.heapify(items)
+        return items
 
-    times = np.array(times)
-    median_time = np.median(times)
-    q75, q25 = np.percentile(times, [75, 25])
-    iqr_time = q75 - q25
+    def incremental_op():
+        nk, vals = payload_supplier()
+        data_heap = []  # Fresh heap per trial
+        for i in range(len(nk)):
+            heapq.heappush(data_heap, (nk[i], i, vals[i]))
+        return data_heap
 
-    return median_time, iqr_time
+    op = bulk_op if bulk_mode else incremental_op
+    results_tuple = run_python_trials(op, trials=trials)
+    return throughput_stats(len(cached_keys), results_tuple), op
 
 
 def benchmark_heapq_delete(prototype_heap: List, count: int, trials: int = 10):
     """Benchmarks deletion from Python's heapq."""
 
-    times = []
-    for _ in range(trials):
+    def delete_op():
         data_heap = prototype_heap.copy()  # Fresh copy per trial
-        start_time = time.perf_counter()
         results = []
         for _ in range(count):
             if data_heap:
                 results.append(heapq.heappop(data_heap))
-        end_time = time.perf_counter()
-        times.append(end_time - start_time)
+        return results
 
-    import numpy as np
-
-    times = np.array(times)
-    median_time = np.median(times)
-    q75, q25 = np.percentile(times, [75, 25])
-    iqr_time = q75 - q25
-
-    return median_time, iqr_time
+    results_tuple = run_python_trials(delete_op, trials=trials)
+    return throughput_stats(count, results_tuple)
 
 
 def run_benchmarks(
     mode: str = "kernel",
     trials: int = 10,
     batch_sizes: Optional[List[int]] = None,
-    python_heap_insert_mode: str = "bulk",
+    python_heap_insert_mode: str = "auto",
 ):
     """Runs the full suite of Heap benchmarks and saves the results."""
     # Using smaller batch sizes to ensure completion within a reasonable time
     if batch_sizes is None:
         batch_sizes = [2**10, 2**12, 2**14]
-    results: Dict[str, Any] = {"batch_sizes": batch_sizes, "xtructure": {}, "python": {}}
+
+    check_system_load()
+
+    results: Dict[str, Any] = {
+        "batch_sizes": batch_sizes,
+        "xtructure": {},
+        "python": {},
+        "environment": get_system_info(),
+    }
     max_size = int(max(batch_sizes) * 1.5)
 
     print("Running Heap (BGPQ) Benchmarks...")
@@ -189,82 +145,73 @@ def run_benchmarks(
     for batch_size in batch_sizes:
         print(f"  Batch Size: {batch_size}")
         key = jax.random.PRNGKey(batch_size)
-        values = BenchmarkValue.random(shape=(batch_size,), key=key)
-        keys = vmapped_key_gen(values)
+        values_device = BenchmarkValue.random(shape=(batch_size,), key=key)
+        keys_device = vmapped_key_gen(values_device)
 
         # --- xtructure.BGPQ Benchmark ---
         bgpq_heap = BGPQ.build(max_size, batch_size, BenchmarkValue, jnp.float32)
 
         # We need to make the keys/values batched to the BGPQ batch_size
-        padded_keys, padded_values = BGPQ.make_batched(keys, values, batch_size)
+        padded_keys, padded_values = BGPQ.make_batched(keys_device, values_device, batch_size)
+        padded_keys_host = jax.device_get(padded_keys)
+        padded_values_host = jax.device_get(padded_values)
 
-        xtructure_insert_median, xtructure_insert_iqr = benchmark_bgpq_insert(
-            bgpq_heap, padded_keys, padded_values, trials=trials
+        insert_args_supplier = (
+            (
+                lambda: (
+                    jax.device_put(padded_keys_host),
+                    jax.device_put(padded_values_host),
+                )
+            )
+            if mode == "e2e"
+            else (lambda: (padded_keys, padded_values))
         )
+        insert_durations = benchmark_bgpq_insert(
+            bgpq_heap,
+            padded_keys,
+            padded_values,
+            trials=trials,
+            args_supplier=insert_args_supplier,
+        )
+        xtructure_insert_stats = throughput_stats(batch_size, insert_durations)
 
         # Create a filled heap for deletion benchmark
         heap_with_data = bgpq_heap.insert(padded_keys, padded_values)
         jax.block_until_ready(heap_with_data)
-        xtructure_delete_median, xtructure_delete_iqr = benchmark_bgpq_delete(
+        delete_durations = benchmark_bgpq_delete(
             heap_with_data, trials=trials, include_host_transfer=(mode == "e2e")
         )
+        xtructure_delete_stats = throughput_stats(batch_size, delete_durations)
 
-        results["xtructure"].setdefault("insert_ops_per_sec", []).append(
-            {
-                "median": batch_size / xtructure_insert_median
-                if xtructure_insert_median > 0
-                else 0,
-                "iqr": batch_size * xtructure_insert_iqr / (xtructure_insert_median**2)
-                if xtructure_insert_median > 0
-                else 0,
-            }
-        )
-        results["xtructure"].setdefault("delete_ops_per_sec", []).append(
-            {
-                "median": batch_size / xtructure_delete_median
-                if xtructure_delete_median > 0
-                else 0,
-                "iqr": batch_size * xtructure_delete_iqr / (xtructure_delete_median**2)
-                if xtructure_delete_median > 0
-                else 0,
-            }
-        )
+        results["xtructure"].setdefault("insert_ops_per_sec", []).append(xtructure_insert_stats)
+        results["xtructure"].setdefault("delete_ops_per_sec", []).append(xtructure_delete_stats)
 
         # --- Python heapq Benchmark --- (fixed algorithm for fairness)
-        use_bulk = python_heap_insert_mode == "bulk"
-        python_insert_median, python_insert_iqr = benchmark_heapq_insert(
-            keys, values, trials=trials, bulk_mode=use_bulk, include_preprocessing=(mode == "e2e")
+        insert_candidates = []
+        modes_to_try = (
+            [python_heap_insert_mode]
+            if python_heap_insert_mode != "auto"
+            else ["bulk", "incremental"]
         )
+        for candidate in modes_to_try:
+            use_bulk = candidate == "bulk"
+            stats, op = benchmark_heapq_insert(
+                keys_device,
+                values_device,
+                trials=trials,
+                bulk_mode=use_bulk,
+                include_preprocessing=(mode == "e2e"),
+            )
+            insert_candidates.append((stats, op))
 
-        # Build prototype heap for deletion using the same chosen method
-        native_keys = keys.tolist()
-        value_bytes = [v.tobytes() for v in jax.vmap(lambda x: x.bytes)(values)]
-        if use_bulk:
-            py_heap = [(native_keys[i], i, value_bytes[i]) for i in range(len(native_keys))]
-            heapq.heapify(py_heap)
-        else:
-            py_heap = []
-            for i in range(len(native_keys)):
-                heapq.heappush(py_heap, (native_keys[i], i, value_bytes[i]))
+        insert_candidates.sort(key=lambda t: t[0]["median"], reverse=True)
+        best_insert_stats, build_heap_op = insert_candidates[0]
+        py_heap = build_heap_op()
 
-        python_delete_median, python_delete_iqr = benchmark_heapq_delete(py_heap, batch_size)
+        python_delete_stats = benchmark_heapq_delete(py_heap, batch_size)
 
-        results["python"].setdefault("insert_ops_per_sec", []).append(
-            {
-                "median": batch_size / python_insert_median if python_insert_median > 0 else 0,
-                "iqr": batch_size * python_insert_iqr / (python_insert_median**2)
-                if python_insert_median > 0
-                else 0,
-            }
-        )
-        results["python"].setdefault("delete_ops_per_sec", []).append(
-            {
-                "median": batch_size / python_delete_median if python_delete_median > 0 else 0,
-                "iqr": batch_size * python_delete_iqr / (python_delete_median**2)
-                if python_delete_median > 0
-                else 0,
-            }
-        )
+        results["python"].setdefault("insert_ops_per_sec", []).append(best_insert_stats)
+        results["python"].setdefault("delete_ops_per_sec", []).append(python_delete_stats)
 
     # Validate and save results
     validate_results_schema(results)
@@ -288,8 +235,8 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--python-heap-insert-mode",
-        choices=["bulk", "incremental"],
-        default="bulk",
+        choices=["auto", "bulk", "incremental"],
+        default="auto",
         help="Choose Python heap insert algorithm for fairness",
     )
     args = parser.parse_args()
@@ -302,7 +249,5 @@ if __name__ == "__main__":
         mode=args.mode,
         trials=args.trials,
         batch_sizes=batch_sizes_arg,
-        python_heap_insert_mode=args["python_heap_insert_mode"]
-        if isinstance(args, dict)
-        else args.python_heap_insert_mode,
+        python_heap_insert_mode=args.python_heap_insert_mode,
     )

@@ -1,6 +1,5 @@
 import argparse
 import json
-import time
 from typing import Any, Dict, List, Optional
 
 import jax
@@ -8,121 +7,15 @@ import jax
 from xtructure import HashTable
 from xtructure_benchmarks.common import (
     BenchmarkValue,
+    check_system_load,
+    get_system_info,
     print_results_table,
-    python_timer,
+    run_jax_trials,
+    run_python_trials,
+    throughput_stats,
+    to_python_values,
     validate_results_schema,
 )
-
-
-def benchmark_hashtable_insert(table: HashTable, keys: BenchmarkValue, trials: int = 10):
-    """Benchmarks the parallel insertion into the xtructure HashTable."""
-
-    def insert_op():
-        # The key and value are the same in this benchmark
-        return table.parallel_insert(keys)[0]
-
-    # JIT compile and warm up
-    jitted_insert = jax.jit(insert_op)
-    new_table = jitted_insert()
-    jax.block_until_ready(new_table)
-
-    # Time multiple trials
-    times = []
-    for _ in range(trials):
-        start_time = time.perf_counter()
-        new_table = jitted_insert()
-        jax.block_until_ready(new_table)
-        end_time = time.perf_counter()
-        times.append(end_time - start_time)
-
-    import numpy as np
-
-    times = np.array(times)
-    median_time = np.median(times)
-    q75, q25 = np.percentile(times, [75, 25])
-    iqr_time = q75 - q25
-
-    return median_time, iqr_time
-
-
-def benchmark_hashtable_lookup(
-    table: HashTable, keys: BenchmarkValue, trials: int = 10, include_host_transfer: bool = False
-):
-    """Benchmarks the parallel lookup from the xtructure HashTable."""
-
-    def lookup_op():
-        return table.lookup_parallel(keys)
-
-    # JIT compile and warm up
-    jitted_lookup = jax.jit(lookup_op)
-    result = jitted_lookup()
-    jax.block_until_ready(result)
-
-    # Time multiple trials
-    times = []
-    for _ in range(trials):
-        start_time = time.perf_counter()
-        result = jitted_lookup()
-        jax.block_until_ready(result)
-        if include_host_transfer:
-            # Include device-to-host transfer cost outside JIT
-            _ = jax.device_get(result)
-        end_time = time.perf_counter()
-        times.append(end_time - start_time)
-
-    import numpy as np
-
-    times = np.array(times)
-    median_time = np.median(times)
-    q75, q25 = np.percentile(times, [75, 25])
-    iqr_time = q75 - q25
-
-    return median_time, iqr_time
-
-
-def benchmark_dict_insert(
-    keys: BenchmarkValue,
-    trials: int = 10,
-    bulk_mode: bool = False,
-    include_preprocessing: bool = False,
-):
-    """Benchmarks insertion into a standard Python dict."""
-    # Optionally include preprocessing (conversion to bytes) in the timed region
-    if not include_preprocessing:
-        key_bytes = [arr.tobytes() for arr in jax.vmap(lambda x: x.bytes)(keys)]
-
-    times = []
-    for _ in range(trials):
-        data_dict = {}  # Fresh dict per trial
-        if bulk_mode:
-            start_time = time.perf_counter()
-            kb = (
-                [arr.tobytes() for arr in jax.vmap(lambda x: x.bytes)(keys)]
-                if include_preprocessing
-                else key_bytes
-            )
-            data_dict.update({key: key for key in kb})
-            end_time = time.perf_counter()
-        else:
-            start_time = time.perf_counter()
-            kb = (
-                [arr.tobytes() for arr in jax.vmap(lambda x: x.bytes)(keys)]
-                if include_preprocessing
-                else key_bytes
-            )
-            for key in kb:
-                data_dict[key] = key  # Store key as value for payload parity
-            end_time = time.perf_counter()
-        times.append(end_time - start_time)
-
-    import numpy as np
-
-    times = np.array(times)
-    median_time = np.median(times)
-    q75, q25 = np.percentile(times, [75, 25])
-    iqr_time = q75 - q25
-
-    return median_time, iqr_time
 
 
 def benchmark_dict_lookup(
@@ -131,24 +24,21 @@ def benchmark_dict_lookup(
     trials: int = 10,
     include_preprocessing: bool = False,
 ):
-    """Benchmarks lookup from a standard Python dict."""
-    # Optionally include preprocessing (conversion to bytes) in the timed region
-    if not include_preprocessing:
-        key_bytes = [arr.tobytes() for arr in jax.vmap(lambda x: x.bytes)(keys)]
+    """Benchmarks lookup from a standard Python dict using Python objects."""
+
+    # Precompute Python objects for kernel mode
+    precomputed_keys = to_python_values(keys)
 
     def lookup_op():
-        results = []
-        kb = (
-            [arr.tobytes() for arr in jax.vmap(lambda x: x.bytes)(keys)]
-            if include_preprocessing
-            else key_bytes
-        )
-        for key in kb:
-            results.append(data_dict.get(key))
-        # Return results to match xtructure lookup semantics
-        return results
+        # In e2e mode, we include the cost of converting JAX arrays to Python objects
+        # mimicking the overhead of "receiving" data
+        py_keys = to_python_values(keys) if include_preprocessing else precomputed_keys
 
-    return python_timer(lookup_op, trials)
+        # Optimized bulk lookup using map (faster than list comprehension for built-in methods)
+        return list(map(data_dict.get, py_keys))
+
+    results_tuple = run_python_trials(lookup_op, trials)
+    return throughput_stats(len(precomputed_keys), results_tuple)
 
 
 def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional[List[int]] = None):
@@ -156,7 +46,15 @@ def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional
     # Using smaller batch sizes to ensure completion within a reasonable time
     if batch_sizes is None:
         batch_sizes = [2**10, 2**12, 2**14]
-    results: Dict[str, Any] = {"batch_sizes": batch_sizes, "xtructure": {}, "python": {}}
+
+    check_system_load()
+
+    results: Dict[str, Any] = {
+        "batch_sizes": batch_sizes,
+        "xtructure": {},
+        "python": {},
+        "environment": get_system_info(),
+    }
     load_factor_inverse = 1.5  # Keep load factor constant across batch sizes
 
     print("Running HashTable Benchmarks...")
@@ -168,82 +66,90 @@ def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional
     for batch_size in batch_sizes:
         print(f"  Batch Size: {batch_size}")
         key = jax.random.PRNGKey(0)
-        keys = BenchmarkValue.random(shape=(batch_size,), key=key)
+        keys_device = BenchmarkValue.random(shape=(batch_size,), key=key)
+        keys_host = jax.device_get(keys_device)
 
         # Keep table size proportional to batch size for constant load factor
         table_size = int(batch_size * load_factor_inverse)
 
         # --- xtructure.HashTable Benchmark ---
         xtructure_table = HashTable.build(BenchmarkValue, 1, table_size)
-        xtructure_insert_median, xtructure_insert_iqr = benchmark_hashtable_insert(
-            xtructure_table, keys, trials=trials
+
+        def insert_op(batch):
+            # The key and value are the same in this benchmark
+            return xtructure_table.parallel_insert(batch)[0]
+
+        insert_args_supplier = (
+            lambda: (jax.device_put(keys_host),) if mode == "e2e" else (keys_device,)
         )
+        insert_durations = run_jax_trials(
+            insert_op,
+            trials=trials,
+            args_supplier=insert_args_supplier,
+        )
+        xtructure_insert_stats = throughput_stats(batch_size, insert_durations)
 
         # Re-build and insert for a fair lookup comparison
-        table_with_data, _, _, _ = xtructure_table.parallel_insert(keys)
+        table_with_data, _, _, _ = xtructure_table.parallel_insert(keys_device)
         jax.block_until_ready(table_with_data)
-        xtructure_lookup_median, xtructure_lookup_iqr = benchmark_hashtable_lookup(
-            table_with_data, keys, trials=trials, include_host_transfer=(mode == "e2e")
-        )
 
-        results["xtructure"].setdefault("insert_ops_per_sec", []).append(
-            {
-                "median": batch_size / xtructure_insert_median,
-                "iqr": batch_size * xtructure_insert_iqr / (xtructure_insert_median**2),
-            }
+        def lookup_op(batch):
+            return table_with_data.lookup_parallel(batch)
+
+        lookup_args_supplier = (
+            lambda: (jax.device_put(keys_host),) if mode == "e2e" else (keys_device,)
         )
-        results["xtructure"].setdefault("lookup_ops_per_sec", []).append(
-            {
-                "median": batch_size / xtructure_lookup_median,
-                "iqr": batch_size * xtructure_lookup_iqr / (xtructure_lookup_median**2),
-            }
+        lookup_durations = run_jax_trials(
+            lookup_op,
+            trials=trials,
+            include_device_transfer=(mode == "e2e"),
+            args_supplier=lookup_args_supplier,
         )
+        xtructure_lookup_stats = throughput_stats(batch_size, lookup_durations)
+
+        results["xtructure"].setdefault("insert_ops_per_sec", []).append(xtructure_insert_stats)
+        results["xtructure"].setdefault("lookup_ops_per_sec", []).append(xtructure_lookup_stats)
 
         # --- Python dict Benchmark ---
         # Test both incremental and bulk modes, report the better one
-        python_insert_incremental_median, python_insert_incremental_iqr = benchmark_dict_insert(
-            keys, trials=trials, bulk_mode=False, include_preprocessing=(mode == "e2e")
-        )
-        python_insert_bulk_median, python_insert_bulk_iqr = benchmark_dict_insert(
-            keys, trials=trials, bulk_mode=True, include_preprocessing=(mode == "e2e")
+        python_insert_candidates = []
+
+        def _python_insert_trial(bulk_mode: bool):
+            # Precompute Python objects
+            precomputed = to_python_values(keys_device)
+
+            def key_supplier():
+                if mode == "e2e":
+                    return to_python_values(keys_device)
+                return precomputed
+
+            def op():
+                kb = key_supplier()
+                if bulk_mode:
+                    return {key: key for key in kb}
+                data_dict = {}
+                for key in kb:
+                    data_dict[key] = key
+                return data_dict
+
+            results_tuple = run_python_trials(op, trials=trials)
+            stats = throughput_stats(batch_size, results_tuple)
+            return stats, op
+
+        for candidate_bulk in (False, True):
+            stats, op = _python_insert_trial(candidate_bulk)
+            python_insert_candidates.append((stats, op, candidate_bulk))
+
+        python_insert_candidates.sort(key=lambda t: t[0]["median"], reverse=True)
+        best_python_insert_stats, best_insert_op, best_is_bulk = python_insert_candidates[0]
+        py_dict = best_insert_op()
+
+        python_lookup_stats = benchmark_dict_lookup(
+            py_dict, keys_device, trials=trials, include_preprocessing=(mode == "e2e")
         )
 
-        # Use the better (faster) Python baseline
-        if python_insert_incremental_median < python_insert_bulk_median:
-            python_insert_median, python_insert_iqr = (
-                python_insert_incremental_median,
-                python_insert_incremental_iqr,
-            )
-            # Build dict for lookup using faster method
-            py_dict: Dict[bytes, bytes] = {}
-            key_bytes = [arr.tobytes() for arr in jax.vmap(lambda x: x.bytes)(keys)]
-            for key in key_bytes:
-                py_dict[key] = key
-        else:
-            python_insert_median, python_insert_iqr = (
-                python_insert_bulk_median,
-                python_insert_bulk_iqr,
-            )
-            # Build dict for lookup using faster method
-            key_bytes = [arr.tobytes() for arr in jax.vmap(lambda x: x.bytes)(keys)]
-            py_dict = {key: key for key in key_bytes}
-
-        python_lookup_median, python_lookup_iqr = benchmark_dict_lookup(
-            py_dict, keys, trials=trials, include_preprocessing=(mode == "e2e")
-        )
-
-        results["python"].setdefault("insert_ops_per_sec", []).append(
-            {
-                "median": batch_size / python_insert_median,
-                "iqr": batch_size * python_insert_iqr / (python_insert_median**2),
-            }
-        )
-        results["python"].setdefault("lookup_ops_per_sec", []).append(
-            {
-                "median": batch_size / python_lookup_median,
-                "iqr": batch_size * python_lookup_iqr / (python_lookup_median**2),
-            }
-        )
+        results["python"].setdefault("insert_ops_per_sec", []).append(best_python_insert_stats)
+        results["python"].setdefault("lookup_ops_per_sec", []).append(python_lookup_stats)
 
     # Validate and save results to the correct directory
     validate_results_schema(results)
