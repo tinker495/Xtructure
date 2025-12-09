@@ -6,3 +6,32 @@ build-backend = "setuptools.build_meta"
 testpaths = ["tests", "."]
 pythonpath = ["."]
 addopts = "-v --tb=short"
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = [
+    "E121",  # indentation is not a multiple of four
+    "E123",  # closing bracket does not match indentation of opening bracket's line
+    "E126",  # continuation line over-indented for hanging indent
+    "E203",  # whitespace before ':'
+    "E226",  # missing whitespace around arithmetic operator
+    "E241",  # multiple spaces after ','
+    "E242",  # tab after ','
+    "E704",  # multiple statements on one line (def)
+    "W503",  # line break before binary operator
+    "W504",  # line break after binary operator
+    "UP007", # use X | Y for type annotations (keeping old style for compatibility)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # unused imports
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
