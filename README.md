@@ -51,9 +51,12 @@ Quick examples can still be found below for a brief overview.
 import jax
 import jax.numpy as jnp
 
-from xtructure import xtructure_dataclass, FieldDescriptor
-from xtructure import HashTable, BGPQ
-from xtructure import numpy as xnp  # Recommended import method
+import xtructure as xt
+
+from xtructure import FieldDescriptor, xtructure_dataclass
+
+# Single, stable public surface
+xnp = xt.xnp
 
 
 # Define a custom data structure using xtructure_dataclass
@@ -69,7 +72,7 @@ print("--- HashTable Example ---")
 # Build a HashTable for a custom data structure
 key = jax.random.PRNGKey(0)
 key, subkey = jax.random.split(key)
-hash_table: HashTable = HashTable.build(MyDataValue, 1, capacity=1000)
+hash_table: xt.HashTable = xt.HashTable.build(MyDataValue, 1, capacity=1000)
 
 # Insert random data
 items_to_insert = MyDataValue.random((100,), key=subkey)
@@ -93,7 +96,7 @@ print("\n--- BGPQ Example ---")
 # Build a BGPQ with a specific batch size
 key = jax.random.PRNGKey(1)
 pq_batch_size = 64
-priority_queue = BGPQ.build(
+priority_queue = xt.BGPQ.build(
     2000,
     pq_batch_size,
     MyDataValue,
@@ -106,11 +109,11 @@ keys_to_insert = jax.random.uniform(subkey1, (pq_batch_size,)).astype(jnp.float1
 values_to_insert = MyDataValue.random((pq_batch_size,), key=subkey2)
 
 # Insert data
-priority_queue = BGPQ.insert(priority_queue, keys_to_insert, values_to_insert)
+priority_queue = priority_queue.insert(keys_to_insert, values_to_insert)
 print(f"BGPQ: Inserted a batch. Current size: {priority_queue.size}")
 
 # Delete a batch of minimums
-priority_queue, min_keys, _ = BGPQ.delete_mins(priority_queue)
+priority_queue, min_keys, _ = priority_queue.delete_mins()
 valid_mask = jnp.isfinite(min_keys)
 print(f"BGPQ: Deleted {jnp.sum(valid_mask)} items. Size after deletion: {priority_queue.size}")
 

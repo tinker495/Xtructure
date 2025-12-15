@@ -5,13 +5,15 @@ The `xtructure_numpy` module provides JAX-compatible operations for working with
 ```python
 import jax
 import jax.numpy as jnp
+import xtructure as xt
 from xtructure import xtructure_dataclass, FieldDescriptor
 
-# New import path available:
-from xtructure import numpy as xnp
+# Single recommended import path (preferred)
+from xtructure import xnp
 
-# Or the traditional way:
-from xtructure import xtructure_numpy as xnp
+# Backward-compatible options (deprecated):
+#   from xtructure import numpy as xnp
+#   from xtructure import xtructure_numpy as xnp
 
 # Available functions in xnp:
 # concat, concatenate (same function), pad, stack, reshape, flatten,

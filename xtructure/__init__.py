@@ -1,4 +1,4 @@
-from . import io, xtructure_numpy
+from . import io, xnp, xtructure_numpy
 from .bgpq import BGPQ
 from .core import (
     FieldDescriptor,
@@ -15,8 +15,10 @@ from .hashtable import HashIdx, HashTable
 from .queue import Queue
 from .stack import Stack
 
-# Alias xtructure_numpy as numpy for cleaner imports (e.g., from xtructure import numpy as xnp)
-numpy = xtructure_numpy
+# Aliases for NumPy-like helpers. ``xnp`` is the stable public entrypoint;
+# ``numpy`` remains for backward compatibility and emits a deprecation warning
+# from the stub module.
+numpy = xnp
 
 __all__ = [
     # bgpq.py
@@ -39,6 +41,8 @@ __all__ = [
     "with_intrinsic_shape",
     "broadcast_intrinsic_shape",
     "descriptor_metadata",
+    # xnp module
+    "xnp",
     # numpy alias
     "numpy",
     # xtructure_numpy.py (top-level xnp module)

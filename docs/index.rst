@@ -9,6 +9,7 @@ Welcome to Xtructure's documentation!
 
    core_concepts
    layout_flexibility
+   api_conventions
    xnp
 
 .. toctree::
