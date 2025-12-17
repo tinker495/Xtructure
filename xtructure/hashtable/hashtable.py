@@ -1,6 +1,8 @@
-"""
-Hash table implementation using Cuckoo hashing technique for efficient state storage and lookup.
-This module provides functionality for hashing Xtructurables and managing collisions.
+"""Bucketed open-addressing hash table for Xtructurables.
+
+This implementation uses double hashing to probe buckets, with a small fixed number
+of slots per bucket (`slots_per_bucket`). A 32-bit fingerprint is stored per-slot to
+avoid loading/comparing full values on most probes.
 """
 
 from functools import partial
@@ -169,25 +171,32 @@ def get_new_idx_byterized(
     return idx, step, uint32ed, fingerprint
 
 
-@partial(jax.jit, static_argnums=(0, 1, 2, 3, 4))
+@partial(jax.jit, static_argnums=(0, 1, 2, 3, 4, 5))
 def _hashtable_build_jit(
     dataclass: Xtructurable,
     seed: int,
     capacity: int,
-    cuckoo_table_n: int = 2,
+    slots_per_bucket: int = 2,
     hash_size_multiplier: int = 2,
+    max_probes: int | None = None,
 ) -> "HashTable":
-    _capacity = int(hash_size_multiplier * capacity / cuckoo_table_n)  # Convert to concrete integer
+    _capacity = int(
+        hash_size_multiplier * capacity / slots_per_bucket
+    )  # Convert to concrete integer
+    if max_probes is None:
+        max_probes = _capacity * slots_per_bucket
+    max_probes = max(1, int(max_probes))
     size = SIZE_DTYPE(0)
     # Initialize table with default states
-    table = dataclass.default(((_capacity + 1) * cuckoo_table_n,))
+    table = dataclass.default(((_capacity + 1) * slots_per_bucket,))
     table_idx = jnp.zeros((_capacity + 1), dtype=HASH_TABLE_IDX_DTYPE)
-    fingerprints = jnp.zeros(((_capacity + 1) * cuckoo_table_n,), dtype=jnp.uint32)
+    fingerprints = jnp.zeros(((_capacity + 1) * slots_per_bucket,), dtype=jnp.uint32)
     return HashTable(
         seed=seed,
         capacity=capacity,
         _capacity=_capacity,
-        cuckoo_table_n=cuckoo_table_n,
+        slots_per_bucket=slots_per_bucket,
+        max_probes=max_probes,
         size=size,
         table=table,
         table_idx=table_idx,
@@ -204,11 +213,13 @@ def _hashtable_lookup_internal(
     input_fingerprint: chex.Array,
     found: bool,
 ) -> tuple[CuckooIdx, bool]:
+    del input_uint32ed
     probe_step = jnp.asarray(probe_step, dtype=SIZE_DTYPE)
     capacity = jnp.asarray(table._capacity, dtype=SIZE_DTYPE)
+    max_probes = jnp.asarray(table.max_probes, dtype=SIZE_DTYPE)
 
     def _advance(idx: CuckooIdx) -> CuckooIdx:
-        next_table = idx.table_index >= (table.cuckoo_table_n - 1)
+        next_table = idx.table_index >= (table.slots_per_bucket - 1)
 
         def _next_bucket():
             next_index = jnp.mod(idx.index + probe_step, capacity)
@@ -225,33 +236,31 @@ def _hashtable_lookup_internal(
 
         return jax.lax.cond(next_table, _next_bucket, _same_bucket)
 
-    def _cond(val: tuple[CuckooIdx, bool]) -> bool:
-        idx, found = val
-        filled_idx = table.table_idx[idx.index]
-        in_empty = idx.table_index >= filled_idx
-        return jnp.logical_and(~found, ~in_empty)
-
-    def _body(val: tuple[CuckooIdx, bool]) -> tuple[CuckooIdx, bool]:
-        idx, found = val
-        flat_index = idx.index * table.cuckoo_table_n + idx.table_index
-        state = table.table[flat_index]
+    def _cond(val: tuple[CuckooIdx, bool, chex.Array]) -> bool:
+        idx, found, probes = val
         filled_limit = table.table_idx[idx.index]
-        is_filled = idx.table_index < filled_limit
-        stored_fp = table.fingerprints[flat_index]
-        fingerprints_match = jnp.logical_and(is_filled, stored_fp == input_fingerprint)
+        in_empty = idx.table_index >= filled_limit
+        within_budget = probes < max_probes
+        return jnp.logical_and(within_budget, jnp.logical_and(~found, ~in_empty))
 
-        def _compare(_: None) -> jnp.bool_:
+    def _body(val: tuple[CuckooIdx, bool, chex.Array]) -> tuple[CuckooIdx, bool, chex.Array]:
+        idx, found, probes = val
+        flat_index = idx.index * table.slots_per_bucket + idx.table_index
+        stored_fp = table.fingerprints[flat_index]
+        fingerprints_match = stored_fp == input_fingerprint
+
+        def _compare(operand_flat_index: chex.Array) -> jnp.bool_:
+            state = table.table[operand_flat_index]
             return jnp.asarray(state == input, dtype=jnp.bool_)
 
         value_equal = jax.lax.cond(
             fingerprints_match,
             _compare,
             lambda _: jnp.bool_(False),
-            operand=None,
+            operand=flat_index,
         )
 
-        matched = jnp.logical_and(is_filled, value_equal)
-        new_found = jnp.logical_or(found, matched)
+        new_found = jnp.logical_or(found, value_equal)
         next_idx = _advance(idx)
         updated_index = jnp.where(new_found, idx.index, next_idx.index)
         updated_table_index = jnp.where(new_found, idx.table_index, next_idx.table_index)
@@ -259,26 +268,9 @@ def _hashtable_lookup_internal(
             index=updated_index,
             table_index=updated_table_index,
         )
-        return updated_idx, new_found
+        return updated_idx, new_found, probes + SIZE_DTYPE(1)
 
-    flat_index = idx.index * table.cuckoo_table_n + idx.table_index
-    state = table.table[flat_index]
-    is_filled = idx.table_index < table.table_idx[idx.index]
-    stored_fp = table.fingerprints[flat_index]
-    fingerprints_match = jnp.logical_and(is_filled, stored_fp == input_fingerprint)
-
-    def _compare_initial(_: None) -> jnp.bool_:
-        return jnp.asarray(state == input, dtype=jnp.bool_)
-
-    initial_equal = jax.lax.cond(
-        fingerprints_match,
-        _compare_initial,
-        lambda _: jnp.bool_(False),
-        operand=None,
-    )
-
-    found = jnp.logical_or(found, initial_equal)
-    idx, found = jax.lax.while_loop(_cond, _body, (idx, found))
+    idx, found, _ = jax.lax.while_loop(_cond, _body, (idx, found, SIZE_DTYPE(0)))
     return idx, found
 
 
@@ -299,7 +291,7 @@ def _hashtable_lookup_cuckoo_jit(
 @jax.jit
 def _hashtable_lookup_jit(table: "HashTable", input: Xtructurable) -> tuple[HashIdx, bool]:
     idx, found, _ = _hashtable_lookup_cuckoo_jit(table, input)
-    return HashIdx(index=idx.index * table.cuckoo_table_n + idx.table_index), found
+    return HashIdx(index=idx.index * table.slots_per_bucket + idx.table_index), found
 
 
 def _hashtable_lookup_parallel_internal(
@@ -325,11 +317,14 @@ def _hashtable_lookup_parallel_internal(
         found: bool,
         active: bool,
     ) -> tuple[CuckooIdx, bool]:
+        del input_uint32ed
         probe_step = jnp.asarray(probe_step, dtype=SIZE_DTYPE)
         capacity = jnp.asarray(table._capacity, dtype=SIZE_DTYPE)
+        max_probes = jnp.asarray(table.max_probes, dtype=SIZE_DTYPE)
+        found = jnp.logical_and(found, active)
 
         def _advance(idx: CuckooIdx) -> CuckooIdx:
-            next_table = idx.table_index >= (table.cuckoo_table_n - 1)
+            next_table = idx.table_index >= (table.slots_per_bucket - 1)
 
             def _next_bucket():
                 next_index = jnp.mod(idx.index + probe_step, capacity)
@@ -346,33 +341,31 @@ def _hashtable_lookup_parallel_internal(
 
             return jax.lax.cond(next_table, _next_bucket, _same_bucket)
 
-        def _cond(val: tuple[CuckooIdx, bool]) -> bool:
-            idx, found = val
-            filled_idx = table.table_idx[idx.index]
-            in_empty = idx.table_index >= filled_idx
-            return jnp.logical_and(active, jnp.logical_and(~found, ~in_empty))
-
-        def _body(val: tuple[CuckooIdx, bool]) -> tuple[CuckooIdx, bool]:
-            idx, found = val
-            flat_index = idx.index * table.cuckoo_table_n + idx.table_index
-            state = table.table[flat_index]
+        def _cond(val: tuple[CuckooIdx, bool, chex.Array]) -> bool:
+            idx, found, probes = val
             filled_limit = table.table_idx[idx.index]
-            is_filled = idx.table_index < filled_limit
-            stored_fp = table.fingerprints[flat_index]
-            fingerprints_match = jnp.logical_and(is_filled, stored_fp == fingerprint)
+            in_empty = idx.table_index >= filled_limit
+            within_budget = probes < max_probes
+            return jnp.logical_and(active, jnp.logical_and(within_budget, ~found & ~in_empty))
 
-            def _compare(_: None) -> jnp.bool_:
+        def _body(val: tuple[CuckooIdx, bool, chex.Array]) -> tuple[CuckooIdx, bool, chex.Array]:
+            idx, found, probes = val
+            flat_index = idx.index * table.slots_per_bucket + idx.table_index
+            stored_fp = table.fingerprints[flat_index]
+            fingerprints_match = stored_fp == fingerprint
+
+            def _compare(operand_flat_index: chex.Array) -> jnp.bool_:
+                state = table.table[operand_flat_index]
                 return jnp.asarray(state == input, dtype=jnp.bool_)
 
             value_equal = jax.lax.cond(
                 fingerprints_match,
                 _compare,
                 lambda _: jnp.bool_(False),
-                operand=None,
+                operand=flat_index,
             )
 
-            matched = jnp.logical_and(is_filled, value_equal)
-            new_found = jnp.logical_or(found, matched)
+            new_found = jnp.logical_or(found, value_equal)
             next_idx = _advance(idx)
             updated_index = jnp.where(new_found, idx.index, next_idx.index)
             updated_table_index = jnp.where(new_found, idx.table_index, next_idx.table_index)
@@ -380,28 +373,9 @@ def _hashtable_lookup_parallel_internal(
                 index=updated_index,
                 table_index=updated_table_index,
             )
-            return updated_idx, new_found
+            return updated_idx, new_found, probes + SIZE_DTYPE(1)
 
-        flat_index = idx.index * table.cuckoo_table_n + idx.table_index
-        state = table.table[flat_index]
-        is_filled = idx.table_index < table.table_idx[idx.index]
-        stored_fp = table.fingerprints[flat_index]
-        fingerprints_match = jnp.logical_and(is_filled, stored_fp == fingerprint)
-
-        def _compare_initial(_: None) -> jnp.bool_:
-            return jnp.asarray(state == input, dtype=jnp.bool_)
-
-        initial_equal = jax.lax.cond(
-            fingerprints_match,
-            _compare_initial,
-            lambda _: jnp.bool_(False),
-            operand=None,
-        )
-
-        found = jnp.logical_or(found, initial_equal)
-        found = jnp.logical_and(found, active)
-
-        idx, found = jax.lax.while_loop(_cond, _body, (idx, found))
+        idx, found, _ = jax.lax.while_loop(_cond, _body, (idx, found, SIZE_DTYPE(0)))
         return idx, found
 
     table_in_axes = jax.tree_util.tree_map(lambda _: None, table)
@@ -431,7 +405,7 @@ def _hashtable_lookup_parallel_jit(
         idx, found = _hashtable_lookup_parallel_internal(
             table, inputs, input_uint32eds, idxs, steps, fingerprints, founds, filled_mask
         )
-        return HashIdx(index=idx.index * table.cuckoo_table_n + idx.table_index), found
+        return HashIdx(index=idx.index * table.slots_per_bucket + idx.table_index), found
 
     def _empty_result(_):
         return (
@@ -456,16 +430,18 @@ def _hashtable_insert_jit(
     def _update_table(
         table: "HashTable", input: Xtructurable, idx: CuckooIdx, fingerprint: chex.Array
     ):
+        flat_index = idx.index * table.slots_per_bucket + idx.table_index
         table = table.replace(
-            table=table.table.at[idx.index * table.cuckoo_table_n + idx.table_index].set(input),
-            fingerprints=table.fingerprints.at[
-                idx.index * table.cuckoo_table_n + idx.table_index
-            ].set(fingerprint),
+            table=table.table.at[flat_index].set(input),
+            fingerprints=table.fingerprints.at[flat_index].set(fingerprint),
             table_idx=table.table_idx.at[idx.index].add(1),
+            size=table.size + SIZE_DTYPE(1),
         )
         return table
 
     idx, found, fingerprint = _hashtable_lookup_cuckoo_jit(table, input)
+    empty_slot = idx.table_index >= table.table_idx[idx.index]
+    can_insert = jnp.logical_and(~found, empty_slot)
 
     def _no_insert():
         return table
@@ -473,9 +449,8 @@ def _hashtable_insert_jit(
     def _do_insert():
         return _update_table(table, input, idx, fingerprint)
 
-    table = jax.lax.cond(found, _no_insert, _do_insert)
-    inserted = ~found
-    return table, inserted, HashIdx(index=idx.index * table.cuckoo_table_n + idx.table_index)
+    table = jax.lax.cond(can_insert, _do_insert, _no_insert)
+    return table, can_insert, HashIdx(index=idx.index * table.slots_per_bucket + idx.table_index)
 
 
 def _hashtable_parallel_insert_internal(
@@ -486,12 +461,14 @@ def _hashtable_parallel_insert_internal(
     index: CuckooIdx,
     updatable: chex.Array,
     fingerprints: chex.Array,
-) -> tuple["HashTable", CuckooIdx]:
+) -> tuple["HashTable", CuckooIdx, chex.Array]:
+    del inputs_uint32ed
     capacity = jnp.asarray(table._capacity, dtype=SIZE_DTYPE)
     probe_steps = jnp.asarray(probe_steps, dtype=SIZE_DTYPE)
+    max_probes = jnp.asarray(table.max_probes, dtype=SIZE_DTYPE)
 
     def _advance(idx: CuckooIdx, step: chex.Array) -> CuckooIdx:
-        next_table = idx.table_index >= (table.cuckoo_table_n - 1)
+        next_table = idx.table_index >= (table.slots_per_bucket - 1)
 
         def _next_bucket() -> CuckooIdx:
             next_index = jnp.mod(idx.index + step, capacity)
@@ -509,39 +486,63 @@ def _hashtable_parallel_insert_internal(
 
         return jax.lax.cond(next_table, _next_bucket, _same_bucket)
 
-    def _next_idx(idxs: CuckooIdx, unupdateds: chex.Array) -> CuckooIdx:
+    def _next_idx(idxs: CuckooIdx, should_advance: chex.Array) -> CuckooIdx:
         return jax.vmap(
             lambda active, current_idx, step: jax.lax.cond(
                 active,
                 lambda: _advance(current_idx, step),
                 lambda: current_idx,
             )
-        )(unupdateds, idxs, probe_steps)
+        )(should_advance, idxs, probe_steps)
 
-    flat_initial_slots = index.index * table.cuckoo_table_n + index.table_index
-    sentinel_slot = SIZE_DTYPE(table._capacity * table.cuckoo_table_n + 1)
+    flat_initial_slots = index.index * table.slots_per_bucket + index.table_index
+    sentinel_slot = SIZE_DTYPE(table._capacity * table.slots_per_bucket + 1)
     initial_unique_mask = _first_occurrence_mask(flat_initial_slots, updatable, sentinel_slot)
-    unupdated = jnp.logical_and(updatable, jnp.logical_not(initial_unique_mask))
+    pending = jnp.logical_and(updatable, jnp.logical_not(initial_unique_mask))
+    probe_counts = jnp.zeros_like(updatable, dtype=SIZE_DTYPE)
+    failed = jnp.zeros_like(updatable, dtype=jnp.bool_)
 
-    def _cond(val: tuple[CuckooIdx, chex.Array]) -> bool:
-        _, pending = val
-        return jnp.any(pending)
+    def _cond(val: tuple[CuckooIdx, chex.Array, chex.Array, chex.Array]) -> bool:
+        _, pending, probe_counts, failed = val
+        active_pending = jnp.logical_and(
+            pending, jnp.logical_and(~failed, probe_counts < max_probes)
+        )
+        return jnp.any(active_pending)
 
-    def _body(val: tuple[CuckooIdx, chex.Array]) -> tuple[CuckooIdx, chex.Array]:
-        idxs, pending = val
-        updated_idxs = _next_idx(idxs, pending)
-        overflowed = jnp.logical_and(updated_idxs.table_index >= table.cuckoo_table_n, pending)
-        flat_updated_slots = updated_idxs.index * table.cuckoo_table_n + updated_idxs.table_index
-        updated_unique_mask = _first_occurrence_mask(flat_updated_slots, updatable, sentinel_slot)
-        not_uniques = jnp.logical_not(updated_unique_mask)
-        next_pending = jnp.logical_and(updatable, not_uniques)
-        next_pending = jnp.logical_or(next_pending, overflowed)
-        return updated_idxs, next_pending
+    def _body(
+        val: tuple[CuckooIdx, chex.Array, chex.Array, chex.Array]
+    ) -> tuple[CuckooIdx, chex.Array, chex.Array, chex.Array]:
+        idxs, pending, probe_counts, failed = val
+        active_pending = jnp.logical_and(
+            pending, jnp.logical_and(~failed, probe_counts < max_probes)
+        )
+        updated_idxs = _next_idx(idxs, active_pending)
+        new_probe_counts = probe_counts + active_pending.astype(SIZE_DTYPE)
 
-    index, _ = jax.lax.while_loop(_cond, _body, (index, unupdated))
+        flat_updated_slots = updated_idxs.index * table.slots_per_bucket + updated_idxs.table_index
+        valid_candidate = updated_idxs.table_index < table.slots_per_bucket
+        active_for_unique = jnp.logical_and(updatable, jnp.logical_and(~failed, valid_candidate))
+        updated_unique_mask = _first_occurrence_mask(
+            flat_updated_slots, active_for_unique, sentinel_slot
+        )
 
-    successful = updatable
-    flat_indices = index.index * table.cuckoo_table_n + index.table_index
+        tentative_pending = jnp.logical_and(
+            updatable, jnp.logical_and(~failed, ~updated_unique_mask)
+        )
+        over_budget = new_probe_counts >= max_probes
+        exhausted = jnp.logical_and(tentative_pending, over_budget)
+        next_failed = jnp.logical_or(failed, exhausted)
+        next_pending = jnp.logical_and(tentative_pending, ~over_budget)
+        return updated_idxs, next_pending, new_probe_counts, next_failed
+
+    index, pending, _, failed = jax.lax.while_loop(
+        _cond, _body, (index, pending, probe_counts, failed)
+    )
+    failed = jnp.logical_or(failed, pending)
+    successful = jnp.logical_and(
+        updatable, jnp.logical_and(~failed, index.table_index < table.slots_per_bucket)
+    )
+    flat_indices = index.index * table.slots_per_bucket + index.table_index
 
     new_table = table.table.at[flat_indices].set_as_condition(successful, inputs)
 
@@ -557,7 +558,7 @@ def _hashtable_parallel_insert_internal(
     table = table.replace(
         table=new_table, fingerprints=new_fingerprints, table_idx=new_table_idx, size=new_size
     )
-    return table, index
+    return table, index, successful
 
 
 @jax.jit
@@ -595,10 +596,11 @@ def _hashtable_parallel_insert_jit(
             table, inputs, uint32eds, idx, steps, fingerprints, initial_found
         )
 
-        updatable = jnp.logical_and(~found, unique_filled)
+        empty_slot = idx.table_index >= table.table_idx[idx.index]
+        updatable = jnp.logical_and(~found, jnp.logical_and(unique_filled, empty_slot))
 
         # Perform parallel insertion
-        updated_table, inserted_idx = _hashtable_parallel_insert_internal(
+        updated_table, inserted_idx, inserted_mask = _hashtable_parallel_insert_internal(
             table, inputs, uint32eds, steps, idx, updatable, fingerprints
         )
 
@@ -630,9 +632,9 @@ def _hashtable_parallel_insert_jit(
 
         return (
             updated_table,
-            updatable,
+            inserted_mask,
             unique_filled,
-            HashIdx(index=final_idx.index * table.cuckoo_table_n + final_idx.table_index),
+            HashIdx(index=final_idx.index * table.slots_per_bucket + final_idx.table_index),
         )
 
     def _empty_insert(_):
@@ -661,24 +663,23 @@ def _hashtable_getitem_jit(table, idx: HashIdx) -> Xtructurable:
 @base_dataclass
 class HashTable:
     """
-    Cuckoo Hash Table Implementation
-
-    This implementation uses multiple hash functions (specified by n_table)
-    to resolve collisions. Each item can be stored in one of n_table possible positions.
+    Bucketed open-addressing hash table.
 
     Attributes:
         seed: Initial seed for hash functions
         capacity: User-specified capacity
         _capacity: Actual internal capacity (larger than specified to handle collisions)
+        max_probes: Per-lookup probe upper bound
         size: Current number of items in table
         table: The actual storage for states
-        table_idx: Indices tracking which hash function was used for each entry
+        table_idx: Per-bucket fill count (0..slots_per_bucket)
     """
 
     seed: int
     capacity: int
     _capacity: int
-    cuckoo_table_n: int
+    slots_per_bucket: int
+    max_probes: int
     size: int
     table: Xtructurable  # shape = State("args" = (capacity, cuckoo_len, ...), ...)
     table_idx: chex.Array  # shape = (capacity, ) is the index of the table in the cuckoo table.
@@ -689,8 +690,9 @@ class HashTable:
         dataclass: Xtructurable,
         seed: int,
         capacity: int,
-        cuckoo_table_n: int = 2,
+        slots_per_bucket: int = 2,
         hash_size_multiplier: int = 2,
+        max_probes: int | None = None,
     ) -> "HashTable":
         """
         Initialize a new hash table with specified parameters.
@@ -703,11 +705,18 @@ class HashTable:
         Returns:
             Initialized HashTable instance
         """
-        return _hashtable_build_jit(dataclass, seed, capacity, cuckoo_table_n, hash_size_multiplier)
+        return _hashtable_build_jit(
+            dataclass,
+            seed,
+            capacity,
+            slots_per_bucket,
+            hash_size_multiplier,
+            max_probes,
+        )
 
     def lookup_cuckoo(self, input: Xtructurable) -> tuple[CuckooIdx, bool, chex.Array]:
         """
-        Finds the state in the hash table using Cuckoo hashing.
+        Finds the state in the hash table using bucketed probing.
 
         Args:
             input: The Xtructurable state to look up.
@@ -718,7 +727,7 @@ class HashTable:
             - found (bool): True if the state was found, False otherwise.
             - fingerprint (uint32): Hash fingerprint of the probed state (internal use).
             If not found, idx indicates the first empty slot encountered
-            during the Cuckoo search path where an insertion could occur.
+            during the probe path where an insertion could occur.
         """
         return _hashtable_lookup_cuckoo_jit(self, input)
 
@@ -735,7 +744,7 @@ class HashTable:
         self, inputs: Xtructurable, filled: chex.Array | bool = True
     ) -> tuple[HashIdx, chex.Array]:
         """
-        Finds the state in the hash table using Cuckoo hashing.
+        Finds the state in the hash table using bucketed probing.
 
         Returns `(HashIdx, found_mask)` per input.
         """
