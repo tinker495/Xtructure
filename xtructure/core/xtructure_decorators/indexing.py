@@ -1,3 +1,4 @@
+from operator import attrgetter
 from typing import Any, Type, TypeVar
 
 import jax.numpy as jnp
@@ -13,6 +14,12 @@ class _Updater:
         self.obj_instance = obj_instance
         self.indices = index
         self.cls = obj_instance.__class__
+        # Cache field order and an attrgetter for both the instance and (optionally) value instances.
+        if hasattr(self.cls, "__dataclass_fields__"):
+            self._field_names = tuple(self.cls.__dataclass_fields__.keys())
+        else:
+            self._field_names = tuple(getattr(self.cls, "__annotations__", {}).keys())
+        self._field_getter = attrgetter(*self._field_names) if self._field_names else None
 
     def set(self, values_to_set):
         new_field_data = {}
@@ -23,22 +30,33 @@ class _Updater:
                 f"The .at[...].set(...) feature expects a dataclass structure."
             )
 
-        for field_name in self.cls.__dataclass_fields__:
-            current_field_value: Xtructurable = getattr(self.obj_instance, field_name)
+        is_value_instance = isinstance(values_to_set, self.cls)
+        values_getter = self._field_getter if is_value_instance else None
+        values_tuple = None
+        if is_value_instance and values_getter is not None:
+            values_tuple = values_getter(values_to_set)
+            if len(self._field_names) == 1:
+                values_tuple = (values_tuple,)
 
+        instance_values = self._field_getter(self.obj_instance) if self._field_getter else ()
+        if len(self._field_names) == 1:
+            instance_values = (instance_values,)
+
+        for i, (field_name, current_field_value) in enumerate(
+            zip(self._field_names, instance_values)
+        ):
             try:
+                # Most common fast path: arrays and xtructure instances both expose `.at[...]`.
                 updater_ref = current_field_value.at[self.indices]
                 if hasattr(updater_ref, "set"):
-                    value_for_this_field = None
-                    if isinstance(values_to_set, self.cls):
-                        value_for_this_field = getattr(values_to_set, field_name)
-                    else:
-                        value_for_this_field = values_to_set
-
+                    value_for_this_field = (
+                        values_tuple[i] if values_tuple is not None else values_to_set
+                    )
                     new_field_data[field_name] = updater_ref.set(value_for_this_field)
                 else:
                     new_field_data[field_name] = current_field_value
-            except Exception:
+            except (AttributeError, TypeError, IndexError, KeyError, ValueError):
+                # Preserve legacy behavior: if a field can't be updated, keep original value.
                 new_field_data[field_name] = current_field_value
 
         return self.cls(**new_field_data)
@@ -129,11 +147,25 @@ def add_indexing_methods(cls: Type[T]) -> Type[T]:
     index to each field.
     The `at` property provides access to an updater object for specific indices.
     """
+    # Pre-compute field order once to avoid per-call introspection.
+    if hasattr(cls, "__dataclass_fields__"):
+        _field_names = tuple(cls.__dataclass_fields__.keys())
+    else:
+        _field_names = tuple(getattr(cls, "__annotations__", {}).keys())
+
+    _field_getter = attrgetter(*_field_names) if _field_names else None
 
     def getitem(self, index):
         """Support indexing operations on the dataclass"""
+        if not _field_names:
+            return cls()
+
+        values = _field_getter(self)
+        if len(_field_names) == 1:
+            values = (values,)
+
         new_values = {}
-        for field_name, field_value in self.__dict__.items():
+        for field_name, field_value in zip(_field_names, values):
             if hasattr(field_value, "__getitem__"):
                 new_values[field_name] = field_value[index]
             else:

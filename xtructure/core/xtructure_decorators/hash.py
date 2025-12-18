@@ -97,12 +97,9 @@ def byterize_hash_func_builder(x: Xtructurable):
             byte_array = jnp.pad(byte_array, (0, pad_len), mode="constant", constant_values=0)
 
         chunks = jnp.reshape(byte_array, (-1, 4))
-
-        def _chunk_to_uint32(chunk):
-            return jax.lax.bitcast_convert_type(chunk, jnp.uint32)
-
-        uint32ed = jax.vmap(_chunk_to_uint32)(chunks)
-        return jnp.reshape(uint32ed, (-1,))
+        # Fast-path: bitcast a (N, 4) uint8 buffer to (N,) uint32 without per-row vmap.
+        # Verified by tests: jax.lax.bitcast_convert_type keeps leading axes and repacks trailing bytes.
+        return jax.lax.bitcast_convert_type(chunks, jnp.uint32).reshape(-1)
 
     def _leaf_to_uint32(leaf):
         """Convert a single leaf to uint32 representation."""

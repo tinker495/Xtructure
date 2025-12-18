@@ -185,13 +185,32 @@ def _dataclass_unflatten(dcls, keys, values):
 
 
 def _flatten_with_path(dcls):
-    path = []
-    keys = []
-    for k, v in sorted(dcls.__dict__.items()):
-        keys.append(k)  # generate same aux data as flatten without path
-        k = jax.tree_util.GetAttrKey(k)
-        path.append((k, v))
-    return path, tuple(keys)
+    """Flatten dataclass to (path, aux_keys) with deterministic field order.
+
+    We prefer declared dataclass field order (stable, avoids sorting cost) and
+    only sort "extra" attributes that may have been attached to the instance
+    dynamically, preserving deterministic behavior across runs.
+    """
+    dct = getattr(dcls, "__dict__", {})
+    if not dct:
+        return [], ()
+
+    field_dict = getattr(dcls, "__dataclass_fields__", None)
+    ordered_keys: list[str] = []
+    seen = set()
+
+    if field_dict:
+        for name in field_dict.keys():
+            if name in dct:
+                ordered_keys.append(name)
+                seen.add(name)
+
+    extra_keys = [k for k in dct.keys() if k not in seen]
+    extra_keys.sort()
+    ordered_keys.extend(extra_keys)
+
+    path = [(jax.tree_util.GetAttrKey(k), dct[k]) for k in ordered_keys]
+    return path, tuple(ordered_keys)
 
 
 @functools.cache
@@ -210,9 +229,26 @@ def register_dataclass_type_with_jax_tree_util(data_class):
     """
 
     def flatten(d):
-        if d.__dict__:
-            return tuple(zip(*sorted(d.__dict__.items())))[::-1]
-        return ((), ())
+        dct = getattr(d, "__dict__", {})
+        if not dct:
+            return ((), ())
+
+        field_dict = getattr(d, "__dataclass_fields__", None)
+        ordered_keys: list[str] = []
+        seen = set()
+
+        if field_dict:
+            for name in field_dict.keys():
+                if name in dct:
+                    ordered_keys.append(name)
+                    seen.add(name)
+
+        extra_keys = [k for k in dct.keys() if k not in seen]
+        extra_keys.sort()
+        ordered_keys.extend(extra_keys)
+
+        values = tuple(dct[k] for k in ordered_keys)
+        return values, tuple(ordered_keys)
 
     unflatten = functools.partial(_dataclass_unflatten, data_class)
     try:

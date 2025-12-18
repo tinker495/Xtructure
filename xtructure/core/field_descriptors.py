@@ -2,6 +2,8 @@ from typing import Any, Callable, Dict, Tuple, Type
 
 import jax.numpy as jnp
 
+from .type_utils import is_xtructure_dataclass_type
+
 # Represents a JAX dtype, can be a specific type like jnp.int32 or a more generic jnp.dtype
 DType = Any
 _FIELD_DESCRIPTOR_ATTR = "__xtructure_field_descriptors__"
@@ -159,7 +161,7 @@ class FieldDescriptor:
 
 def _default_fill_value_for_dtype(dtype: DType) -> Any:
     """Return a dtype-aware sentinel that plays nicely with jnp.full."""
-    if isinstance(dtype, type) and hasattr(dtype, "is_xtructed"):
+    if is_xtructure_dataclass_type(dtype):
         return None
 
     try:
@@ -239,4 +241,3 @@ def get_field_descriptors(cls: Type[Any]) -> Dict[str, FieldDescriptor]:
     if descriptors is None:
         descriptors = cache_field_descriptors(cls)
     return descriptors
-
