@@ -180,7 +180,7 @@ def _hashtable_build(
     dataclass: Xtructurable,
     seed: int,
     capacity: int,
-    slots_per_bucket: int = 8,
+    slots_per_bucket: int = 32,
     hash_size_multiplier: int = 2,
     max_probes: int | None = None,
 ) -> "HashTable":
@@ -251,12 +251,27 @@ def _hashtable_lookup_internal(
 
         # Fingerprint match within the filled part of the bucket
         fp_matches = (stored_fps == input_fingerprint) & (slot_offsets < filled_limit)
-        any_fp_match = jnp.any(fp_matches)
+        has_fp_match = jnp.any(fp_matches)
+        first_match_slot = jnp.argmax(fp_matches).astype(HASH_TABLE_IDX_DTYPE)
+        candidate_flat = bucket_idx * slots_per_bucket + first_match_slot
 
-        def _check_bucket_values(fp_matches_mask):
+        # Fast path: check only the first fingerprint match.
+        candidate_equal = jax.lax.cond(
+            has_fp_match,
+            lambda: jnp.asarray(table.table[candidate_flat] == input, dtype=jnp.bool_),
+            lambda: jnp.bool_(False),
+        )
+
+        found_fast = jnp.logical_and(has_fp_match, candidate_equal)
+
+        # Rare path: fingerprint collision (or multiple fp matches). Only then scan other fp matches.
+        other_fp_matches = fp_matches & (slot_offsets != first_match_slot)
+        need_fallback = jnp.logical_and(~found_fast, jnp.any(other_fp_matches))
+
+        def _fallback_scan():
             def _check_slot(slot_idx):
                 return jax.lax.cond(
-                    fp_matches_mask[slot_idx],
+                    other_fp_matches[slot_idx],
                     lambda: table.table[flat_indices[slot_idx]] == input,
                     lambda: jnp.bool_(False),
                 )
@@ -266,11 +281,15 @@ def _hashtable_lookup_internal(
             match_table_idx = jnp.argmax(slot_equals).astype(HASH_TABLE_IDX_DTYPE)
             return found_in_bucket, match_table_idx
 
-        new_found, match_table_idx = jax.lax.cond(
-            any_fp_match,
-            _check_bucket_values,
-            lambda _: (jnp.bool_(False), HASH_TABLE_IDX_DTYPE(0)),
-            operand=fp_matches,
+        found_fb, match_fb = jax.lax.cond(
+            need_fallback,
+            lambda: _fallback_scan(),
+            lambda: (jnp.bool_(False), HASH_TABLE_IDX_DTYPE(0)),
+        )
+
+        new_found = jnp.logical_or(found_fast, found_fb)
+        match_table_idx = jnp.where(found_fast, first_match_slot, match_fb).astype(
+            HASH_TABLE_IDX_DTYPE
         )
 
         bucket_full = filled_limit == slots_per_bucket
@@ -353,28 +372,45 @@ def _hashtable_lookup_parallel_internal(
         filled_limits = table.table_idx[bucket_indices]
         is_filled = slot_offsets < filled_limits[:, None]
         fp_matches = (stored_fps == query_fingerprints[:, None]) & is_filled & active[:, None]
+        has_fp_match_row = jnp.any(fp_matches, axis=1)
+        first_match_slot = jnp.argmax(fp_matches, axis=1).astype(HASH_TABLE_IDX_DTYPE)  # 0 if none
+        candidate_flat = bucket_indices * slots_per_bucket + first_match_slot
 
-        any_fp_match = jnp.any(fp_matches)
+        # Fast path: compare only the first fp match per row (batch x 1 gather).
+        candidate_states = table.table[candidate_flat]
+        candidate_equal = jax.vmap(lambda s, x: s == x)(candidate_states, inputs)
+        found_fast = has_fp_match_row & candidate_equal
 
-        def _compare_bucket_values():
-            # Vectorized comparison across batch and bucket slots
+        # Rare path: fp collision (or multiple matches) -> scan remaining fp matches.
+        other_fp_matches = fp_matches & (slot_offsets[None, :] != first_match_slot[:, None])
+        need_fallback = (~found_fast) & jnp.any(other_fp_matches, axis=1)
+        any_need_fallback = jnp.any(need_fallback)
+
+        def _fallback_scan():
             def _compare_single_input(bucket_data, input_val):
                 return jax.vmap(lambda slot_data: slot_data == input_val)(bucket_data)
 
-            return jax.vmap(_compare_single_input)(table.table[flat_indices], inputs)
+            value_equals = jax.vmap(_compare_single_input)(table.table[flat_indices], inputs)
+            match_found = value_equals & other_fp_matches & need_fallback[:, None]
+            found_fb = jnp.any(match_found, axis=1)
+            idx_fb = jnp.argmax(match_found, axis=1).astype(HASH_TABLE_IDX_DTYPE)
+            return found_fb, idx_fb
 
-        value_equals = jax.lax.cond(
-            any_fp_match,
-            _compare_bucket_values,
-            lambda: jnp.zeros_like(fp_matches),
+        found_fb, idx_fb = jax.lax.cond(
+            any_need_fallback,
+            _fallback_scan,
+            lambda: (
+                jnp.zeros_like(need_fallback, dtype=jnp.bool_),
+                jnp.zeros_like(first_match_slot, dtype=HASH_TABLE_IDX_DTYPE),
+            ),
         )
 
-        match_found = value_equals & fp_matches
-        new_founds_in_bucket = jnp.any(match_found, axis=1)
+        new_founds_in_bucket = found_fast | found_fb
         new_founds = jnp.logical_or(founds, new_founds_in_bucket)
 
-        # If multiple matches, argmax takes the first one
-        match_table_indices = jnp.argmax(match_found, axis=1).astype(HASH_TABLE_IDX_DTYPE)
+        match_table_indices = jnp.where(found_fast, first_match_slot, idx_fb).astype(
+            HASH_TABLE_IDX_DTYPE
+        )
 
         # Update probes
         new_probes = probes + active.astype(SIZE_DTYPE) * SIZE_DTYPE(slots_per_bucket)
@@ -744,7 +780,7 @@ class HashTable:
         dataclass: Xtructurable,
         seed: int,
         capacity: int,
-        slots_per_bucket: int = 8,
+        slots_per_bucket: int = 32,
         hash_size_multiplier: int = 2,
         max_probes: int | None = None,
     ) -> "HashTable":
