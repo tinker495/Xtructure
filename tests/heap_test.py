@@ -12,8 +12,8 @@ class XtructureValue:
     """
     This class is a dataclass that represents a hash table heap value.
     It has two fields:
-    1. index: hashtable index
-    2. table_index: cuckoo table index
+    1. index: bucket index
+    2. slot_index: index within the bucket
     """
 
     a: FieldDescriptor(jnp.uint8)  # type: ignore

@@ -1,6 +1,6 @@
 # `HashTable` Usage
 
-A Cuckoo hash table optimized for JAX.
+A bucketed double hash table optimized for JAX.
 
 ```python
 import jax
@@ -72,11 +72,12 @@ print(f"HashTable: Single item inserted? {was_inserted}")
 
 ## Key `HashTable` Details
 
-*   **Cuckoo Hashing**: Uses `CUCKOO_TABLE_N` (an internal constant, typically small e.g. 2-4) hash functions/slots per primary index to resolve collisions. This means an item can be stored in one of `N` locations.
-*   **`HashTable.build(dataclass, seed, capacity)`**:
+*   **Bucketed Double Hashing**: Uses `bucket_size` (an internal constant, typically small e.g. 2-4) slots per bucket to resolve collisions. If a bucket is full, double hashing determines the next bucket to probe.
+*   **`HashTable.build(dataclass, seed, capacity, bucket_size=2)`**:
     *   `dataclass`: The *class* of your custom data structure (e.g., `MyDataValue`). An instance of this class (e.g., `MyDataValue.default()`) is used internally to define the table structure.
     *   `seed`: Integer seed for hashing.
-    *   `capacity`: Desired user capacity. The internal capacity (`_capacity`) will be larger to accommodate Cuckoo hashing (specifically, `int(HASH_SIZE_MULTIPLIER * capacity / CUCKOO_TABLE_N)`).
+    *   `capacity`: Desired user capacity. The internal capacity (`_capacity`) will be larger to accommodate collisions (specifically, `int(HASH_SIZE_MULTIPLIER * capacity / bucket_size)`).
+    *   `bucket_size`: Number of slots per bucket.
 *   **`HashTable.parallel_insert(table, inputs, filled_mask=None)`**:
     *   `inputs`: A PyTree (or batch of PyTrees) of items to insert.
     *   `filled_mask`: A boolean JAX array indicating which entries in `inputs` are valid. If `None`, all inputs are considered valid.

@@ -4,14 +4,14 @@
 
 # Xtructure
 
-A Python package providing JAX-optimized data structures, including a batched priority queue and a cuckoo hash table.
+A Python package providing JAX-optimized data structures, including a batched priority queue and a bucketed double hash table.
 
 ## Features
 
 - Stack (`Stack`): A LIFO (Last-In, First-Out) data structure.
 - Queue (`Queue`): A FIFO (First-In, First-Out) data structure.
 - Batched GPU Priority Queue (`BGPQ`): A batched priority queue optimized for GPU operations.
-- Cuckoo Hash Table (`HashTable`): A cuckoo hash table optimized for GPU operations.
+- Bucketed Double Hash Table (`HashTable`): A hash table optimized for GPU operations using double hashing and bucketed storage.
 - Xtructure NumPy (`xtructure_numpy`): JAX-compatible operations for dataclass manipulation including concatenation, stacking, padding, conditional selection, deduplication, and element selection.
 - Optimized for JAX.
 
@@ -39,7 +39,7 @@ Detailed documentation on how to use Xtructure is available at [https://tinker49
 *   **[Stack Usage](https://tinker495.github.io/Xtructure/stack.html)**: Guide to using the Stack data structure.
 *   **[Queue Usage](https://tinker495.github.io/Xtructure/queue.html)**: Guide to using the Queue data structure.
 *   **[BGPQ Usage](https://tinker495.github.io/Xtructure/bgpq.html)**: Guide to using the Batched GPU Priority Queue.
-*   **[HashTable Usage](https://tinker495.github.io/Xtructure/hashtable.html)**: Guide to using the Cuckoo hash table.
+*   **[HashTable Usage](https://tinker495.github.io/Xtructure/hashtable.html)**: Guide to using the bucketed double hash table.
 *   **[Xtructure NumPy Operations](https://tinker495.github.io/Xtructure/xnp.html)**: Guide to using `xtructure_numpy` (`xnp`) operations for dataclass manipulation.
 *   **[Structure Layout Flexibility](https://tinker495.github.io/Xtructure/layout_flexibility.html)**: How SoA storage and AoS semantics coexist in Xtructure.
 
