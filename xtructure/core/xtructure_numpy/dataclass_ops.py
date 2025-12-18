@@ -153,80 +153,33 @@ def pad(
     """
     structured_type = dataclass_instance.structured_type
 
-    # Check for no-op case (zero padding)
     if structured_type == StructuredType.SINGLE:
-        if isinstance(pad_width, int) and pad_width == 0:
-            return dataclass_instance
-        elif isinstance(pad_width, (list, tuple)):
-            if len(pad_width) == 1:
-                if isinstance(pad_width[0], (list, tuple)) and len(pad_width[0]) == 2:
-                    if pad_width[0] == (0, 0):
-                        return dataclass_instance
-                elif pad_width[0] == 0:
-                    return dataclass_instance
-            elif len(pad_width) == 2 and pad_width == (0, 0):
-                return dataclass_instance
-    elif structured_type == StructuredType.BATCHED:
-        batch_ndim = len(dataclass_instance.shape.batch)
-        normalized_pad_width = _normalize_pad_width(pad_width, batch_ndim)
+        normalized_pad_width = _normalize_pad_width(pad_width, 1)
+        if any(before < 0 or after < 0 for before, after in normalized_pad_width):
+            raise ValueError("pad_width entries must be non-negative")
+
         if all(before == 0 and after == 0 for before, after in normalized_pad_width):
             return dataclass_instance
 
-    if structured_type == StructuredType.SINGLE:
-        # For SINGLE type, expand to batch dimension of size 1 and apply BATCHED logic
+        pad_before, pad_after = normalized_pad_width[0]
+        target_size = 1 + pad_before + pad_after
+
+        # Fast-path for default constant padding: allocate a default batch and insert the single item.
+        if mode == "constant" and "constant_values" not in kwargs:
+            result = type(dataclass_instance).default((target_size,))
+            return result.at[pad_before].set(dataclass_instance)
+
+        # General case: expand to a batch of size 1, then delegate to jnp.pad.
         expanded = jax.tree_util.tree_map(lambda x: jnp.expand_dims(x, axis=0), dataclass_instance)
-        # Apply padding to the expanded instance using the BATCHED logic directly
-        # to avoid infinite recursion
-        batch_shape = expanded.shape.batch
-        batch_ndim = len(batch_shape)
-        normalized_pad_width = _normalize_pad_width(pad_width, batch_ndim)
-
-        # Check if we can use the existing padding_as_batch method
-        if (
-            batch_ndim == 1
-            and len(normalized_pad_width) == 1
-            and mode == "constant"
-            and "constant_values" not in kwargs
-        ):
-            pad_before, pad_after = normalized_pad_width[0]
-            target_size = batch_shape[0] + pad_before + pad_after
-            padded = expanded.padding_as_batch((target_size,))
-
-            if pad_before > 0:
-                padding_instance = type(expanded).default((pad_before,))
-                result = jax.tree_util.tree_map(
-                    lambda pad_val, data_val: jnp.concatenate([pad_val, data_val], axis=0),
-                    padding_instance,
-                    padded,
-                )
-                return result
-            else:
-                return padded
-
-        # General case: create pad_width specification for jnp.pad
+        batch_ndim = 1
         pad_width_spec = normalized_pad_width
 
-        if mode == "constant" and "constant_values" not in kwargs:
-            default_instance = type(expanded).default()
-            result = jax.tree_util.tree_map(
-                lambda x, default_val: jnp.pad(
-                    x,
-                    pad_width_spec + [(0, 0)] * (x.ndim - batch_ndim),
-                    mode=mode,
-                    constant_values=default_val,
-                ),
-                expanded,
-                default_instance,
-            )
-            return result
-        else:
-            result = jax.tree_util.tree_map(
-                lambda x: jnp.pad(
-                    x, pad_width_spec + [(0, 0)] * (x.ndim - batch_ndim), mode=mode, **kwargs
-                ),
-                expanded,
-            )
-            return result
+        return jax.tree_util.tree_map(
+            lambda x: jnp.pad(
+                x, pad_width_spec + [(0, 0)] * (x.ndim - batch_ndim), mode=mode, **kwargs
+            ),
+            expanded,
+        )
 
     elif structured_type == StructuredType.BATCHED:
         batch_shape = dataclass_instance.shape.batch
@@ -234,64 +187,34 @@ def pad(
 
         # Normalize pad_width to list of (before, after) tuples
         normalized_pad_width = _normalize_pad_width(pad_width, batch_ndim)
+        if any(before < 0 or after < 0 for before, after in normalized_pad_width):
+            raise ValueError("pad_width entries must be non-negative")
 
-        # Check if we can use the existing padding_as_batch method
-        # This is possible if: 1D batch, axis 0 padding, constant mode with default values
-        if (
-            batch_ndim == 1
-            and len(normalized_pad_width) == 1
-            and mode == "constant"
-            and "constant_values" not in kwargs
-        ):
-            pad_before, pad_after = normalized_pad_width[0]
-            target_size = batch_shape[0] + pad_before + pad_after
+        # No-op case (zero padding)
+        if all(before == 0 and after == 0 for before, after in normalized_pad_width):
+            return dataclass_instance
 
-            # Use existing padding_as_batch method
-            padded = dataclass_instance.padding_as_batch((target_size,))
-
-            # If we need padding before, shift the data
-            if pad_before > 0:
-                # Create padding values (using default values)
-                padding_instance = type(dataclass_instance).default((pad_before,))
-                # Concatenate padding before the data
-                result = jax.tree_util.tree_map(
-                    lambda pad_val, data_val: jnp.concatenate([pad_val, data_val], axis=0),
-                    padding_instance,
-                    padded,
-                )
-                return result
-            else:
-                return padded
-
-        # General case: create pad_width specification for jnp.pad
-        pad_width_spec = normalized_pad_width
-
-        # For constant mode without explicit constant_values, use field-specific defaults
+        # Fast-path for default constant padding: allocate a default batch and insert the original.
         if mode == "constant" and "constant_values" not in kwargs:
-            # Create a default instance to get field-specific default values
-            default_instance = type(dataclass_instance).default()
+            target_shape = tuple(
+                dim + before + after
+                for dim, (before, after) in zip(batch_shape, normalized_pad_width)
+            )
+            insert_slices = tuple(
+                slice(before, before + dim)
+                for dim, (before, after) in zip(batch_shape, normalized_pad_width)
+            )
+            result = type(dataclass_instance).default(target_shape)
+            return result.at[insert_slices].set(dataclass_instance)
 
-            # Apply padding with field-specific constant values
-            result = jax.tree_util.tree_map(
-                lambda x, default_val: jnp.pad(
-                    x,
-                    pad_width_spec + [(0, 0)] * (x.ndim - batch_ndim),
-                    mode=mode,
-                    constant_values=default_val,
-                ),
-                dataclass_instance,
-                default_instance,
-            )
-            return result
-        else:
-            # Apply padding to each field with provided kwargs
-            result = jax.tree_util.tree_map(
-                lambda x: jnp.pad(
-                    x, pad_width_spec + [(0, 0)] * (x.ndim - batch_ndim), mode=mode, **kwargs
-                ),
-                dataclass_instance,
-            )
-            return result
+        # General case: apply jnp.pad to each field with provided kwargs.
+        pad_width_spec = normalized_pad_width
+        return jax.tree_util.tree_map(
+            lambda x: jnp.pad(
+                x, pad_width_spec + [(0, 0)] * (x.ndim - batch_ndim), mode=mode, **kwargs
+            ),
+            dataclass_instance,
+        )
 
     else:
         raise ValueError(f"Padding not supported for structured type: {structured_type}")

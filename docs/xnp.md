@@ -79,9 +79,9 @@ print(f"Tiled batch shape: {tiled.shape.batch}")  # (3,)
 original = jnp.zeros(5)
 indices = jnp.array([0, 2, 0])  # Note: index 0 appears twice
 condition = jnp.array([True, True, True])
-values = jnp.array([1.0, 2.0, 3.0])  # Last value (3.0) wins for index 0
+values = jnp.array([1.0, 2.0, 3.0])  # First True wins for duplicate index 0
 result_array = xnp.update_on_condition(original, indices, condition, values)
-print(f"Conditional update result: {result_array}")  # [3.0, 0.0, 2.0, 0.0, 0.0]
+print(f"Conditional update result: {result_array}")  # [1.0, 0.0, 2.0, 0.0, 0.0]
 
 # 9. Advanced padding with different modes
 data = SimpleData.default(shape=(3,))
@@ -107,11 +107,11 @@ taken_along = xnp.take_along_axis(data, indices, axis=1)
 print(f"Take along axis shape: {taken_along.shape.batch}")  # (3, 1)
 
 # 12. Expand dims and Squeeze
-expanded = xnp.expand_dims(reshaped, axis=0) # (1, 2, 3)
-squeezed = xnp.squeeze(expanded) # (2, 3)
+expanded = xnp.expand_dims(reshaped, axis=0)  # (1, 2, 3)
+squeezed = xnp.squeeze(expanded)  # (2, 3)
 
 # 13. Split
-splits = xnp.split(batched_data, 2) # list of 2 dataclasses each with shape (3,)
+splits = xnp.split(batched_data, 2)  # list of 2 dataclasses each with shape (3,)
 ```
 
 ## Key `xnp` Operations
@@ -150,7 +150,7 @@ splits = xnp.split(batched_data, 2) # list of 2 dataclasses each with shape (3,)
 *   **Output**: Padded dataclass instance.
 *   **Behavior**:
     *   For single dataclasses: Creates batched version by applying padding to create new batch dimension.
-    *   For batched dataclasses: Uses existing `padding_as_batch` method when possible, otherwise applies general padding.
+    *   For batched dataclasses: Uses an optimized constant-padding path when possible; otherwise applies `jnp.pad` field-wise.
     *   Automatically detects optimal padding strategy based on parameters.
 *   **Error**: Raises `ValueError` if pad_width is incompatible with dataclass structure.
 
@@ -167,25 +167,26 @@ splits = xnp.split(batched_data, 2) # list of 2 dataclasses each with shape (3,)
     *   If `y` is a dataclass: applies `jnp.where` field-wise between `x` and `y`.
     *   If `y` is a scalar: applies `jnp.where` between each field of `x` and the scalar `y`.
 
-### **`xnp.unique_mask(val, key=None, key_fn=None, batch_len=None, return_index=False, return_inverse=False)`**
+### **`xnp.unique_mask(val, key=None, filled=None, key_fn=None, batch_len=None, return_index=False, return_inverse=False)`**
 *   Creates a boolean mask identifying unique elements in a batched Xtructurable, keeping only the entry with minimum cost for each unique state.
-*   **Input**: An `Xtructurable` instance with a `uint32ed` attribute (for hashing).
+*   **Input**: A batched `Xtructurable` (or any pytree accepted by `jax.vmap(key_fn)`).
 *   **Parameters**:
     *   `key`: Optional cost/priority array for tie-breaking. Lower costs are preferred. If `None`, returns first occurrence.
-    *   `key_fn`: Optional callable to compute a cost/priority array from `val` for tie-breaking. Lower costs are preferred. Ignored if `key` is provided.
+    *   `filled`: Optional boolean array marking valid entries. If provided, only filled entries can be selected.
+    *   `key_fn`: Optional callable that produces hashable keys for uniqueness (vectorized via `jax.vmap`). Defaults to `lambda x: x.uint32ed`.
     *   `batch_len`: Optional explicit batch length. If `None`, inferred from `val.shape.batch[0]`.
     *   `return_index`: If `True`, also return indices of unique elements.
     *   `return_inverse`: If `True`, also return inverse indices for reconstructing original array.
 *   **Output**: Boolean mask array where `True` indicates the single, cheapest unique value to keep. If `return_index` or `return_inverse` is `True`, returns a tuple.
 *   **Behavior**:
-    *   Uses `uint32ed` attribute to compute hash-based uniqueness via `jnp.unique`.
-    *   Without `key`: Returns mask for first occurrence of each unique element.
+    *   Uses `key_fn(val[i])` to compute per-item keys, then groups with `jnp.unique(axis=0)`.
+    *   Without `key`: Returns mask for first occurrence of each unique element (and applies `filled` if provided).
     *   With `key`:
         *   Groups elements by hash using `jnp.unique` with JIT-compatible sizing.
         *   Finds minimum cost per group using segmented operations.
         *   Uses index-based tie-breaking for equal costs (lower index wins).
-        *   Excludes entries with infinite cost (padding/invalid entries).
-*   **Error**: Raises `ValueError` if `val` lacks `uint32ed` attribute or key length doesn't match batch_len.
+        *   Excludes entries with infinite cost (padding/invalid entries), and respects `filled` if provided.
+*   **Error**: Raises `ValueError` if `key_fn` fails or key length doesn't match batch_len.
 
 ### **`xnp.take(dataclass_instance, indices, axis=0)`**
 *   Takes elements from a dataclass along the specified axis, similar to `jnp.take`.
