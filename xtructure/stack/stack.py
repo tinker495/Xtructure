@@ -61,7 +61,7 @@ def _stack_getitem_jit(stack, idx: SIZE_DTYPE) -> Xtructurable:
     return stack.val_store[idx]
 
 
-@base_dataclass
+@base_dataclass(static_fields=("max_size",))
 class Stack:
     """
     A JAX-compatible batched Stack data structure.

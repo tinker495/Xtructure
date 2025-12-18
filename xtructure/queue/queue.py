@@ -64,7 +64,7 @@ def _queue_getitem_jit(queue, idx: SIZE_DTYPE) -> Xtructurable:
     return queue.val_store[storage_idx]
 
 
-@base_dataclass
+@base_dataclass(static_fields=("max_size",))
 class Queue:
     """
     A JAX-compatible batched Queue data structure.

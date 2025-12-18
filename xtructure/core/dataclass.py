@@ -23,6 +23,7 @@ def base_dataclass(
     unsafe_hash=False,
     frozen=False,
     kw_only: bool = False,
+    static_fields: tuple[str, ...] = (),
 ):
     """JAX-friendly wrapper for :py:func:`dataclasses.dataclass`.
 
@@ -39,6 +40,11 @@ def base_dataclass(
         unsafe_hash: See :py:func:`dataclasses.dataclass`.
         frozen: See :py:func:`dataclasses.dataclass`.
         kw_only: See :py:func:`dataclasses.dataclass`.
+        static_fields: Dataclass field names to treat as static PyTree metadata (aux_data).
+            These fields will NOT be treated as JAX leaves, so inside `jax.jit` they remain
+            Python values (and can be used for static shapes / static_argnums).
+            Values of `static_fields` must be Python-hashable (e.g. int/str/tuple), otherwise
+            JAX will error during tracing.
 
     Returns:
         A JAX-friendly dataclass.
@@ -46,7 +52,7 @@ def base_dataclass(
 
     def dcls(cls):
         # Make sure to create a separate _Dataclass instance for each `cls`.
-        return _Dataclass(init, repr, eq, order, unsafe_hash, frozen, kw_only)(cls)
+        return _Dataclass(init, repr, eq, order, unsafe_hash, frozen, kw_only, static_fields)(cls)
 
     if cls is None:
         return dcls
@@ -65,6 +71,7 @@ class _Dataclass:
         unsafe_hash=False,
         frozen=False,
         kw_only=False,
+        static_fields: tuple[str, ...] = (),
     ):
         self.init = init
         self.repr = repr  # pylint: disable=redefined-builtin
@@ -73,6 +80,7 @@ class _Dataclass:
         self.unsafe_hash = unsafe_hash
         self.frozen = frozen
         self.kw_only = kw_only
+        self.static_fields = tuple(static_fields)
 
     def __call__(self, cls):
         """Forwards class to dataclasses's wrapper and registers it with JAX."""
@@ -141,12 +149,13 @@ class _Dataclass:
         # _pickle.PicklingError: Can't pickle <functools._lru_cache_wrapper object>:
         # it's not the same object as register_dataclass_type_with_jax_tree_util
         # for modules defined in __main__ so we disable registration in this case.
+        static_fields = self.static_fields
         if dcls.__module__ != "__main__":
-            register_dataclass_type_with_jax_tree_util(dcls)
+            register_dataclass_type_with_jax_tree_util(dcls, static_fields)
 
         # Patch __setstate__ to register the dataclass on deserialization.
         def _setstate(self, state):
-            register_dataclass_type_with_jax_tree_util(dcls)
+            register_dataclass_type_with_jax_tree_util(dcls, static_fields)
             self.__dict__.update(state)
 
         orig_init = dcls.__init__
@@ -155,7 +164,7 @@ class _Dataclass:
         # not registered on deserialization.
         @functools.wraps(orig_init)
         def _init(self, *args, **kwargs):
-            register_dataclass_type_with_jax_tree_util(dcls)
+            register_dataclass_type_with_jax_tree_util(dcls, static_fields)
             return orig_init(self, *args, **kwargs)
 
         setattr(dcls, "from_tuple", _from_tuple)
@@ -213,8 +222,16 @@ def _flatten_with_path(dcls):
     return path, tuple(ordered_keys)
 
 
+def _is_hashable_static(value) -> bool:
+    try:
+        hash(value)
+        return True
+    except TypeError:
+        return False
+
+
 @functools.cache
-def register_dataclass_type_with_jax_tree_util(data_class):
+def register_dataclass_type_with_jax_tree_util(data_class, static_fields: tuple[str, ...] = ()):
     """Register an existing dataclass so JAX knows how to handle it.
 
     This means that functions in jax.tree_util operate over the fields
@@ -226,7 +243,35 @@ def register_dataclass_type_with_jax_tree_util(data_class):
         data_class: A class created using dataclasses.dataclass. It must be
             constructable from keyword arguments corresponding to the members exposed
             in instance.__dict__.
+        static_fields: Field names to treat as static aux_data (not JAX leaves).
     """
+    static_fields = tuple(static_fields)
+
+    def flatten_with_keys(dcls):
+        # Must be consistent with `flatten`: return keys/children ONLY (no static aux fields).
+        dct = getattr(dcls, "__dict__", {})
+        if not dct:
+            return [], ()
+
+        field_dict = getattr(dcls, "__dataclass_fields__", None)
+        ordered_keys: list[str] = []
+        seen = set()
+
+        if field_dict:
+            for name in field_dict.keys():
+                if name in dct:
+                    ordered_keys.append(name)
+                    seen.add(name)
+
+        extra_keys = [k for k in dct.keys() if k not in seen]
+        extra_keys.sort()
+        ordered_keys.extend(extra_keys)
+
+        if static_fields:
+            ordered_keys = [k for k in ordered_keys if k not in static_fields]
+
+        path = [(jax.tree_util.GetAttrKey(k), dct[k]) for k in ordered_keys]
+        return path, tuple(ordered_keys)
 
     def flatten(d):
         dct = getattr(d, "__dict__", {})
@@ -247,14 +292,44 @@ def register_dataclass_type_with_jax_tree_util(data_class):
         extra_keys.sort()
         ordered_keys.extend(extra_keys)
 
-        values = tuple(dct[k] for k in ordered_keys)
-        return values, tuple(ordered_keys)
+        if not static_fields:
+            values = tuple(dct[k] for k in ordered_keys)
+            return values, tuple(ordered_keys)
 
-    unflatten = functools.partial(_dataclass_unflatten, data_class)
+        child_keys = tuple(k for k in ordered_keys if k not in static_fields)
+        static_items = tuple((k, dct[k]) for k in ordered_keys if k in static_fields)
+        for k, v in static_items:
+            if not _is_hashable_static(v):
+                raise TypeError(
+                    f"Field '{k}' of {data_class.__name__} is configured as static_fields but its "
+                    f"value is not hashable (type={type(v)}). Store static metadata as Python "
+                    f"scalars/tuples (e.g. int/str/tuple), not JAX arrays."
+                )
+
+        children = tuple(dct[k] for k in child_keys)
+        # aux_data must be hashable: (child_keys, static_items) is hashable if static values are.
+        return children, (child_keys, static_items)
+
+    if not static_fields:
+        unflatten = functools.partial(_dataclass_unflatten, data_class)
+    else:
+
+        def unflatten(aux_data, children):
+            child_keys, static_items = aux_data
+            dcls_object = data_class.__new__(data_class)
+            attribute_dict = dict(zip(child_keys, children))
+            attribute_dict.update(dict(static_items))
+            for field in data_class.__dataclass_fields__.values():
+                if field.name in attribute_dict:
+                    object.__setattr__(dcls_object, field.name, attribute_dict[field.name])
+            if getattr(dcls_object, "__post_init__", None):
+                dcls_object.__post_init__()
+            return dcls_object
+
     try:
         jax.tree_util.register_pytree_with_keys(
             nodetype=data_class,
-            flatten_with_keys=_flatten_with_path,
+            flatten_with_keys=flatten_with_keys if static_fields else _flatten_with_path,
             flatten_func=flatten,
             unflatten_func=unflatten,
         )

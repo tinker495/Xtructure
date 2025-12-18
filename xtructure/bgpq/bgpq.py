@@ -120,7 +120,7 @@ def _bgpq_build_jit(total_size, batch_size, value_class=Xtructurable, key_dtype=
 
 @jax.jit
 def _bgpq_merge_buffer_jit(heap: "BGPQ", blockk: chex.Array, blockv: Xtructurable):
-    n = blockk.shape[0]
+    n = int(heap.batch_size)
     # Concatenate block and buffer
     sorted_key, sorted_idx = merge_array_backend(blockk, heap.key_buffer)
     val = xnp.concatenate([blockv, heap.val_buffer], axis=0)
@@ -128,7 +128,7 @@ def _bgpq_merge_buffer_jit(heap: "BGPQ", blockk: chex.Array, blockv: Xtructurabl
 
     # Check for active elements (non-infinity)
     filled = jnp.isfinite(sorted_key)
-    n_filled = jnp.sum(filled)
+    n_filled = jnp.sum(filled, dtype=SIZE_DTYPE)
     buffer_overflow = n_filled >= n
 
     def overflowed(key, val):
@@ -352,7 +352,7 @@ def _bgpq_delete_mins_jit(heap: "BGPQ"):
     return heap, min_keys, min_values
 
 
-@base_dataclass
+@base_dataclass(static_fields=("max_size", "branch_size", "batch_size"))
 class BGPQ:
     """
     Batched GPU Priority Queue implementation.

@@ -73,6 +73,7 @@ else:
 ## Key `BGPQ` Details
 
 *   **Batched Operations**: All operations (insert, delete_mins) are designed to work on batches of data of size `batch_size`.
+*   **Static config fields**: `BGPQ` is a `@base_dataclass` with `static_fields` including `batch_size`/`branch_size`/`max_size`, so internal JIT code treats them as compile-time metadata. Keep these as Python `int` values (hashable), not JAX arrays.
 *   **`BGPQ.build(total_size, batch_size, value_class, key_dtype=jnp.float16)`**:
     *   `total_size`: Desired maximum capacity. The actual `max_size` of the queue might be slightly larger to be an exact multiple of `batch_size` (calculated as `ceil(total_size / batch_size) * batch_size`).
     *   `batch_size`: The fixed size for all batch operations.

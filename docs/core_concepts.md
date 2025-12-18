@@ -104,8 +104,7 @@ class BetterSyntax:
 
     # With custom validation
     prob: FieldDescriptor.scalar(
-        dtype=jnp.float32,
-        validator=lambda x: 0.0 <= x <= 1.0 or raise_error("Must be probability")
+        dtype=jnp.float32, validator=lambda x: 0.0 <= x <= 1.0 or raise_error("Must be probability")
     )
 ```
 
@@ -154,6 +153,7 @@ class Container:
     simple: FieldDescriptor.scalar(dtype=SimpleData)
     history: FieldDescriptor.tensor(dtype=jnp.float32, shape=(4,))
 
+
 # Automatically builds nested defaults
 instance = Container.default(shape=(8,))
 assert instance.simple.value.shape == (8,)
@@ -189,10 +189,8 @@ descriptor’s dtype and trailing shape, and satisfies any custom validators. Va
 @xtructure_dataclass(validate=True)
 class StrictData:
     vector: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))
-    positive: FieldDescriptor.scalar(
-        dtype=jnp.int32,
-        validator=lambda x: x > 0 or raise_error("Must be positive")
-    )
+    positive: FieldDescriptor.scalar(dtype=jnp.int32, validator=lambda x: x > 0 or raise_error("Must be positive"))
+
 
 StrictData(vector=jnp.ones((5, 3), dtype=jnp.float32), positive=10)  # OK
 
@@ -206,13 +204,53 @@ StrictData(vector=jnp.ones((5, 3), dtype=jnp.float32), positive=-1)
 You can also trigger validation manually at any time using `.check_invariants()`:
 
 ```python
-data = StrictData(..., validate=False) # Skip checks during init
+data = StrictData(..., validate=False)  # Skip checks during init
 # ... modify data ...
-data.check_invariants() # Verify consistency now
+data.check_invariants()  # Verify consistency now
 ```
 
 Validation is optional to avoid runtime cost when deserializing known-good data, but it is extremely helpful
 while iterating on new structures or integrating external inputs.
+
+## `base_dataclass` and `static_fields`
+
+`@xtructure_dataclass` is built on top of `@base_dataclass`. You can also use `@base_dataclass` directly for
+"plain" JAX PyTrees that are not SoA-backed `@xtructure_dataclass` structures (for example: `HashTable`, `BGPQ`,
+`Queue`, `Stack`).
+
+The key extra feature is `static_fields`:
+
+- `@base_dataclass(static_fields=(...))` marks specific dataclass fields as **static PyTree metadata (aux_data)**.
+- Static fields are **not JAX leaves**, so they do not get transferred to device and they participate in JIT cache
+  keys (changing them triggers a recompile).
+- Static field values must be **Python-hashable** (e.g. `int`, `str`, `tuple`), otherwise JAX tracing will error.
+
+This is the intended way to store configuration values like sizes / capacities / branching factors that are used to
+decide shapes or control-flow, instead of:
+
+- threading them through every `jax.jit` call as explicit arguments, or
+- re-inferring them from runtime array shapes (e.g. `n = x.shape[0]`) when the value is logically a config constant.
+
+Example:
+
+```python
+import jax
+import jax.numpy as jnp
+from xtructure import base_dataclass
+
+
+@base_dataclass(static_fields=("bucket_size",))
+class AlgoConfig:
+    bucket_size: int
+    data: jax.Array
+
+
+@jax.jit
+def f(cfg: AlgoConfig):
+    # bucket_size is static metadata, so this is a compile-time constant.
+    bucket_size = int(cfg.bucket_size)
+    return cfg.data.reshape((-1, bucket_size))
+```
 
 ## SoA storage with AoS ergonomics
 

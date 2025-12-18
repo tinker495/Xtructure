@@ -73,6 +73,7 @@ print(f"HashTable: Single item inserted? {was_inserted}")
 ## Key `HashTable` Details
 
 *   **Bucketed Double Hashing**: Uses `bucket_size` (an internal constant, typically small e.g. 2-4) slots per bucket to resolve collisions. If a bucket is full, double hashing determines the next bucket to probe.
+*   **Static config fields**: `HashTable` is a `@base_dataclass` with `static_fields` including `bucket_size`, so internal JIT code can use `table.bucket_size` directly (no need to pass `bucket_size` through every call). Keep it as a Python `int` (hashable), not a JAX array.
 *   **`HashTable.build(dataclass, seed, capacity, bucket_size=2)`**:
     *   `dataclass`: The *class* of your custom data structure (e.g., `MyDataValue`). An instance of this class (e.g., `MyDataValue.default()`) is used internally to define the table structure.
     *   `seed`: Integer seed for hashing.

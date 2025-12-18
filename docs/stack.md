@@ -51,6 +51,7 @@ print("Popped item:", popped_item)
 
 *   **LIFO Principle**: The last element added to the stack will be the first one to be removed.
 *   **API Style**: The methods (`push`, `pop`) modify the stack's state and return the modified instance, allowing for a chained, functional-style usage pattern.
+*   **Static config fields**: `Stack` is a `@base_dataclass` with `static_fields=("max_size",)`, so `max_size` is treated as static metadata under JIT. Keep it as a Python `int` (hashable).
 
 *   **`Stack.build(max_size, value_class)`**:
     *   `max_size` (int): The maximum number of elements the stack can hold.

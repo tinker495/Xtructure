@@ -60,6 +60,7 @@ print(f"Queue head: {queue.head}, Queue tail: {queue.tail}")
 
 *   **FIFO Principle**: The first element added to the queue will be the first one to be removed.
 *   **API Style**: The methods (`enqueue`, `dequeue`, `clear`) modify the queue's state and return the modified instance, allowing for a chained, functional-style usage pattern.
+*   **Static config fields**: `Queue` is a `@base_dataclass` with `static_fields=("max_size",)`, so `max_size` is treated as static metadata under JIT. Keep it as a Python `int` (hashable).
 
 *   **`Queue.build(max_size, value_class)`**:
     *   `max_size` (int): The maximum number of elements the queue can hold.
