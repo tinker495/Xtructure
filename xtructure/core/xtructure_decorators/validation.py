@@ -1,12 +1,10 @@
-from typing import Any, Type, TypeVar
-
 import functools
+from typing import Any, Type, TypeVar
 
 import jax.numpy as jnp
 
 from xtructure.core.field_descriptors import FieldDescriptor, get_field_descriptors
-
-from .default import is_xtructure_class
+from xtructure.core.type_utils import is_xtructure_dataclass_type
 
 T = TypeVar("T")
 
@@ -58,7 +56,7 @@ def add_runtime_validation(cls: Type[T], *, enabled: bool) -> Type[T]:
             if descriptor.validator is not None:
                 descriptor.validator(value)
 
-            if is_xtructure_class(descriptor.dtype):
+            if is_xtructure_dataclass_type(descriptor.dtype):
                 if not isinstance(value, descriptor.dtype):
                     raise TypeError(
                         f"{cls.__name__}.{field_name} expected instance of "

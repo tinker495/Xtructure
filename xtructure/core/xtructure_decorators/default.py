@@ -5,17 +5,9 @@ from typing import Type, TypeVar, Union
 import jax.numpy as jnp
 
 from xtructure.core.field_descriptors import FieldDescriptor, get_field_descriptors
+from xtructure.core.type_utils import is_xtructure_dataclass_type
 
 T = TypeVar("T")
-
-
-def is_xtructure_class(dtype: Any) -> bool:
-    if isinstance(dtype, type):
-        if hasattr(dtype, "is_xtructed"):
-            return True
-        return False
-    else:
-        return False
 
 
 class FieldInfo(NamedTuple):
@@ -50,7 +42,7 @@ def _create_default_method(
     for field_name, descriptor in field_descriptors.items():
         dtype_of_field_descriptor = descriptor.dtype
 
-        if is_xtructure_class(dtype_of_field_descriptor):
+        if is_xtructure_dataclass_type(dtype_of_field_descriptor):
             # It's a user-defined xtructure class. Use its .default() method.
             nested_class_type = dtype_of_field_descriptor
             if not hasattr(nested_class_type, "default"):

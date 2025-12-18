@@ -9,7 +9,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from xtructure.core.protocol import Xtructurable
-from xtructure.core.xtructure_decorators.default import is_xtructure_class
+from xtructure.core.type_utils import is_xtructure_dataclass_type
 
 METADATA_MODULE_KEY = "__xtructure_class_module__"
 METADATA_CLASS_NAME_KEY = "__xtructure_class_name__"
@@ -23,7 +23,7 @@ def _flatten_instance_for_save(instance: Xtructurable, prefix: str = "") -> Dict
         value = getattr(instance, field_name)
         full_key = f"{prefix}{field_name}"
 
-        if is_xtructure_class(type(value)):
+        if is_xtructure_dataclass_type(type(value)):
             flat_data.update(_flatten_instance_for_save(value, prefix=f"{full_key}."))
         elif hasattr(value, "shape") and hasattr(value, "dtype"):
             flat_data[full_key] = np.asarray(value)
@@ -75,7 +75,7 @@ def _unflatten_data_for_load(cls: type, data: Dict[str, Any], prefix: str = "") 
         # The type annotation is the FieldDescriptor itself.
         # We need to inspect its `dtype` attribute for the actual type.
         field_descriptor = cls.__annotations__.get(field_name)
-        if field_descriptor and is_xtructure_class(field_descriptor.dtype):
+        if field_descriptor and is_xtructure_dataclass_type(field_descriptor.dtype):
             nested_class_type = field_descriptor.dtype
             # Recursively load nested xtructure dataclass
             nested_instance_data = _unflatten_data_for_load(
