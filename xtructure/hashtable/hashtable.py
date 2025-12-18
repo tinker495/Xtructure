@@ -169,16 +169,30 @@ def get_new_idx_byterized(
     return idx, step, uint32ed, fingerprint
 
 
-@partial(jax.jit, static_argnums=(0, 1, 2, 3, 4))
+@partial(jax.jit, static_argnums=(0, 1, 2, 3, 4, 5))
 def _hashtable_build_jit(
     dataclass: Xtructurable,
     seed: int,
     capacity: int,
     bucket_size: int = 2,
     hash_size_multiplier: int = 2,
+    max_probes: int | None = None,
 ) -> "HashTable":
-    _capacity = int(hash_size_multiplier * capacity / bucket_size)  # Convert to concrete integer
+    # Ensure _capacity is power-of-two for better performance and cycle guarantee
+    _target_cap = int(hash_size_multiplier * capacity / bucket_size)
+    # Calculate next power of two using bit_length() to ensure a concrete Python int for array shapes
+    if _target_cap <= 1:
+        _capacity = 1
+    else:
+        _capacity = 1 << (_target_cap - 1).bit_length()
+
     size = SIZE_DTYPE(0)
+    # Default max_probes to _capacity if not provided
+    if max_probes is None:
+        max_probes = _capacity
+
+    _max_probes = jnp.array(max_probes, dtype=SIZE_DTYPE)
+
     # Initialize table with default states
     table = dataclass.default(((_capacity + 1) * bucket_size,))
     bucket_fill_levels = jnp.zeros((_capacity + 1), dtype=SLOT_IDX_DTYPE)
@@ -192,6 +206,7 @@ def _hashtable_build_jit(
         table=table,
         bucket_fill_levels=bucket_fill_levels,
         fingerprints=fingerprints,
+        max_probes=_max_probes,
     )
 
 
@@ -225,60 +240,41 @@ def _hashtable_lookup_internal(
 
         return jax.lax.cond(next_bucket, _next_bucket, _same_bucket)
 
-    def _cond(val: tuple[BucketIdx, bool]) -> bool:
-        idx, found = val
+    def _cond(val: tuple[BucketIdx, bool, chex.Array]) -> bool:
+        idx, found, probes = val
         filled_slots = table.bucket_fill_levels[idx.index]
         in_empty = idx.slot_index >= filled_slots
-        return jnp.logical_and(~found, ~in_empty)
+        # Stop if found, or encountered empty slot, or exceeded max_probes
+        return jnp.logical_and(~found, jnp.logical_and(~in_empty, probes < table.max_probes))
 
-    def _body(val: tuple[BucketIdx, bool]) -> tuple[BucketIdx, bool]:
-        idx, found = val
+    def _body(val: tuple[BucketIdx, bool, chex.Array]) -> tuple[BucketIdx, bool, chex.Array]:
+        idx, found, probes = val
         flat_index = idx.index * table.bucket_size + idx.slot_index
-        state = table.table[flat_index]
-        filled_limit = table.bucket_fill_levels[idx.index]
-        is_filled = idx.slot_index < filled_limit
+
+        # Fingerprint-first check: only load state if fingerprint matches
         stored_fp = table.fingerprints[flat_index]
+        is_filled = idx.slot_index < table.bucket_fill_levels[idx.index]
         fingerprints_match = jnp.logical_and(is_filled, stored_fp == input_fingerprint)
 
-        def _compare(_: None) -> jnp.bool_:
+        def _compare_value(_: None) -> jnp.bool_:
+            state = table.table[flat_index]
             return jnp.asarray(state == input, dtype=jnp.bool_)
 
-        value_equal = jax.lax.cond(
-            fingerprints_match,
-            _compare,
-            lambda _: jnp.bool_(False),
-            operand=None,
+        matched = jax.lax.cond(
+            fingerprints_match, _compare_value, lambda _: jnp.bool_(False), operand=None
         )
 
-        matched = jnp.logical_and(is_filled, value_equal)
         new_found = jnp.logical_or(found, matched)
         next_idx = _advance(idx)
-        updated_index = jnp.where(new_found, idx.index, next_idx.index)
-        updated_slot_index = jnp.where(new_found, idx.slot_index, next_idx.slot_index)
+
         updated_idx = BucketIdx(
-            index=updated_index,
-            slot_index=updated_slot_index,
+            index=jnp.where(new_found, idx.index, next_idx.index),
+            slot_index=jnp.where(new_found, idx.slot_index, next_idx.slot_index),
         )
-        return updated_idx, new_found
+        return updated_idx, new_found, probes + 1
 
-    flat_index = idx.index * table.bucket_size + idx.slot_index
-    state = table.table[flat_index]
-    is_filled = idx.slot_index < table.bucket_fill_levels[idx.index]
-    stored_fp = table.fingerprints[flat_index]
-    fingerprints_match = jnp.logical_and(is_filled, stored_fp == input_fingerprint)
-
-    def _compare_initial(_: None) -> jnp.bool_:
-        return jnp.asarray(state == input, dtype=jnp.bool_)
-
-    initial_equal = jax.lax.cond(
-        fingerprints_match,
-        _compare_initial,
-        lambda _: jnp.bool_(False),
-        operand=None,
-    )
-
-    found = jnp.logical_or(found, initial_equal)
-    idx, found = jax.lax.while_loop(_cond, _body, (idx, found))
+    # Start loop with current idx. Initial probes set to 0.
+    idx, found, _ = jax.lax.while_loop(_cond, _body, (idx, found, jnp.uint32(0)))
     return idx, found
 
 
@@ -346,62 +342,45 @@ def _hashtable_lookup_parallel_internal(
 
             return jax.lax.cond(next_bucket, _next_bucket, _same_bucket)
 
-        def _cond(val: tuple[BucketIdx, bool]) -> bool:
-            idx, found = val
+        def _cond(val: tuple[BucketIdx, bool, chex.Array]) -> bool:
+            idx, found, probes = val
             filled_slots = table.bucket_fill_levels[idx.index]
             in_empty = idx.slot_index >= filled_slots
-            return jnp.logical_and(active, jnp.logical_and(~found, ~in_empty))
+            under_limit = probes < table.max_probes
+            return jnp.logical_and(
+                active, jnp.logical_and(~found, jnp.logical_and(~in_empty, under_limit))
+            )
 
-        def _body(val: tuple[BucketIdx, bool]) -> tuple[BucketIdx, bool]:
-            idx, found = val
+        def _body(val: tuple[BucketIdx, bool, chex.Array]) -> tuple[BucketIdx, bool, chex.Array]:
+            idx, found, probes = val
             flat_index = idx.index * table.bucket_size + idx.slot_index
-            state = table.table[flat_index]
-            filled_limit = table.bucket_fill_levels[idx.index]
-            is_filled = idx.slot_index < filled_limit
+
+            # Fingerprint-first check
             stored_fp = table.fingerprints[flat_index]
+            is_filled = idx.slot_index < table.bucket_fill_levels[idx.index]
             fingerprints_match = jnp.logical_and(is_filled, stored_fp == fingerprint)
 
-            def _compare(_: None) -> jnp.bool_:
+            def _compare_value(_: None) -> jnp.bool_:
+                state = table.table[flat_index]
                 return jnp.asarray(state == input, dtype=jnp.bool_)
 
-            value_equal = jax.lax.cond(
-                fingerprints_match,
-                _compare,
-                lambda _: jnp.bool_(False),
-                operand=None,
+            matched = jax.lax.cond(
+                fingerprints_match, _compare_value, lambda _: jnp.bool_(False), operand=None
             )
 
-            matched = jnp.logical_and(is_filled, value_equal)
             new_found = jnp.logical_or(found, matched)
             next_idx = _advance(idx)
-            updated_index = jnp.where(new_found, idx.index, next_idx.index)
-            updated_slot_index = jnp.where(new_found, idx.slot_index, next_idx.slot_index)
+
             updated_idx = BucketIdx(
-                index=updated_index,
-                slot_index=updated_slot_index,
+                index=jnp.where(new_found, idx.index, next_idx.index),
+                slot_index=jnp.where(new_found, idx.slot_index, next_idx.slot_index),
             )
-            return updated_idx, new_found
+            return updated_idx, new_found, probes + 1
 
-        flat_index = idx.index * table.bucket_size + idx.slot_index
-        state = table.table[flat_index]
-        is_filled = idx.slot_index < table.bucket_fill_levels[idx.index]
-        stored_fp = table.fingerprints[flat_index]
-        fingerprints_match = jnp.logical_and(is_filled, stored_fp == fingerprint)
-
-        def _compare_initial(_: None) -> jnp.bool_:
-            return jnp.asarray(state == input, dtype=jnp.bool_)
-
-        initial_equal = jax.lax.cond(
-            fingerprints_match,
-            _compare_initial,
-            lambda _: jnp.bool_(False),
-            operand=None,
+        # Start loop with current idx. Initial probes set to 0.
+        idx, found, _ = jax.lax.while_loop(
+            _cond, _body, (idx, jnp.logical_and(found, active), jnp.uint32(0))
         )
-
-        found = jnp.logical_or(found, initial_equal)
-        found = jnp.logical_and(found, active)
-
-        idx, found = jax.lax.while_loop(_cond, _body, (idx, found))
         return idx, found
 
     table_in_axes = jax.tree_util.tree_map(lambda _: None, table)
@@ -460,10 +439,15 @@ def _hashtable_insert_jit(
                 fingerprint
             ),
             bucket_fill_levels=table.bucket_fill_levels.at[idx.index].add(1),
+            size=table.size + 1,
         )
         return table
 
     idx, found, fingerprint = _hashtable_lookup_bucket_jit(table, input)
+
+    # Only insert if not found AND we actually landed on an empty slot (didn't hit max_probes)
+    is_empty = idx.slot_index >= table.bucket_fill_levels[idx.index]
+    can_insert = jnp.logical_and(~found, is_empty)
 
     def _no_insert():
         return table
@@ -471,8 +455,8 @@ def _hashtable_insert_jit(
     def _do_insert():
         return _update_table(table, input, idx, fingerprint)
 
-    table = jax.lax.cond(found, _no_insert, _do_insert)
-    inserted = ~found
+    table = jax.lax.cond(can_insert, _do_insert, _no_insert)
+    inserted = can_insert
     return table, inserted, HashIdx(index=idx.index * table.bucket_size + idx.slot_index)
 
 
@@ -521,12 +505,14 @@ def _hashtable_parallel_insert_internal(
     initial_unique_mask = _first_occurrence_mask(flat_initial_slots, updatable, sentinel_slot)
     unupdated = jnp.logical_and(updatable, jnp.logical_not(initial_unique_mask))
 
-    def _cond(val: tuple[BucketIdx, chex.Array]) -> bool:
-        _, pending = val
-        return jnp.any(pending)
+    def _cond(val: tuple[BucketIdx, chex.Array, chex.Array]) -> bool:
+        _, pending, probes = val
+        return jnp.logical_and(jnp.any(pending), probes < table.max_probes)
 
-    def _body(val: tuple[BucketIdx, chex.Array]) -> tuple[BucketIdx, chex.Array]:
-        idxs, pending = val
+    def _body(
+        val: tuple[BucketIdx, chex.Array, chex.Array]
+    ) -> tuple[BucketIdx, chex.Array, chex.Array]:
+        idxs, pending, probes = val
         updated_idxs = _next_idx(idxs, pending)
         overflowed = jnp.logical_and(updated_idxs.slot_index >= table.bucket_size, pending)
         flat_updated_slots = updated_idxs.index * table.bucket_size + updated_idxs.slot_index
@@ -534,11 +520,11 @@ def _hashtable_parallel_insert_internal(
         not_uniques = jnp.logical_not(updated_unique_mask)
         next_pending = jnp.logical_and(updatable, not_uniques)
         next_pending = jnp.logical_or(next_pending, overflowed)
-        return updated_idxs, next_pending
+        return updated_idxs, next_pending, probes + 1
 
-    index, _ = jax.lax.while_loop(_cond, _body, (index, unupdated))
+    index, pending, _ = jax.lax.while_loop(_cond, _body, (index, unupdated, jnp.uint32(0)))
 
-    successful = updatable
+    successful = jnp.logical_and(updatable, jnp.logical_not(pending))
     flat_indices = index.index * table.bucket_size + index.slot_index
 
     new_table = table.table.at[flat_indices].set_as_condition(successful, inputs)
@@ -685,6 +671,7 @@ class HashTable:
     table: Xtructurable  # shape = State("args" = (_capacity * bucket_size, ...), ...)
     bucket_fill_levels: chex.Array  # shape = (_capacity, ) Number of filled slots per bucket
     fingerprints: chex.Array  # shape = ((_capacity + 1) * bucket_size,)
+    max_probes: chex.Array  # scalar uint32
 
     @staticmethod
     def build(
@@ -693,6 +680,7 @@ class HashTable:
         capacity: int,
         bucket_size: int = 2,
         hash_size_multiplier: int = 2,
+        max_probes: int | None = None,
     ) -> "HashTable":
         """
         Initialize a new hash table with specified parameters.
@@ -703,11 +691,14 @@ class HashTable:
             capacity: Desired capacity of the table
             bucket_size: Number of slots per bucket
             hash_size_multiplier: Multiplier for internal table size
+            max_probes: Maximum number of probes for lookup/insert
 
         Returns:
             Initialized HashTable instance
         """
-        return _hashtable_build_jit(dataclass, seed, capacity, bucket_size, hash_size_multiplier)
+        return _hashtable_build_jit(
+            dataclass, seed, capacity, bucket_size, hash_size_multiplier, max_probes
+        )
 
     def lookup_bucket(self, input: Xtructurable) -> tuple[BucketIdx, bool, chex.Array]:
         """
