@@ -1,4 +1,4 @@
-from typing import Any, Type, TypeVar
+from typing import Type, TypeVar
 
 import jax
 import jax.numpy as jnp
@@ -6,17 +6,9 @@ import numpy as np
 
 from xtructure.core.field_descriptors import FieldDescriptor, get_field_descriptors
 from xtructure.core.structuredtype import StructuredType
+from xtructure.core.type_utils import is_xtructure_dataclass_type
 
 T = TypeVar("T")
-
-
-def is_nested_xtructure(dtype: Any) -> bool:
-    if isinstance(dtype, type):
-        if hasattr(dtype, "is_xtructed"):
-            return True
-        return False
-    else:
-        return False
 
 
 def add_structure_utilities(cls: Type[T]) -> Type[T]:
@@ -47,8 +39,6 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
     assert hasattr(cls, "default"), "There is no default method."
 
     field_descriptors: dict[str, FieldDescriptor] = get_field_descriptors(cls)
-    default_shape = dict([(fn, fd.intrinsic_shape) for fn, fd in field_descriptors.items()])
-    default_dtype = dict([(fn, fd.dtype) for fn, fd in field_descriptors.items()])
 
     # Pre-calculate generation configurations for the random method
     _field_generation_configs = []
@@ -56,19 +46,20 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
     _field_names_for_random = list(field_descriptors.keys())
 
     for field_name_cfg in _field_names_for_random:
-        cfg = {}
-        cfg["name"] = field_name_cfg
-        # Retrieve the dtype or nested dtype tuple for the current field
-        actual_dtype_or_nested_dtype_tuple = default_dtype[field_name_cfg]
-        cfg["default_field_shape"] = default_shape[field_name_cfg]
+        descriptor = field_descriptors[field_name_cfg]
+        # Retrieve the dtype (or nested xtructure class type) for the current field.
+        actual_dtype_or_nested_dtype_tuple = descriptor.dtype
+        cfg = {
+            "name": field_name_cfg,
+            # Keep as-is to preserve historical behavior; normalize to tuple at use sites.
+            "default_field_shape": descriptor.intrinsic_shape,
+        }
 
-        if is_nested_xtructure(actual_dtype_or_nested_dtype_tuple):
+        if is_xtructure_dataclass_type(actual_dtype_or_nested_dtype_tuple):
             # This field is a nested xtructure_data instance
             cfg["type"] = "xtructure"
             # Store the actual nested class type (e.g., Parent, Current)
-            cfg["nested_class_type"] = field_descriptors[field_name_cfg].dtype
-            # Store the namedtuple of dtypes for the nested structure
-            cfg["actual_dtype"] = actual_dtype_or_nested_dtype_tuple
+            cfg["nested_class_type"] = actual_dtype_or_nested_dtype_tuple
         else:
             # This field is a regular JAX array
             actual_dtype = actual_dtype_or_nested_dtype_tuple  # It's a single JAX dtype here

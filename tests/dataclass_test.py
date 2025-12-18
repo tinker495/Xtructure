@@ -127,6 +127,25 @@ def test_structured_type():
     assert nested.shape.batch == (5, 10)
 
 
+def test_len_semantics():
+    # SINGLE -> 1
+    single = SimpleData.default()
+    assert len(single) == 1
+
+    # BATCHED -> first batch dimension
+    batched1d = SimpleData.default(shape=(5,))
+    assert len(batched1d) == 5
+
+    batched2d = SimpleData.default(shape=(5, 10))
+    assert len(batched2d) == 5
+
+    # UNSTRUCTURED -> error (batch size is ill-defined)
+    unstructured = SimpleData(id=jnp.array(1), value=jnp.array([2.0, 3.0, 4.0]))
+    assert unstructured.structured_type == StructuredType.UNSTRUCTURED
+    with pytest.raises(TypeError):
+        len(unstructured)
+
+
 def test_reshape():
     # Test reshape functionality
     batched = SimpleData.default(shape=(10,))
@@ -686,7 +705,7 @@ class TestIndexingDecorator(unittest.TestCase):
             jnp.array_equal(updated_instance.y, jnp.array(expected_x)),
             "Randomized test with scalar value failed for field 'y'",
         )
-        
+
 
 @xtructure_dataclass(validate=True)
 class ValidatedScalarData:
