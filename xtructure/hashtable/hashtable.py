@@ -180,7 +180,7 @@ def _hashtable_build(
     dataclass: Xtructurable,
     seed: int,
     capacity: int,
-    slots_per_bucket: int = 32,
+    slots_per_bucket: int = 8,
     hash_size_multiplier: int = 2,
     max_probes: int | None = None,
 ) -> "HashTable":
@@ -376,10 +376,18 @@ def _hashtable_lookup_parallel_internal(
         first_match_slot = jnp.argmax(fp_matches, axis=1).astype(HASH_TABLE_IDX_DTYPE)  # 0 if none
         candidate_flat = bucket_indices * slots_per_bucket + first_match_slot
 
-        # Fast path: compare only the first fp match per row (batch x 1 gather).
-        candidate_states = table.table[candidate_flat]
-        candidate_equal = jax.vmap(lambda s, x: s == x)(candidate_states, inputs)
-        found_fast = has_fp_match_row & candidate_equal
+        # Fast path (value-late): only load/compare the value if a fingerprint match exists.
+        # NOTE: Doing the gather outside the cond would force a value load even when there's
+        # no fp match, which is expensive for large Xtructurable payloads and slows inserts
+        # (which do a lookup first).
+        def _maybe_compare(has_match: chex.Array, flat_idx: chex.Array, input_val: Xtructurable):
+            return jax.lax.cond(
+                has_match,
+                lambda: jnp.asarray(table.table[flat_idx] == input_val, dtype=jnp.bool_),
+                lambda: jnp.bool_(False),
+            )
+
+        found_fast = jax.vmap(_maybe_compare)(has_fp_match_row, candidate_flat, inputs)
 
         # Rare path: fp collision (or multiple matches) -> scan remaining fp matches.
         other_fp_matches = fp_matches & (slot_offsets[None, :] != first_match_slot[:, None])
@@ -780,7 +788,7 @@ class HashTable:
         dataclass: Xtructurable,
         seed: int,
         capacity: int,
-        slots_per_bucket: int = 32,
+        slots_per_bucket: int = 8,
         hash_size_multiplier: int = 2,
         max_probes: int | None = None,
     ) -> "HashTable":
