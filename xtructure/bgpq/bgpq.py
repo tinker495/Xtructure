@@ -160,6 +160,15 @@ def _bgpq_make_batched_jit(key: chex.Array, val: Xtructurable, batch_size: int):
     return key, val
 
 
+@jax.jit
+def _bgpq_make_batched_like_jit(heap: "BGPQ", key: chex.Array, val: Xtructurable):
+    batch_size = int(heap.batch_size)
+    n = key.shape[0]
+    key = jnp.pad(key, (0, batch_size - n), mode="constant", constant_values=jnp.inf)
+    val = xnp.pad(val, (0, batch_size - n))
+    return key, val
+
+
 def _bgpq_insert_heapify_internal(heap: "BGPQ", block_key: chex.Array, block_val: Xtructurable):
     is_full = heap.heap_size >= (heap.branch_size - 1)
 
@@ -445,6 +454,10 @@ class BGPQ:
                 - Batched value array
         """
         return _bgpq_make_batched_jit(key, val, batch_size)
+
+    def make_batched_like(self, key: chex.Array, val: Xtructurable):
+        """Pad `key`/`val` to this heap's `batch_size` (a `static_fields` config)."""
+        return _bgpq_make_batched_like_jit(self, key, val)
 
     def insert(self, block_key: chex.Array, block_val: Xtructurable) -> "BGPQ":
         """

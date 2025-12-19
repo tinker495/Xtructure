@@ -84,6 +84,8 @@ else:
     *   Keys are padded with `jnp.inf`.
     *   Values are padded using `value_class.default()` for the padding portion.
     *   Returns `batched_keys, batched_values`.
+*   **`heap.make_batched_like(keys, values)`**: (Instance method)
+    *   Same behavior as `BGPQ.make_batched`, but uses `heap.batch_size` (a `static_fields` config) instead of requiring `batch_size` to be passed around.
 *   **`BGPQ.insert(heap, block_key, block_val)`**:
     *   Inserts a batch of keys and values. Inputs (`block_key`, `block_val`) *must* be pre-batched, typically using `BGPQ.make_batched()`.
     *   The function automatically counts the number of finite keys in `block_key` to determine how many items are being added.

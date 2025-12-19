@@ -206,8 +206,6 @@ def _hashtable_build_jit(
     if max_probes is None:
         max_probes = _capacity * bucket_size
 
-    _max_probes = jnp.array(max_probes, dtype=SIZE_DTYPE)
-
     # Initialize table with default states
     table = dataclass.default(((_capacity + 1) * bucket_size,))
     bucket_fill_levels = jnp.zeros((_capacity + 1), dtype=SLOT_IDX_DTYPE)
@@ -221,7 +219,7 @@ def _hashtable_build_jit(
         table=table,
         bucket_fill_levels=bucket_fill_levels,
         fingerprints=fingerprints,
-        max_probes=_max_probes,
+        max_probes=int(max_probes),
     )
 
 
@@ -236,6 +234,7 @@ def _hashtable_lookup_internal(
 ) -> tuple[BucketIdx, bool]:
     probe_step = jnp.asarray(probe_step, dtype=SIZE_DTYPE)
     bucket_size = int(table.bucket_size)
+    max_probes_u32 = SIZE_DTYPE(int(table.max_probes))
     capacity = jnp.asarray(table._capacity, dtype=SIZE_DTYPE)
     mask = capacity - SIZE_DTYPE(1)
     del input_uint32ed
@@ -246,7 +245,7 @@ def _hashtable_lookup_internal(
 
     def _cond(val: tuple[BucketIdx, bool, chex.Array]) -> bool:
         _, found, probes = val
-        return jnp.logical_and(~found, probes < table.max_probes)
+        return jnp.logical_and(~found, probes < max_probes_u32)
 
     def _body(val: tuple[BucketIdx, bool, chex.Array]) -> tuple[BucketIdx, bool, chex.Array]:
         idx, found, probes = val
@@ -308,7 +307,7 @@ def _hashtable_lookup_internal(
         )
 
         probes = probes + bucket_size_u32
-        probes = jnp.where(should_stop, table.max_probes, probes)
+        probes = jnp.where(should_stop, max_probes_u32, probes)
         return updated_idx, new_found, probes
 
     # Start loop with current idx. Initial probes set to 0.
@@ -354,6 +353,7 @@ def _hashtable_lookup_parallel_internal(
     del input_uint32eds
 
     bucket_size = int(table.bucket_size)
+    max_probes_u32 = SIZE_DTYPE(int(table.max_probes))
     capacity = jnp.asarray(table._capacity, dtype=SIZE_DTYPE)
     mask = capacity - SIZE_DTYPE(1)
     probe_steps = jnp.asarray(probe_steps, dtype=SIZE_DTYPE)
@@ -375,7 +375,7 @@ def _hashtable_lookup_parallel_internal(
         bucket_indices = jnp.asarray(idxs.index, dtype=SIZE_DTYPE)
         filled_limits = table.bucket_fill_levels[bucket_indices].astype(SLOT_IDX_DTYPE)
         filled_limits_u32 = filled_limits.astype(SIZE_DTYPE)
-        under_limit = probes < table.max_probes
+        under_limit = probes < max_probes_u32
 
         # All active rows scan one bucket per iteration.
         step_active = jnp.logical_and(active, jnp.logical_and(~founds, under_limit))
@@ -446,7 +446,7 @@ def _hashtable_lookup_parallel_internal(
 
         # Budget/progress
         probes = probes + step_active.astype(SIZE_DTYPE) * bucket_size_u32
-        under_limit_next = probes < table.max_probes
+        under_limit_next = probes < max_probes_u32
 
         # Continue only if still not found, bucket full, and under budget.
         continue_mask = jnp.logical_and(
@@ -783,7 +783,9 @@ def _hashtable_getitem_jit(table, idx: HashIdx) -> Xtructurable:
     return table.table[idx.index]
 
 
-@base_dataclass(frozen=True, static_fields=("seed", "capacity", "_capacity", "bucket_size"))
+@base_dataclass(
+    frozen=True, static_fields=("seed", "capacity", "_capacity", "bucket_size", "max_probes")
+)
 class HashTable:
     """
     Bucketed Double Hash Table Implementation
@@ -811,7 +813,7 @@ class HashTable:
     table: Xtructurable  # shape = State("args" = (_capacity * bucket_size, ...), ...)
     bucket_fill_levels: chex.Array  # shape = (_capacity, ) Number of filled slots per bucket
     fingerprints: chex.Array  # shape = ((_capacity + 1) * bucket_size,)
-    max_probes: chex.Array  # scalar uint32
+    max_probes: int
 
     @staticmethod
     def build(
