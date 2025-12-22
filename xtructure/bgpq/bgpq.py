@@ -23,9 +23,10 @@ SORT_STABLE = True  # Use stable sorting to maintain insertion order for equal k
 SIZE_DTYPE = jnp.uint32
 
 # TODO: Make merge_arrays_parallel for TPU.
-merge_array_backend = (
-    merge_sort_split_idx if jax.default_backend() == "tpu" else merge_arrays_parallel
-)
+# TODO: Make merge_arrays_parallel for TPU.
+# On CPU, merge_arrays_parallel runs in Pallas interpret mode (configured inside
+# merge_arrays_parallel) so it remains usable without lowering errors.
+merge_array_backend = merge_sort_split_idx if jax.default_backend() == "tpu" else merge_arrays_parallel
 
 
 @jax.jit

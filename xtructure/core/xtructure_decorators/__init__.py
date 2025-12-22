@@ -4,6 +4,7 @@ from xtructure.core.dataclass import base_dataclass
 from xtructure.core.protocol import Xtructurable
 
 from .default import add_default_method
+from .bitpacking import add_bitpacking_methods
 from .hash import hash_function_decorator
 from .indexing import add_indexing_methods
 from .io import add_io_methods
@@ -67,6 +68,9 @@ def xtructure_dataclass(
 
         # add io methods
         cls = add_io_methods(cls)
+
+        # add packed (bit/byte) serialization helpers
+        cls = add_bitpacking_methods(cls)
 
         # add runtime validation if requested
         cls = add_runtime_validation(cls, enabled=validate)

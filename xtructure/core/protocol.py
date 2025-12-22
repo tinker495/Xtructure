@@ -5,6 +5,7 @@ from typing import Type, TypeVar
 import chex
 
 from .structuredtype import StructuredType
+from .bitpacking import PackedXtructure
 
 T = TypeVar("T")
 
@@ -129,8 +130,23 @@ class Xtructurable(Protocol[T]):
     def save(self: T, path: str) -> None:
         ...
 
+    def save_packed(self: T, path: str, *, validate_range: bool = True) -> None:
+        ...
+
     @classmethod
     def load(cls: Type[T], path: str) -> T:
+        ...
+
+    @classmethod
+    def load_packed(cls: Type[T], path: str) -> T:
+        ...
+
+    # Methods added by add_bitpacking_methods
+    def to_packed(self: T, *, validate_range: bool = True) -> PackedXtructure:
+        ...
+
+    @classmethod
+    def from_packed(cls: Type[T], packed: PackedXtructure) -> T:
         ...
 
     # Method added by add_runtime_validation

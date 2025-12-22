@@ -8,11 +8,17 @@ from typing import Any, Dict
 import jax.numpy as jnp
 import numpy as np
 
+from xtructure.core.bitpacking import PackedXtructure, pack_instance, unpack_instance
 from xtructure.core.protocol import Xtructurable
 from xtructure.core.type_utils import is_xtructure_dataclass_type
 
 METADATA_MODULE_KEY = "__xtructure_class_module__"
 METADATA_CLASS_NAME_KEY = "__xtructure_class_name__"
+
+PACKED_PAYLOAD_KEY = "__xtructure_packed_payload__"
+PACKED_SPECS_JSON_KEY = "__xtructure_packed_specs_json__"
+PACKED_VERSION_KEY = "__xtructure_packed_version__"
+PACKED_VERSION = 1
 
 
 def _flatten_instance_for_save(instance: Xtructurable, prefix: str = "") -> Dict[str, np.ndarray]:
@@ -63,6 +69,67 @@ def save(path: str, instance: Xtructurable):
 
     # Save to a compressed .npz file
     np.savez_compressed(path, **data_to_save)
+
+
+def save_packed(path: str, instance: Xtructurable, *, validate_range: bool = True):
+    """
+    Saves an xtructure dataclass instance to a compact packed .npz file.
+
+    Differences vs `save()`:
+    - Stores one contiguous uint8 payload plus a JSON spec describing how to reconstruct fields.
+    - If a FieldDescriptor has `pack_bits`, that field is bitpacked (1-8 bits per value).
+    - Other fields are stored as raw bytes (bitcast), preserving exact values.
+    """
+    if not hasattr(instance, "is_xtructed"):
+        raise TypeError("The provided instance is not a valid xtructure dataclass.")
+
+    packed = pack_instance(instance, validate_range=validate_range)
+
+    data_to_save: Dict[str, np.ndarray] = {}
+    data_to_save[PACKED_VERSION_KEY] = np.array(PACKED_VERSION, dtype=np.int32)
+    data_to_save[PACKED_PAYLOAD_KEY] = np.asarray(packed.payload)
+    data_to_save[PACKED_SPECS_JSON_KEY] = np.array(packed.specs_json())
+
+    cls = instance.__class__
+    data_to_save[METADATA_MODULE_KEY] = np.array(cls.__module__)
+    data_to_save[METADATA_CLASS_NAME_KEY] = np.array(cls.__name__)
+
+    directory = os.path.dirname(path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+
+    np.savez_compressed(path, **data_to_save)
+
+
+def load_packed(path: str) -> Xtructurable:
+    """
+    Loads an xtructure dataclass instance saved with `save_packed`.
+    """
+    with np.load(path, allow_pickle=False) as data:
+        if METADATA_MODULE_KEY not in data or METADATA_CLASS_NAME_KEY not in data:
+            raise ValueError("File is missing necessary xtructure metadata for loading.")
+        if PACKED_PAYLOAD_KEY not in data or PACKED_SPECS_JSON_KEY not in data:
+            raise ValueError("File is missing packed payload/spec metadata for packed loading.")
+
+        module_name = str(data[METADATA_MODULE_KEY])
+        class_name = str(data[METADATA_CLASS_NAME_KEY])
+
+        try:
+            module = importlib.import_module(module_name)
+            cls = getattr(module, class_name)
+        except (ImportError, AttributeError) as e:
+            raise ImportError(
+                f"Could not find class '{class_name}' in module '{module_name}'. "
+                f"Ensure the class definition is available. Original error: {e}"
+            )
+
+        specs_json = str(data[PACKED_SPECS_JSON_KEY])
+        specs = PackedXtructure.specs_from_json(specs_json)
+        payload = jnp.array(data[PACKED_PAYLOAD_KEY], dtype=jnp.uint8)
+        packed = PackedXtructure(
+            payload=payload, specs=specs, cls_module=module_name, cls_name=class_name
+        )
+        return unpack_instance(cls, packed)
 
 
 def _unflatten_data_for_load(cls: type, data: Dict[str, Any], prefix: str = "") -> Dict[str, Any]:

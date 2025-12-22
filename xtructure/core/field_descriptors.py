@@ -49,6 +49,7 @@ class FieldDescriptor:
         *,
         fill_value_factory: Callable[[Tuple[int, ...], DType], Any] | None = None,
         validator: Callable[[Any], None] | None = None,
+        pack_bits: int | None = None,
     ):
         """
         Initializes a FieldDescriptor.
@@ -64,13 +65,20 @@ class FieldDescriptor:
             intrinsic_shape: The shape of the field itself, before any batching.
                              Defaults to () for a scalar field.
             validator: Optional callable that raises an exception if the value is invalid.
+            pack_bits: Optional bit-width (1-8) for bitpacking this field when using
+                xtructure's packed serialization utilities. This does not change the
+                in-memory dtype/shape; it only controls how the field is packed into bytes.
         """
         if fill_value is not None and fill_value_factory is not None:
             raise ValueError("Provide only one of fill_value or fill_value_factory.")
 
+        if pack_bits is not None and not (1 <= int(pack_bits) <= 8):
+            raise ValueError(f"pack_bits must be 1-8, got {pack_bits!r}.")
+
         self.dtype: DType = dtype
         self.fill_value_factory = fill_value_factory
         self.validator = validator
+        self.pack_bits = int(pack_bits) if pack_bits is not None else None
         # Set default fill values based on dtype
         if fill_value is not None:
             self.fill_value = fill_value
@@ -86,7 +94,8 @@ class FieldDescriptor:
             f"fill_value={self.fill_value}, "
             f"intrinsic_shape={self.intrinsic_shape}, "
             f"fill_value_factory={self.fill_value_factory}, "
-            f"validator={self.validator})"
+            f"validator={self.validator}, "
+            f"pack_bits={self.pack_bits})"
         )
 
     @classmethod
@@ -98,6 +107,7 @@ class FieldDescriptor:
         fill_value: Any = None,
         fill_value_factory: Callable[[Tuple[int, ...], DType], Any] | None = None,
         validator: Callable[[Any], None] | None = None,
+        pack_bits: int | None = None,
     ) -> "FieldDescriptor":
         """
         Explicit factory method for creating a tensor field descriptor.
@@ -108,6 +118,7 @@ class FieldDescriptor:
             fill_value=fill_value,
             fill_value_factory=fill_value_factory,
             validator=validator,
+            pack_bits=pack_bits,
         )
 
     @classmethod
@@ -118,6 +129,7 @@ class FieldDescriptor:
         default: Any = None,
         fill_value_factory: Callable[[Tuple[int, ...], DType], Any] | None = None,
         validator: Callable[[Any], None] | None = None,
+        pack_bits: int | None = None,
     ) -> "FieldDescriptor":
         """
         Explicit factory method for creating a scalar field descriptor.
@@ -128,6 +140,7 @@ class FieldDescriptor:
             fill_value=default,
             fill_value_factory=fill_value_factory,
             validator=validator,
+            pack_bits=pack_bits,
         )
 
     @classmethod

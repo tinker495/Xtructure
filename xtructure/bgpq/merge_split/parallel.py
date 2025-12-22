@@ -124,8 +124,10 @@ def merge_arrays_parallel(ak: jax.Array, bk: jax.Array) -> Tuple[jax.Array, jax.
 
     grid_size = (total_len + BLOCK_SIZE - 1) // BLOCK_SIZE
 
+    interpret = jax.default_backend() == "cpu"
     return pl.pallas_call(
         merge_parallel_kernel,
         grid=(grid_size,),
         out_shape=(out_keys_shape_dtype, out_idx_shape_dtype),
+        interpret=interpret,
     )(ak, bk)
