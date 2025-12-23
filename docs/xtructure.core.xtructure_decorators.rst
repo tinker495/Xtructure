@@ -36,6 +36,22 @@ xtructure.core.xtructure\_decorators.indexing module
    :show-inheritance:
    :undoc-members:
 
+xtructure.core.xtructure\_decorators.bitpack\_accessors module
+-------------------------------------------------------------
+
+.. automodule:: xtructure.core.xtructure_decorators.bitpack_accessors
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+xtructure.core.xtructure\_decorators.aggregate\_bitpack module
+-------------------------------------------------------------
+
+.. automodule:: xtructure.core.xtructure_decorators.aggregate_bitpack
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
 xtructure.core.xtructure\_decorators.io module
 ----------------------------------------------
 

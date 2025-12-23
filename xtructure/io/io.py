@@ -3,37 +3,75 @@
 import dataclasses
 import importlib
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 import jax.numpy as jnp
 import numpy as np
 
+from xtructure.core.field_descriptors import get_field_descriptors
 from xtructure.core.protocol import Xtructurable
 from xtructure.core.type_utils import is_xtructure_dataclass_type
+from xtructure.io.bitpack import from_uint8, to_uint8
 
 METADATA_MODULE_KEY = "__xtructure_class_module__"
 METADATA_CLASS_NAME_KEY = "__xtructure_class_name__"
 
+_BITPACK_PREFIX = "__xtructure_bitpack__"
 
-def _flatten_instance_for_save(instance: Xtructurable, prefix: str = "") -> Dict[str, np.ndarray]:
+
+def _bitpack_keys(full_key: str) -> Tuple[str, str, str, str]:
+    # Use separate arrays so we can keep npz backward compatible and inspectable.
+    data_key = f"{full_key}.{_BITPACK_PREFIX}.data"
+    shape_key = f"{full_key}.{_BITPACK_PREFIX}.shape"
+    bits_key = f"{full_key}.{_BITPACK_PREFIX}.bits"
+    dtype_key = f"{full_key}.{_BITPACK_PREFIX}.dtype"
+    return data_key, shape_key, bits_key, dtype_key
+
+
+def _flatten_instance_for_save(
+    instance: Xtructurable, prefix: str = "", *, packed: bool = True
+) -> Dict[str, np.ndarray]:
     """Recursively flattens an xtructure instance into a dict for saving."""
     flat_data = {}
+    descriptors = get_field_descriptors(instance.__class__)
     for field in dataclasses.fields(instance):
         field_name = field.name
         value = getattr(instance, field_name)
         full_key = f"{prefix}{field_name}"
+        descriptor = descriptors.get(field_name)
 
         if is_xtructure_dataclass_type(type(value)):
-            flat_data.update(_flatten_instance_for_save(value, prefix=f"{full_key}."))
+            flat_data.update(
+                _flatten_instance_for_save(value, prefix=f"{full_key}.", packed=packed)
+            )
         elif hasattr(value, "shape") and hasattr(value, "dtype"):
-            flat_data[full_key] = np.asarray(value)
+            bits = getattr(descriptor, "bits", None) if descriptor is not None else None
+            # If the field is already stored as packed bytes in-memory (descriptor.packed_bits),
+            # do NOT apply additional IO bitpacking on top of it.
+            if (
+                packed
+                and bits is not None
+                and not (
+                    descriptor is not None and getattr(descriptor, "packed_bits", None) is not None
+                )
+            ):
+                data_key, shape_key, bits_key, dtype_key = _bitpack_keys(full_key)
+                packed_bytes = to_uint8(jnp.asarray(value), active_bits=int(bits))
+                flat_data[data_key] = np.asarray(packed_bytes, dtype=np.uint8)
+                flat_data[shape_key] = np.asarray(np.array(value.shape, dtype=np.int32))
+                flat_data[bits_key] = np.asarray(np.array([int(bits)], dtype=np.uint8))
+                flat_data[dtype_key] = np.asarray(
+                    np.array(str(jnp.asarray(value).dtype), dtype=np.str_)
+                )
+            else:
+                flat_data[full_key] = np.asarray(value)
         else:
             # For non-array-like fields, save as 0-dim array
             flat_data[full_key] = np.array(value)
     return flat_data
 
 
-def save(path: str, instance: Xtructurable):
+def save(path: str, instance: Xtructurable, *, packed: bool = True):
     """
     Saves an xtructure dataclass instance to a compressed .npz file.
 
@@ -49,7 +87,7 @@ def save(path: str, instance: Xtructurable):
         raise TypeError("The provided instance is not a valid xtructure dataclass.")
 
     # Flatten the instance data
-    data_to_save = _flatten_instance_for_save(instance)
+    data_to_save = _flatten_instance_for_save(instance, packed=packed)
 
     # Add metadata for reconstruction
     cls = instance.__class__
@@ -68,27 +106,38 @@ def save(path: str, instance: Xtructurable):
 def _unflatten_data_for_load(cls: type, data: Dict[str, Any], prefix: str = "") -> Dict[str, Any]:
     """Recursively reconstructs field values from flattened data."""
     field_values = {}
+    descriptors = get_field_descriptors(cls)
     for field in dataclasses.fields(cls):
         field_name = field.name
         full_key = f"{prefix}{field_name}"
 
-        # The type annotation is the FieldDescriptor itself.
-        # We need to inspect its `dtype` attribute for the actual type.
-        field_descriptor = cls.__annotations__.get(field_name)
+        field_descriptor = descriptors.get(field_name)
         if field_descriptor and is_xtructure_dataclass_type(field_descriptor.dtype):
-            nested_class_type = field_descriptor.dtype
+            nested_class_type = field_descriptor.dtype  # type: ignore[assignment]
             # Recursively load nested xtructure dataclass
             nested_instance_data = _unflatten_data_for_load(
                 nested_class_type, data, prefix=f"{full_key}."
             )
             field_values[field_name] = nested_class_type(**nested_instance_data)
-        elif full_key in data:
-            # Load JAX array from NumPy array
-            field_values[field_name] = jnp.array(data[full_key])
         else:
-            # This case can be hit for nested structures where the keys are prefixed.
-            # The recursive call handles these, so we can pass here.
-            pass
+            data_key, shape_key, bits_key, dtype_key = _bitpack_keys(full_key)
+            if data_key in data and shape_key in data and bits_key in data:
+                bits = int(np.asarray(data[bits_key]).reshape(-1)[0])
+                shape = tuple(int(x) for x in np.asarray(data[shape_key]).reshape(-1))
+                packed_bytes = jnp.array(data[data_key], dtype=jnp.uint8)
+                unpacked = from_uint8(packed_bytes, target_shape=shape, active_bits=bits)
+                # Cast back to declared dtype when possible.
+                if field_descriptor is not None and not is_xtructure_dataclass_type(
+                    field_descriptor.dtype
+                ):
+                    try:
+                        unpacked = unpacked.astype(field_descriptor.dtype)
+                    except TypeError:
+                        pass
+                field_values[field_name] = unpacked
+            elif full_key in data:
+                # Load JAX array from NumPy array
+                field_values[field_name] = jnp.array(data[full_key])
     return field_values
 
 

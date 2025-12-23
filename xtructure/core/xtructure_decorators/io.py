@@ -15,9 +15,9 @@ def add_io_methods(cls: Type[T]) -> Type[T]:
     The `load` method allows the class to load an instance from a file.
     """
 
-    def save_method(self, path: str):
+    def save_method(self, path: str, *, packed: bool = True):
         """Saves the instance to a .npz file."""
-        return io.save(path, self)
+        return io.save(path, self, packed=packed)
 
     @classmethod
     def load_method(cls: Type[T], path: str) -> T:

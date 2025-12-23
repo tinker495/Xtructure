@@ -1,24 +1,14 @@
 import jax
 import jax.numpy as jnp
 
-from xtructure import FieldDescriptor, HashTable, xtructure_dataclass
-
-
-@xtructure_dataclass
-class XtructureValue:
-    a: FieldDescriptor(jnp.uint8)  # type: ignore
-    b: FieldDescriptor(jnp.uint32, (1, 2))  # type: ignore
-
-
-@xtructure_dataclass
-class OddBytesValue:
-    payload: FieldDescriptor(jnp.uint8, (47,))  # type: ignore
+from tests.testdata import HashValueAB, OddBytesValue47
+from xtructure import HashTable
 
 
 def test_hash_table_lookup():
     count = 1000
-    sample = XtructureValue.random((count,))
-    table: HashTable = HashTable.build(XtructureValue, 1, int(1e4))
+    sample = HashValueAB.random((count,))
+    table: HashTable = HashTable.build(HashValueAB, 1, int(1e4))
 
     idx, found = table.lookup_parallel(sample)
 
@@ -30,9 +20,9 @@ def test_hash_table_lookup():
 def test_hash_table_insert():
     count = 1000
     batch = 4000
-    table: HashTable = HashTable.build(XtructureValue, 1, int(1e4))
+    table: HashTable = HashTable.build(HashValueAB, 1, int(1e4))
 
-    sample = XtructureValue.random((count,))
+    sample = HashValueAB.random((count,))
 
     # Check initial state
     _, old_found = table.lookup_parallel(sample)
@@ -51,14 +41,14 @@ def test_hash_table_insert():
 
 def test_same_state_insert_at_batch():
     batch = 5000
-    table: HashTable = HashTable.build(XtructureValue, 1, int(1e5))
+    table: HashTable = HashTable.build(HashValueAB, 1, int(1e5))
 
     num = 10
     counts = 0
     all_samples = []
     for i in range(num):
         key = jax.random.PRNGKey(i)
-        samples = XtructureValue.random((batch,))
+        samples = HashValueAB.random((batch,))
         cloned_sample_num = jax.random.randint(key, (), 1, batch // 2)
         cloned_sample_idx = jax.random.randint(key, (cloned_sample_num,), 0, batch)
         cloned_sample_idx = jnp.sort(cloned_sample_idx)
@@ -112,9 +102,9 @@ def test_same_state_insert_at_batch():
 def test_large_hash_table():
     count = int(1e7)
     batch = int(1e4)
-    table: HashTable = HashTable.build(XtructureValue, 1, count)
+    table: HashTable = HashTable.build(HashValueAB, 1, count)
 
-    sample = XtructureValue.random((count,))
+    sample = HashValueAB.random((count,))
     hash, bytes = jax.vmap(lambda x: x.hash_with_uint32ed(0))(sample)
     unique_bytes = jnp.unique(bytes, axis=0, return_index=True)[1]
     unique_bytes_len = unique_bytes.shape[0]
@@ -142,10 +132,10 @@ def test_large_hash_table():
 
 def test_default_value_insertion():
     """Test that default values can be inserted and found correctly."""
-    table: HashTable = HashTable.build(XtructureValue, 1, int(1e4))
+    table: HashTable = HashTable.build(HashValueAB, 1, int(1e4))
 
     # Create a default value instance
-    default_value = XtructureValue.default()
+    default_value = HashValueAB.default()
 
     # Insert the default value
     table, inserted, idx = table.insert(default_value)
@@ -166,8 +156,8 @@ def test_default_value_insertion():
     ), "Retrieved value should match the inserted default value"
 
     # Test with parallel operations as well - use a fresh table
-    fresh_table: HashTable = HashTable.build(XtructureValue, 1, int(1e4))
-    default_batch = XtructureValue.default((5,))  # Create a batch of default values
+    fresh_table: HashTable = HashTable.build(HashValueAB, 1, int(1e4))
+    default_batch = HashValueAB.default((5,))  # Create a batch of default values
 
     # Insert batch of default values
     fresh_table, updatable, unique_filled, batch_idx = fresh_table.parallel_insert(default_batch)
@@ -184,7 +174,7 @@ def test_default_value_insertion():
 
 def test_uint32ed_padding_for_non_multiple_of_four_bytes():
     payload = jnp.asarray(jnp.arange(47, dtype=jnp.uint8).block_until_ready())
-    sample = OddBytesValue(payload=payload)
+    sample = OddBytesValue47(payload=payload)
 
     uint32ed = sample.uint32ed
 

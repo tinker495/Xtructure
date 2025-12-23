@@ -4,25 +4,12 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from xtructure import BGPQ, FieldDescriptor, xtructure_dataclass
-
-
-@xtructure_dataclass
-class XtructureValue:
-    """
-    This class is a dataclass that represents a hash table heap value.
-    It has two fields:
-    1. index: bucket index
-    2. slot_index: index within the bucket
-    """
-
-    a: FieldDescriptor(jnp.uint8)  # type: ignore
-    b: FieldDescriptor(jnp.uint32, (1, 2))  # type: ignore
-    c: FieldDescriptor(jnp.float32, (1, 2, 3))  # type: ignore
+from tests.testdata import HeapValueABC
+from xtructure import BGPQ
 
 
 @jax.jit
-def key_gen(x: XtructureValue) -> float:
+def key_gen(x: HeapValueABC) -> float:
     uint32_hash = x.hash()
     key = uint32_hash % (2**12) / (2**8)
     return key.astype(jnp.float32)
@@ -32,7 +19,7 @@ def key_gen(x: XtructureValue) -> float:
 def heap_setup():
     batch_size = int(1e4)
     max_size = int(2e7)
-    heap = BGPQ.build(max_size, batch_size, XtructureValue, jnp.float32)
+    heap = BGPQ.build(max_size, batch_size, HeapValueABC, jnp.float32)
 
     _key_gen = jax.jit(jax.vmap(key_gen))
 
@@ -57,7 +44,7 @@ def test_heap_insert_and_delete_batch_size(heap_setup, N):
     total_size = 0
     for i in range(0, N, 1):
         rnd_key, seed1 = jax.random.split(rnd_key, 2)
-        value = XtructureValue.random(shape=(batch_size,), key=seed1)
+        value = HeapValueABC.random(shape=(batch_size,), key=seed1)
         key = _key_gen(value)
         heap = heap.insert(key, value)
         total_size += batch_size
@@ -132,7 +119,7 @@ def test_heap_insert_and_delete_random_size(heap_setup, N):
     for i in range(0, N, 1):
         rnd_key, seed1, seed2 = jax.random.split(rnd_key, 3)
         size = jax.random.randint(seed1, minval=1, maxval=8, shape=()) * batch_size // 8
-        value = XtructureValue.random(shape=(size,), key=seed2)
+        value = HeapValueABC.random(shape=(size,), key=seed2)
         key = _key_gen(value)
         key, value = BGPQ.make_batched(key, value, batch_size)
         heap = heap.insert(key, value)
@@ -204,25 +191,25 @@ def test_heap_overflow_eviction():
     batch_size = 4
     # branch_size = 3 -> total_size = 12
     total_size = 12
-    heap = BGPQ.build(total_size, batch_size, XtructureValue, jnp.float32)
+    heap = BGPQ.build(total_size, batch_size, HeapValueABC, jnp.float32)
 
     # Initialize keys for 3 batches
     # 1. 100s (Worst elements)
     k1 = jnp.full((batch_size,), 100.0, dtype=jnp.float32)
     # v1 ID = 1
-    v1 = XtructureValue.default((batch_size,))
+    v1 = HeapValueABC.default((batch_size,))
     v1.a = jnp.full((batch_size,), 1, dtype=jnp.uint8)
 
     # 2. 80s (Best elements, will be at Root)
     k2 = jnp.full((batch_size,), 80.0, dtype=jnp.float32)
     # v2 ID = 2
-    v2 = XtructureValue.default((batch_size,))
+    v2 = HeapValueABC.default((batch_size,))
     v2.a = jnp.full((batch_size,), 2, dtype=jnp.uint8)
 
     # 3. 90s (Middle elements)
     k3 = jnp.full((batch_size,), 90.0, dtype=jnp.float32)
     # v3 ID = 3
-    v3 = XtructureValue.default((batch_size,))
+    v3 = HeapValueABC.default((batch_size,))
     v3.a = jnp.full((batch_size,), 3, dtype=jnp.uint8)
 
     # Insert to fill the heap
@@ -249,7 +236,7 @@ def test_heap_overflow_eviction():
     # Now insert 95s (Better than 100s, worse than 80s and 90s)
     k_new = jnp.full((batch_size,), 95.0, dtype=jnp.float32)
     # v_new ID = 4
-    v_new = XtructureValue.default((batch_size,))
+    v_new = HeapValueABC.default((batch_size,))
     v_new.a = jnp.full((batch_size,), 4, dtype=jnp.uint8)
 
     heap = heap.insert(k_new, v_new)

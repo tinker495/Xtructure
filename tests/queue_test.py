@@ -3,14 +3,8 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from xtructure import FieldDescriptor, Queue, xtructure_dataclass
-
-
-@xtructure_dataclass
-class Point:
-    x: FieldDescriptor.scalar(dtype=jnp.uint32)
-    y: FieldDescriptor.scalar(dtype=jnp.uint32)
-
+from tests.testdata import PointU32x2
+from xtructure import Queue
 
 LARGE_MAX_SIZE = 100_000
 
@@ -18,7 +12,7 @@ LARGE_MAX_SIZE = 100_000
 @pytest.fixture
 def queue():
     """Provides a fresh queue for each test."""
-    return Queue.build(max_size=LARGE_MAX_SIZE, value_class=Point)
+    return Queue.build(max_size=LARGE_MAX_SIZE, value_class=PointU32x2)
 
 
 def test_build(queue):
@@ -31,7 +25,7 @@ def test_build(queue):
 
 def test_enqueue_single_item(queue):
     """Tests enqueuing a single item."""
-    p1 = Point(x=jnp.array(1, dtype=jnp.uint32), y=jnp.array(2, dtype=jnp.uint32))
+    p1 = PointU32x2(x=jnp.array(1, dtype=jnp.uint32), y=jnp.array(2, dtype=jnp.uint32))
     queue = queue.enqueue(p1)
     assert queue.size == 1
     assert queue.tail == 1
@@ -42,7 +36,7 @@ def test_enqueue_single_item(queue):
 def test_enqueue_batch(queue):
     """Tests enqueuing a batch of items."""
     batch_size = 5000
-    points = Point(
+    points = PointU32x2(
         x=jnp.arange(batch_size, dtype=jnp.uint32),
         y=jnp.arange(batch_size, batch_size * 2, dtype=jnp.uint32),
     )
@@ -55,8 +49,8 @@ def test_enqueue_batch(queue):
 
 def test_dequeue_single(queue):
     """Tests dequeuing items one by one."""
-    p1 = Point(x=jnp.array(1, dtype=jnp.uint32), y=jnp.array(2, dtype=jnp.uint32))
-    p2 = Point(x=jnp.array(3, dtype=jnp.uint32), y=jnp.array(4, dtype=jnp.uint32))
+    p1 = PointU32x2(x=jnp.array(1, dtype=jnp.uint32), y=jnp.array(2, dtype=jnp.uint32))
+    p2 = PointU32x2(x=jnp.array(3, dtype=jnp.uint32), y=jnp.array(4, dtype=jnp.uint32))
 
     queue = queue.enqueue(p1)
     queue = queue.enqueue(p2)
@@ -76,7 +70,7 @@ def test_dequeue_single(queue):
 def test_dequeue_batch(queue):
     """Tests dequeuing a batch of items."""
     batch_size = 5000
-    points = Point(
+    points = PointU32x2(
         x=jnp.arange(batch_size, dtype=jnp.uint32),
         y=jnp.arange(batch_size, batch_size * 2, dtype=jnp.uint32),
     )
@@ -87,14 +81,14 @@ def test_dequeue_batch(queue):
 
     assert queue.size == batch_size - dequeue_count
     assert queue.head == dequeue_count
-    expected_dequeued = Point(x=points.x[:dequeue_count], y=points.y[:dequeue_count])
+    expected_dequeued = PointU32x2(x=points.x[:dequeue_count], y=points.y[:dequeue_count])
     chex.assert_trees_all_equal(dequeued, expected_dequeued)
 
 
 def test_peek(queue):
     """Tests peeking without modifying the queue."""
     batch_size = 5000
-    points = Point(
+    points = PointU32x2(
         x=jnp.arange(batch_size, dtype=jnp.uint32),
         y=jnp.arange(batch_size, batch_size * 2, dtype=jnp.uint32),
     )
@@ -108,13 +102,13 @@ def test_peek(queue):
     assert queue.size == original_size
     assert queue.head == original_head
 
-    expected_peeked = Point(x=points.x[:peek_count], y=points.y[:peek_count])
+    expected_peeked = PointU32x2(x=points.x[:peek_count], y=points.y[:peek_count])
     chex.assert_trees_all_equal(peeked, expected_peeked)
 
 
 def test_clear(queue):
     """Tests clearing the queue."""
-    points = Point(x=jnp.arange(5, dtype=jnp.uint32), y=jnp.arange(5, 10, dtype=jnp.uint32))
+    points = PointU32x2(x=jnp.arange(5, dtype=jnp.uint32), y=jnp.arange(5, 10, dtype=jnp.uint32))
     queue = queue.enqueue(points)
     assert queue.size == 5
 
@@ -127,8 +121,8 @@ def test_clear(queue):
 def test_jit_compatibility(queue):
     @jax.jit
     def sequence(q):
-        p1 = Point(x=jnp.array(1, dtype=jnp.uint32), y=jnp.array(2, dtype=jnp.uint32))
-        batch_points = Point(
+        p1 = PointU32x2(x=jnp.array(1, dtype=jnp.uint32), y=jnp.array(2, dtype=jnp.uint32))
+        batch_points = PointU32x2(
             x=jnp.arange(2, dtype=jnp.uint32), y=jnp.arange(2, 4, dtype=jnp.uint32)
         )
 

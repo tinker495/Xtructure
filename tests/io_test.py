@@ -4,31 +4,9 @@ import os
 
 import chex
 import jax
-import jax.numpy as jnp
 import pytest
 
-from xtructure import FieldDescriptor, xtructure_dataclass
-
-# --- Test Dataclasses (re-defined here for a self-contained test file) ---
-
-
-@xtructure_dataclass
-class SimpleData:
-    id: FieldDescriptor.scalar(dtype=jnp.uint32)
-    value: FieldDescriptor.scalar(dtype=jnp.float32)
-
-
-@xtructure_dataclass
-class VectorData:
-    position: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))
-    velocity: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))
-
-
-@xtructure_dataclass
-class NestedData:
-    simple: FieldDescriptor.scalar(dtype=SimpleData)
-    vector: FieldDescriptor.scalar(dtype=VectorData)
-
+from tests.testdata import NestedData, SimpleData, VectorData
 
 # --- Test Fixtures ---
 
@@ -44,72 +22,24 @@ def temp_file(tmp_path):
 # --- Test Cases ---
 
 
-def test_save_and_load_simple_instance(temp_file):
-    """Tests saving and loading a single, non-batched instance."""
-    key = jax.random.PRNGKey(0)
-    original_instance = SimpleData.random(key=key)
+@pytest.mark.parametrize(
+    "cls,shape,seed",
+    [
+        (SimpleData, (), 0),
+        (VectorData, (10,), 1),
+        (NestedData, (), 2),
+        (NestedData, (5, 2), 3),
+    ],
+)
+def test_save_and_load_roundtrip(temp_file, cls, shape, seed):
+    """Generic save/load roundtrip over multiple dataclass types and batch shapes."""
+    key = jax.random.PRNGKey(seed)
+    original_instance = cls.random(shape=shape, key=key)
 
-    # Save the instance using the new method
     original_instance.save(temp_file)
+    loaded_instance = cls.load(temp_file)
 
-    # Load the instance using the new class method
-    loaded_instance = SimpleData.load(temp_file)
-
-    # Verify the type and data
-    assert isinstance(loaded_instance, SimpleData)
-    chex.assert_trees_all_equal(original_instance, loaded_instance)
-
-
-def test_save_and_load_batched_instance(temp_file):
-    """Tests saving and loading a batched instance."""
-    key = jax.random.PRNGKey(1)
-    original_instance = VectorData.random(shape=(10,), key=key)
-
-    # Save
-    original_instance.save(temp_file)
-
-    # Load
-    loaded_instance = VectorData.load(temp_file)
-
-    # Verify
-    assert isinstance(loaded_instance, VectorData)
-    assert loaded_instance.shape.batch == (10,)
-    chex.assert_trees_all_equal(original_instance, loaded_instance)
-
-
-def test_save_and_load_nested_instance(temp_file):
-    """Tests saving and loading an instance with nested xtructure dataclasses."""
-    key = jax.random.PRNGKey(2)
-    original_instance = NestedData.random(key=key)
-
-    # Save
-    original_instance.save(temp_file)
-
-    # Load
-    loaded_instance = NestedData.load(temp_file)
-
-    # Verify
-    assert isinstance(loaded_instance, NestedData)
-    assert isinstance(loaded_instance.simple, SimpleData)
-    assert isinstance(loaded_instance.vector, VectorData)
-    chex.assert_trees_all_equal(original_instance, loaded_instance)
-
-
-def test_save_and_load_nested_batched_instance(temp_file):
-    """Tests saving and loading a batched instance with nested structures."""
-    key = jax.random.PRNGKey(3)
-    original_instance = NestedData.random(shape=(5, 2), key=key)
-
-    # Save
-    original_instance.save(temp_file)
-
-    # Load
-    loaded_instance = NestedData.load(temp_file)
-
-    # Verify
-    assert loaded_instance.shape.batch == (5, 2)
-    assert loaded_instance.simple.shape.batch == (5, 2)
-    assert loaded_instance.vector.position.shape == (5, 2, 3)
+    assert isinstance(loaded_instance, cls)
     chex.assert_trees_all_equal(original_instance, loaded_instance)
 
 

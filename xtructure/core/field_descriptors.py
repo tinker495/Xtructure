@@ -1,6 +1,9 @@
 from typing import Any, Callable, Dict, Tuple, Type
 
 import jax.numpy as jnp
+import numpy as np
+
+from xtructure.io.bitpack import packed_num_bytes
 
 from .type_utils import is_xtructure_dataclass_type
 
@@ -47,6 +50,11 @@ class FieldDescriptor:
         intrinsic_shape: Tuple[int, ...] = (),
         fill_value: Any = None,
         *,
+        bits: int | None = None,
+        # In-memory packed storage metadata (distinct from IO packing `bits`).
+        packed_bits: int | None = None,
+        unpacked_dtype: DType | None = None,
+        unpacked_intrinsic_shape: Tuple[int, ...] | None = None,
         fill_value_factory: Callable[[Tuple[int, ...], DType], Any] | None = None,
         validator: Callable[[Any], None] | None = None,
     ):
@@ -69,6 +77,28 @@ class FieldDescriptor:
             raise ValueError("Provide only one of fill_value or fill_value_factory.")
 
         self.dtype: DType = dtype
+        # Optional: per-value active bits for compact serialization/bitpacking.
+        # This is intentionally limited to 1..32 for now.
+        if bits is not None:
+            if not isinstance(bits, int):
+                raise TypeError(f"bits must be an int or None, got {type(bits).__name__}")
+            if bits < 1 or bits > 32:
+                raise ValueError(f"bits must be in [1, 32], got {bits}")
+        self.bits: int | None = bits
+
+        # Optional: in-memory packed representation for this field.
+        # When set, the field is expected to STORE packed uint8 bytes in `dtype`/`intrinsic_shape`,
+        # while `unpacked_*` describe the logical array view.
+        if packed_bits is not None:
+            if not isinstance(packed_bits, int):
+                raise TypeError(
+                    f"packed_bits must be an int or None, got {type(packed_bits).__name__}"
+                )
+            if packed_bits < 1 or packed_bits > 32:
+                raise ValueError(f"packed_bits must be in [1, 32], got {packed_bits}")
+        self.packed_bits: int | None = packed_bits
+        self.unpacked_dtype: DType | None = unpacked_dtype
+        self.unpacked_intrinsic_shape: Tuple[int, ...] | None = unpacked_intrinsic_shape
         self.fill_value_factory = fill_value_factory
         self.validator = validator
         # Set default fill values based on dtype
@@ -85,6 +115,10 @@ class FieldDescriptor:
             f"FieldDescriptor(dtype={self.dtype}, "
             f"fill_value={self.fill_value}, "
             f"intrinsic_shape={self.intrinsic_shape}, "
+            f"bits={self.bits}, "
+            f"packed_bits={self.packed_bits}, "
+            f"unpacked_dtype={self.unpacked_dtype}, "
+            f"unpacked_intrinsic_shape={self.unpacked_intrinsic_shape}, "
             f"fill_value_factory={self.fill_value_factory}, "
             f"validator={self.validator})"
         )
@@ -95,6 +129,10 @@ class FieldDescriptor:
         dtype: DType,
         shape: Tuple[int, ...],
         *,
+        bits: int | None = None,
+        packed_bits: int | None = None,
+        unpacked_dtype: DType | None = None,
+        unpacked_shape: Tuple[int, ...] | None = None,
         fill_value: Any = None,
         fill_value_factory: Callable[[Tuple[int, ...], DType], Any] | None = None,
         validator: Callable[[Any], None] | None = None,
@@ -106,6 +144,10 @@ class FieldDescriptor:
             dtype=dtype,
             intrinsic_shape=shape,
             fill_value=fill_value,
+            bits=bits,
+            packed_bits=packed_bits,
+            unpacked_dtype=unpacked_dtype,
+            unpacked_intrinsic_shape=unpacked_shape,
             fill_value_factory=fill_value_factory,
             validator=validator,
         )
@@ -115,6 +157,10 @@ class FieldDescriptor:
         cls,
         dtype: DType,
         *,
+        bits: int | None = None,
+        packed_bits: int | None = None,
+        unpacked_dtype: DType | None = None,
+        unpacked_shape: Tuple[int, ...] | None = None,
         default: Any = None,
         fill_value_factory: Callable[[Tuple[int, ...], DType], Any] | None = None,
         validator: Callable[[Any], None] | None = None,
@@ -126,7 +172,65 @@ class FieldDescriptor:
             dtype=dtype,
             intrinsic_shape=(),
             fill_value=default,
+            bits=bits,
+            packed_bits=packed_bits,
+            unpacked_dtype=unpacked_dtype,
+            unpacked_intrinsic_shape=unpacked_shape,
             fill_value_factory=fill_value_factory,
+            validator=validator,
+        )
+
+    @classmethod
+    def packed_tensor(
+        cls,
+        *,
+        unpacked_dtype: DType | None = None,
+        shape: Tuple[int, ...] | None = None,
+        unpacked_shape: Tuple[int, ...] | None = None,
+        packed_bits: int,
+        storage_dtype: DType = jnp.uint8,
+        fill_value: Any = 0,
+        fill_value_factory: Callable[[Tuple[int, ...], DType], Any] | None = None,
+        validator: Callable[[Any], None] | None = None,
+    ) -> "FieldDescriptor":
+        """Define a field that stores a packed uint8 byte-stream in-memory.
+
+        The field's *stored* dtype/shape are `storage_dtype` and a 1D byte stream.
+        The *logical* view is described by `unpacked_dtype` and `shape` (unpacked shape).
+        Use `packed_bits` in [1, 8] to unpack/pack values.
+        """
+        # API note:
+        # - Prefer `shape=...` (consistent with FieldDescriptor.tensor).
+        # - `unpacked_shape` is accepted for backward compatibility.
+        if shape is None and unpacked_shape is None:
+            raise TypeError("packed_tensor requires `shape` (preferred) or `unpacked_shape`.")
+        if shape is None:
+            shape = unpacked_shape
+        if unpacked_shape is not None and tuple(unpacked_shape) != tuple(shape):  # type: ignore[arg-type]
+            raise ValueError(
+                f"Provide only one of shape/unpacked_shape, or make them equal. "
+                f"Got shape={shape}, unpacked_shape={unpacked_shape}."
+            )
+
+        unpacked_shape_final = tuple(shape)  # type: ignore[arg-type]
+        if unpacked_dtype is None:
+            # Default: bool for 1-bit, uint8 for <=8 bits, uint32 for >8 bits.
+            if packed_bits == 1:
+                unpacked_dtype = jnp.bool_
+            elif packed_bits <= 8:
+                unpacked_dtype = jnp.uint8
+            else:
+                unpacked_dtype = jnp.uint32
+        num_values = int(np.prod(np.array(unpacked_shape_final, dtype=np.int64)))
+        packed_len = packed_num_bytes(num_values, packed_bits)
+        return cls(
+            dtype=storage_dtype,
+            intrinsic_shape=(packed_len,),
+            fill_value=fill_value,
+            fill_value_factory=fill_value_factory,
+            packed_bits=packed_bits,
+            unpacked_dtype=unpacked_dtype,
+            unpacked_intrinsic_shape=unpacked_shape_final,
             validator=validator,
         )
 

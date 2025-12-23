@@ -90,6 +90,8 @@ Defines the type and shape of each field within an `@xtructure_dataclass`.
     *   `fill_value` (optional): The value used when `cls.default()` is called.
         *   Defaults: maximum representable value for unsigned integers, `jnp.inf` for signed integers and floats. `None` for nested structures.
     *   `validator` (optional): A callable that takes the field value and raises an exception (like `ValueError`) if the value is invalid.
+    *   `bits` (optional): Active bits per value for bitpacking (integer in `[1, 32]`).
+        *   Used by **aggregate bitpacking** (see below) and by **IO packing** (`save(..., packed=True)`) for that field.
 
 ### Example: Factory Methods
 
@@ -199,6 +201,100 @@ StrictData(vector=jnp.ones((5, 3), dtype=jnp.int32), positive=10)
 
 # Raises error from validator: Must be positive
 StrictData(vector=jnp.ones((5, 3), dtype=jnp.float32), positive=-1)
+```
+
+## In-memory bitpacked fields (memory-optimized runtime state)
+
+`xtructure` also supports **storing fields as packed `uint8` byte streams in-memory**, while exposing an
+easy-to-use logical view for observations / transitions.
+
+Use `FieldDescriptor.packed_tensor(...)` to declare a packed storage field, then:
+
+- Access `<field>_unpacked` to get the logical array.
+- Use `set_unpacked(field=...)` to update from a logical array (it will be packed automatically).
+- Use `from_unpacked(...)` to construct a packed instance directly from logical arrays (avoids an extra `.default()`).
+
+Example:
+
+```python
+import jax.numpy as jnp
+from xtructure import FieldDescriptor, xtructure_dataclass
+
+
+@xtructure_dataclass
+class PuzzleState:
+    # Store 6 faces of size*size values, each value in [0, 7] => 3 bits/value
+    faces: FieldDescriptor.packed_tensor(
+        shape=(6, 54),
+        packed_bits=3,
+    )
+
+
+state = PuzzleState.default()
+
+# Read logical view (unpacked):
+faces = state.faces_unpacked  # shape (6, 54), dtype uint8
+
+# Write logical view (auto-packed into state.faces uint8 byte stream):
+state2 = state.set_unpacked(faces=(faces + 1) & jnp.uint8(7))
+
+# Packed-first construction (more direct than `PuzzleState.default().set_unpacked(...)`):
+packed = PuzzleState.from_unpacked(faces=faces)
+```
+
+Notes:
+- `packed_bits` supports `[1, 32]`.
+- If you omit `unpacked_dtype`, the default is:
+  - `bool` for `packed_bits == 1`
+  - `uint8` for `2 <= packed_bits <= 8`
+  - `uint32` for `packed_bits > 8`
+
+## Aggregate bitpacking across all fields (single byte-stream per instance)
+
+If you want to **pack multiple fields together into one contiguous bitstream** (minimizing per-field padding),
+you can enable (or auto-enable) aggregate bitpacking.
+
+Auto-enable rule:
+- If **every primitive leaf** declares `bits=...` (nested `@xtructure_dataclass` fields supported when the nesting
+  field is scalar), aggregate bitpacking is enabled automatically (so you can omit the decorator flag).
+
+### Unified bitpacking policy (`bitpack=...`)
+
+`@xtructure_dataclass` also accepts a unified policy flag:
+
+- `bitpack="auto"` (default): enables aggregate packing when all primitive leaves (including scalar-nested leaves)
+  declare `bits=...`. Also enables `packed_tensor` accessors.
+- `bitpack="aggregate"`: force aggregate packing for the whole dataclass.
+- `bitpack="field"`: only enable `FieldDescriptor.packed_tensor(...)` accessors (no aggregate packing).
+- `bitpack="off"`: disable in-memory bitpacking helpers on the class.
+
+Note: `aggregate_bitpack=True` is kept for backward compatibility; prefer `bitpack="aggregate"` for new code.
+
+```python
+import jax.numpy as jnp
+from xtructure import FieldDescriptor, xtructure_dataclass
+
+
+@xtructure_dataclass
+class AggState:
+    flags: FieldDescriptor.tensor(dtype=jnp.bool_, shape=(17,), bits=1)
+    faces: FieldDescriptor.tensor(dtype=jnp.uint8, shape=(6, 54), bits=3)
+    codes: FieldDescriptor.tensor(dtype=jnp.uint16, shape=(5,), bits=12)
+
+
+# Packed-first usage (recommended for memory efficiency):
+p = AggState.Packed.default()  # AggStatePacked(words=uint32[...], tail=uint8[0..2])
+
+# Unpack view only when needed (observation/transition):
+u = p.unpacked  # AggStateUnpacked view (default dtypes: bool/uint8/uint32)
+o = p.as_original()  # AggState reconstructed with declared dtypes (passes validate=True)
+
+# Partial decode: unpack a single field (and optionally only some indices) without materializing all fields.
+faces_only = p.unpack_field("faces")  # same as u.faces, but avoids unpacking flags/codes
+codes_some = p.unpack_field("codes", indices=[0, 2])  # returns batch + (2,)
+
+# If you already have a logical instance and want to store it compactly:
+p2 = AggState.default().packed
 ```
 
 You can also trigger validation manually at any time using `.check_invariants()`:

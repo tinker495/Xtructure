@@ -3,14 +3,8 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from xtructure import FieldDescriptor, Stack, xtructure_dataclass
-
-
-@xtructure_dataclass
-class Point:
-    x: FieldDescriptor.scalar(dtype=jnp.uint32)
-    y: FieldDescriptor.scalar(dtype=jnp.uint32)
-
+from tests.testdata import PointU32x2
+from xtructure import Stack
 
 # Use a much larger max_size for more robust testing
 LARGE_MAX_SIZE = 100_000
@@ -19,7 +13,7 @@ LARGE_MAX_SIZE = 100_000
 @pytest.fixture
 def stack():
     """Provides a fresh stack for each test."""
-    return Stack.build(max_size=LARGE_MAX_SIZE, value_class=Point)
+    return Stack.build(max_size=LARGE_MAX_SIZE, value_class=PointU32x2)
 
 
 def test_build(stack):
@@ -30,7 +24,7 @@ def test_build(stack):
 
 def test_push_single_item(stack):
     """Tests pushing a single item onto the stack."""
-    p1 = Point(x=jnp.array(1, dtype=jnp.uint32), y=jnp.array(2, dtype=jnp.uint32))
+    p1 = PointU32x2(x=jnp.array(1, dtype=jnp.uint32), y=jnp.array(2, dtype=jnp.uint32))
 
     stack = stack.push(p1)
 
@@ -43,7 +37,7 @@ def test_push_single_item(stack):
 def test_push_batch(stack):
     """Tests pushing a batch of items onto the stack."""
     batch_size = 5000
-    points = Point(
+    points = PointU32x2(
         x=jnp.arange(batch_size, dtype=jnp.uint32),
         y=jnp.arange(batch_size, batch_size * 2, dtype=jnp.uint32),
     )
@@ -57,8 +51,8 @@ def test_push_batch(stack):
 
 def test_pop_single(stack):
     """Tests popping items one by one."""
-    p1 = Point(x=jnp.array(1, dtype=jnp.uint32), y=jnp.array(2, dtype=jnp.uint32))
-    p2 = Point(x=jnp.array(3, dtype=jnp.uint32), y=jnp.array(4, dtype=jnp.uint32))
+    p1 = PointU32x2(x=jnp.array(1, dtype=jnp.uint32), y=jnp.array(2, dtype=jnp.uint32))
+    p2 = PointU32x2(x=jnp.array(3, dtype=jnp.uint32), y=jnp.array(4, dtype=jnp.uint32))
 
     stack = stack.push(p1)
     stack = stack.push(p2)
@@ -78,7 +72,7 @@ def test_pop_single(stack):
 def test_pop_batch(stack):
     """Tests popping a batch of items."""
     batch_size = 5000
-    points = Point(
+    points = PointU32x2(
         x=jnp.arange(batch_size, dtype=jnp.uint32),
         y=jnp.arange(batch_size, batch_size * 2, dtype=jnp.uint32),
     )
@@ -90,7 +84,7 @@ def test_pop_batch(stack):
     assert stack.size == batch_size - pop_count
     chex.assert_trees_all_equal(
         popped,
-        Point(
+        PointU32x2(
             x=jnp.arange(batch_size - pop_count, batch_size, dtype=jnp.uint32),
             y=jnp.arange(batch_size * 2 - pop_count, batch_size * 2, dtype=jnp.uint32),
         ),
@@ -100,7 +94,7 @@ def test_pop_batch(stack):
 def test_peek(stack):
     """Tests peeking without modifying the stack."""
     batch_size = 5000
-    points = Point(
+    points = PointU32x2(
         x=jnp.arange(batch_size, dtype=jnp.uint32),
         y=jnp.arange(batch_size, batch_size * 2, dtype=jnp.uint32),
     )
@@ -113,7 +107,7 @@ def test_peek(stack):
     assert stack.size == original_size
     chex.assert_trees_all_equal(
         peeked,
-        Point(
+        PointU32x2(
             x=jnp.arange(batch_size - peek_count, batch_size, dtype=jnp.uint32),
             y=jnp.arange(batch_size * 2 - peek_count, batch_size * 2, dtype=jnp.uint32),
         ),
@@ -123,8 +117,8 @@ def test_peek(stack):
 def test_jit_compatibility(stack):
     @jax.jit
     def sequence(stack):
-        p1 = Point(x=jnp.array(1, dtype=jnp.uint32), y=jnp.array(2, dtype=jnp.uint32))
-        p2 = Point(x=jnp.arange(2, dtype=jnp.uint32), y=jnp.arange(2, 4, dtype=jnp.uint32))
+        p1 = PointU32x2(x=jnp.array(1, dtype=jnp.uint32), y=jnp.array(2, dtype=jnp.uint32))
+        p2 = PointU32x2(x=jnp.arange(2, dtype=jnp.uint32), y=jnp.arange(2, 4, dtype=jnp.uint32))
 
         stack = stack.push(p1)
         stack = stack.push(p2)

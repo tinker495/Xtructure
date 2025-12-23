@@ -53,6 +53,10 @@ def clone_field_descriptor(
         dtype=next_dtype,
         intrinsic_shape=next_intrinsic_shape,
         fill_value=next_fill_value,
+        bits=descriptor.bits,
+        packed_bits=descriptor.packed_bits,
+        unpacked_dtype=descriptor.unpacked_dtype,
+        unpacked_intrinsic_shape=descriptor.unpacked_intrinsic_shape,
         fill_value_factory=next_fill_value_factory,
         validator=next_validator,
     )
@@ -85,5 +89,8 @@ def descriptor_metadata(descriptor: FieldDescriptor) -> dict[str, Any]:
         "fill_value": descriptor.fill_value,
         "fill_value_factory": descriptor.fill_value_factory,
         "validator": descriptor.validator,
+        "bits": descriptor.bits,
+        "packed_bits": descriptor.packed_bits,
+        "unpacked_dtype": descriptor.unpacked_dtype,
+        "unpacked_intrinsic_shape": descriptor.unpacked_intrinsic_shape,
     }
-
