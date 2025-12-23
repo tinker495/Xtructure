@@ -248,10 +248,12 @@ def register_dataclass_type_with_jax_tree_util(data_class, static_fields: tuple[
     static_fields = tuple(static_fields)
 
     def flatten_with_keys(dcls):
-        # Must be consistent with `flatten`: return keys/children ONLY (no static aux fields).
+        # Must be consistent with `flatten`: return (children_with_keys, aux_data).
         dct = getattr(dcls, "__dict__", {})
         if not dct:
-            return [], ()
+            if not static_fields:
+                return [], ()
+            return [], ((), ())
 
         field_dict = getattr(dcls, "__dataclass_fields__", None)
         ordered_keys: list[str] = []
@@ -267,16 +269,32 @@ def register_dataclass_type_with_jax_tree_util(data_class, static_fields: tuple[
         extra_keys.sort()
         ordered_keys.extend(extra_keys)
 
-        if static_fields:
-            ordered_keys = [k for k in ordered_keys if k not in static_fields]
+        if not static_fields:
+            path = [(jax.tree_util.GetAttrKey(k), dct[k]) for k in ordered_keys]
+            return path, tuple(ordered_keys)
 
-        path = [(jax.tree_util.GetAttrKey(k), dct[k]) for k in ordered_keys]
-        return path, tuple(ordered_keys)
+        child_keys = tuple(k for k in ordered_keys if k not in static_fields)
+        static_items = tuple((k, dct[k]) for k in ordered_keys if k in static_fields)
+        for k, v in static_items:
+            if not _is_hashable_static(v):
+                raise TypeError(
+                    f"Field '{k}' of {data_class.__name__} is configured as static_fields but its "
+                    f"value is not hashable (type={type(v)}). Store static metadata as Python "
+                    f"scalars/tuples (e.g. int/str/tuple), not JAX arrays."
+                )
+
+        path = [(jax.tree_util.GetAttrKey(k), dct[k]) for k in child_keys]
+        # aux_data must be hashable: (child_keys, static_items) is hashable if static values are.
+        return path, (child_keys, static_items)
 
     def flatten(d):
         dct = getattr(d, "__dict__", {})
         if not dct:
-            return ((), ())
+            # `register_pytree_with_keys` expects (children, aux_data).
+            # For `static_fields`, aux_data must remain a 2-tuple: (child_keys, static_items).
+            if not static_fields:
+                return (), ()
+            return (), ((), ())
 
         field_dict = getattr(d, "__dataclass_fields__", None)
         ordered_keys: list[str] = []
@@ -315,7 +333,22 @@ def register_dataclass_type_with_jax_tree_util(data_class, static_fields: tuple[
     else:
 
         def unflatten(aux_data, children):
-            child_keys, static_items = aux_data
+            # JAX versions may wrap/extend aux_data; we only require that the first
+            # two entries are (child_keys, static_items), and ignore extras.
+            # - Old: aux_data == (child_keys, static_items)
+            # - Newer: aux_data == (child_keys, static_items, *extra)
+            if isinstance(aux_data, (tuple, list)):
+                if len(aux_data) < 2:
+                    raise ValueError(
+                        f"Unexpected PyTree aux_data for {data_class.__name__}: "
+                        f"expected at least 2 items (child_keys, static_items), got {aux_data!r}"
+                    )
+                child_keys, static_items = aux_data[0], aux_data[1]
+            else:
+                raise ValueError(
+                    f"Unexpected PyTree aux_data type for {data_class.__name__}: "
+                    f"expected tuple/list, got {type(aux_data)}"
+                )
             dcls_object = data_class.__new__(data_class)
             attribute_dict = dict(zip(child_keys, children))
             attribute_dict.update(dict(static_items))
