@@ -81,6 +81,9 @@ class Xtructurable(Protocol[T]):
     def flatten(self: T) -> T:
         ...
 
+    def transpose(self: T, axes: TypingTuple[int, ...] | None = ...) -> T:
+        ...
+
     @classmethod
     def random(
         cls: Type[T], shape: TypingTuple[int, ...] = ..., key: chex.PRNGKey = ...

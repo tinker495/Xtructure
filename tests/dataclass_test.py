@@ -351,6 +351,58 @@ def test_flatten():
     assert flattened_nested.simple.value.shape == (6,)
 
 
+def test_transpose_simple_data():
+    data = SimpleData.default(shape=(2, 3))
+    data = data.replace(
+        id=jnp.arange(6, dtype=jnp.uint32).reshape(2, 3),
+        value=jnp.arange(6, dtype=jnp.float32).reshape(2, 3),
+    )
+
+    result = data.transpose()
+
+    assert result.shape.batch == (3, 2)
+    assert jnp.array_equal(result.id, jnp.transpose(data.id))
+    assert jnp.array_equal(result.value, jnp.transpose(data.value))
+
+
+def test_transpose_vector_data_batch_only():
+    data = VectorData.default(shape=(2, 3))
+    data = data.replace(
+        position=jnp.arange(18, dtype=jnp.float32).reshape(2, 3, 3),
+        velocity=jnp.arange(18, dtype=jnp.float32).reshape(2, 3, 3) + 100,
+    )
+
+    result = data.transpose()
+
+    expected_position = jnp.transpose(data.position, axes=(1, 0, 2))
+    expected_velocity = jnp.transpose(data.velocity, axes=(1, 0, 2))
+    assert result.shape.batch == (3, 2)
+    assert jnp.array_equal(result.position, expected_position)
+    assert jnp.array_equal(result.velocity, expected_velocity)
+
+
+def test_transpose_with_custom_axes():
+    data = SimpleData.default(shape=(2, 3, 4))
+    data = data.replace(
+        id=jnp.arange(24, dtype=jnp.uint32).reshape(2, 3, 4),
+        value=jnp.arange(24, dtype=jnp.float32).reshape(2, 3, 4),
+    )
+    axes = (2, 0, 1)
+
+    result = data.transpose(axes=axes)
+
+    assert result.shape.batch == (4, 2, 3)
+    assert jnp.array_equal(result.id, jnp.transpose(data.id, axes=axes))
+    assert jnp.array_equal(result.value, jnp.transpose(data.value, axes=axes))
+
+
+def test_transpose_unstructured_raises():
+    unstructured = SimpleData(id=jnp.array(1), value=jnp.array([2.0, 3.0, 4.0]))
+    assert unstructured.structured_type == StructuredType.UNSTRUCTURED
+    with pytest.raises(ValueError):
+        unstructured.transpose()
+
+
 def test_indexing():
     # Test indexing functionality
     batched = SimpleData.default(shape=(5,))

@@ -35,7 +35,7 @@ def xtructure_dataclass(
 
     It adds properties like `shape`, `dtype`, `default_shape`, `structured_type`,
     `batch_shape`, and methods like `__getitem__`, `__len__`, `reshape`,
-    `flatten`, `random`, and `__str__`.
+    `flatten`, `transpose`, `random`, and `__str__`.
 
     Args:
         cls: The class to be decorated. It is expected to have a `default`

@@ -31,6 +31,7 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
         - Instance Methods:
             - `reshape(new_shape)`: Reshapes the batch dimensions of a BATCHED instance.
             - `flatten()`: Flattens the batch dimensions of a BATCHED instance.
+            - `transpose(axes=None)`: Transposes only the batch dimensions.
         - Classmethod:
             - `random(shape=(), key=None)`: Generates an instance with random data.
               The `shape` argument specifies the desired batch shape, which is
@@ -155,6 +156,28 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
             self,
         )
 
+    def transpose(self, axes: tuple[int, ...] | None = None) -> T:
+        if self.structured_type == StructuredType.UNSTRUCTURED:
+            raise ValueError(
+                "Transpose operation is only supported for SINGLE or BATCHED structured types. "
+                f"Current type: {self.structured_type}"
+            )
+
+        batch_shape = self.shape.batch
+        batch_ndim = len(batch_shape)
+
+        if axes is None:
+            axes = tuple(range(batch_ndim - 1, -1, -1))
+
+        def transpose_batch_only(field):
+            field_ndim = field.ndim
+            if field_ndim <= batch_ndim:
+                return jnp.transpose(field, axes=axes)
+            full_axes = list(axes) + list(range(batch_ndim, field_ndim))
+            return jnp.transpose(field, axes=full_axes)
+
+        return jax.tree_util.tree_map(transpose_batch_only, self)
+
     def random(cls, shape=(), key=None):
         if key is None:
             key = jax.random.PRNGKey(0)
@@ -227,6 +250,7 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
     # add method based on default state
     setattr(cls, "reshape", reshape)
     setattr(cls, "flatten", flatten)
+    setattr(cls, "transpose", transpose)
     setattr(cls, "random", classmethod(random))
     setattr(cls, "padding_as_batch", padding_as_batch)
     return cls
