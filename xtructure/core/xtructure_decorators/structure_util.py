@@ -29,7 +29,7 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
             - `batch_shape`: The shape of the batch dimensions if `structured_type`
               is BATCHED.
         - Instance Methods:
-            - `reshape(new_shape)`: Reshapes the batch dimensions of a BATCHED instance.
+            - `reshape(*new_shape)`: Reshapes the batch dimensions of a BATCHED instance.
             - `flatten()`: Flattens the batch dimensions of a BATCHED instance.
             - `transpose(axes=None)`: Transposes only the batch dimensions.
         - Classmethod:
@@ -87,7 +87,14 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
                 cfg["gen_dtype"] = actual_dtype
         _field_generation_configs.append(cfg)
 
-    def reshape(self, new_shape: tuple[int, ...]) -> T:
+    def reshape(self, *new_shape: int | tuple[int, ...]) -> T:
+        if len(new_shape) == 0:
+            raise ValueError("new_shape must be provided")
+        if len(new_shape) == 1 and isinstance(new_shape[0], (tuple, list)):
+            new_shape = tuple(new_shape[0])
+        else:
+            new_shape = tuple(new_shape)
+
         if self.structured_type == StructuredType.BATCHED:
             total_length = np.prod(self.shape.batch)
 
