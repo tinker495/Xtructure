@@ -6,7 +6,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from xtructure import FieldDescriptor, StructuredType, xtructure_dataclass
+from xtructure import FieldDescriptor, StructuredType, Xtructurable, xtructure_dataclass
 from xtructure.core.xtructure_decorators.indexing import add_indexing_methods
 
 
@@ -144,6 +144,36 @@ def test_len_semantics():
     assert unstructured.structured_type == StructuredType.UNSTRUCTURED
     with pytest.raises(TypeError):
         len(unstructured)
+
+
+def test_ndim_semantics():
+    # SINGLE -> 0
+    single = SimpleData.default()
+    assert single.ndim == 0
+
+    # BATCHED -> number of batch dimensions
+    batched1d = SimpleData.default(shape=(5,))
+    assert batched1d.ndim == 1
+
+    batched2d = SimpleData.default(shape=(5, 10))
+    assert batched2d.ndim == 2
+
+    # UNSTRUCTURED -> error (ndim is ill-defined)
+    unstructured = SimpleData(id=jnp.array(1), value=jnp.array([2.0, 3.0, 4.0]))
+    assert unstructured.structured_type == StructuredType.UNSTRUCTURED
+    with pytest.raises(TypeError):
+        _ = unstructured.ndim
+
+
+def test_xtructurable_isinstance():
+    assert isinstance(SimpleData, Xtructurable)
+    assert isinstance(SimpleData.default(), Xtructurable)
+
+    class Plain:
+        pass
+
+    assert not isinstance(Plain, Xtructurable)
+    assert not isinstance(Plain(), Xtructurable)
 
 
 def test_reshape():

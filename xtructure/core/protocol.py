@@ -1,6 +1,6 @@
 from typing import Any, ClassVar, Dict, NamedTuple, Protocol
 from typing import Tuple as TypingTuple
-from typing import Type, TypeVar
+from typing import Type, TypeVar, runtime_checkable
 
 import chex
 
@@ -19,7 +19,21 @@ class dtype_tuple(NamedTuple):
 
 
 # Protocol defining the interface added by @xtructure_data
-class Xtructurable(Protocol[T]):
+class _XtructurableMeta(type(Protocol)):
+    def __instancecheck__(cls, instance) -> bool:
+        if isinstance(instance, type):
+            return bool(getattr(instance, "is_xtructed", False))
+        try:
+            return super().__instancecheck__(instance)
+        except TypeError:
+            return False
+
+    def __subclasscheck__(cls, subclass) -> bool:
+        return bool(getattr(subclass, "is_xtructed", False))
+
+
+@runtime_checkable
+class Xtructurable(Protocol[T], metaclass=_XtructurableMeta):
     # A flag to indicate that the class has been processed by the xtructure_dataclass decorator.
     is_xtructed: ClassVar[bool]
 
@@ -47,6 +61,11 @@ class Xtructurable(Protocol[T]):
     @property
     def dtype(self) -> dtype_tuple:
         """The dtype of the data in the object, as a dynamically-generated namedtuple."""
+        ...
+
+    @property
+    def ndim(self) -> int:
+        """Number of batch dimensions for structured instances."""
         ...
 
     # Method added by add_indexing_methods (responsible for __getitem__)
