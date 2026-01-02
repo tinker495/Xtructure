@@ -16,7 +16,7 @@ from xtructure import xtructure_numpy as xnp
 # Available functions in xnp:
 # concat, concatenate (same function), pad, stack, reshape, flatten,
 # where, where_no_broadcast, unique_mask, take, take_along_axis, update_on_condition,
-# tile, transpose, swap_axes, expand_dims, squeeze, repeat, split,
+# tile, transpose, swapaxes, expand_dims, squeeze, repeat, split,
 # zeros_like, ones_like, full_like
 
 
@@ -93,11 +93,11 @@ padded_const = xnp.pad(data, (0, 2), constant_values=99)
 # Edge padding (repeat edge values)
 padded_edge = xnp.pad(data, (0, 2), mode="edge")
 
-# 10. Reshape, flatten, transpose, and swap_axes
+# 10. Reshape, flatten, transpose, and swapaxes
 batched_data = SimpleData.default(shape=(6,))
 reshaped = xnp.reshape(batched_data, (2, 3))
 transposed = xnp.transpose(reshaped)  # (3, 2)
-swapped = xnp.swap_axes(reshaped, 0, 1)  # (3, 2)
+swapped = xnp.swapaxes(reshaped, 0, 1)  # (3, 2)
 flattened = xnp.flatten(reshaped)
 
 # 11. Take along axis
@@ -258,7 +258,7 @@ splits = xnp.split(batched_data, 2)  # list of 2 dataclasses each with shape (3,
     *   Applies transpose **only to the batch dimensions** of each field.
     *   Preserves field-specific dimensions (e.g., vector dimensions in a field remain unchanged and non-transposed relative to batch axes).
 
-### **`xnp.swap_axes(dataclass_instance, axis1, axis2)`**
+### **`xnp.swapaxes(dataclass_instance, axis1, axis2)`**
 *   Swaps two batch axes of a dataclass instance.
 *   **Input**:
     *   `dataclass_instance`: The dataclass instance.

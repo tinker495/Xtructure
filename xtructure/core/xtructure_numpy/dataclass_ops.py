@@ -812,11 +812,11 @@ def transpose(dataclass_instance: T, axes: Union[tuple[int, ...], None] = None) 
     return jax.tree_util.tree_map(transpose_batch_only, dataclass_instance)
 
 
-def swap_axes(dataclass_instance: T, axis1: int, axis2: int) -> T:
+def swapaxes(dataclass_instance: T, axis1: int, axis2: int) -> T:
     """
     Swap two batch axes of a dataclass instance.
 
-    This function applies swap_axes only to the batch dimensions of each field,
+    This function applies swapaxes only to the batch dimensions of each field,
     preserving the field-specific dimensions (like vector dimensions).
 
     Args:
@@ -830,17 +830,17 @@ def swap_axes(dataclass_instance: T, axis1: int, axis2: int) -> T:
     Examples:
         >>> # Swap first and second batch axes
         >>> data = MyData.default((3, 4, 5))
-        >>> result = xnp.swap_axes(data, 0, 1)
+        >>> result = xnp.swapaxes(data, 0, 1)
         >>> # result will have batch shape (4, 3, 5)
 
         >>> # Swap last two batch axes
         >>> data = MyData.default((2, 3, 4))
-        >>> result = xnp.swap_axes(data, -1, -2)
+        >>> result = xnp.swapaxes(data, -1, -2)
         >>> # result will have batch shape (2, 4, 3)
 
         >>> # For vector dataclass, only batch dimensions are swapped
         >>> data = VectorData.default((2, 3))  # batch shape (2, 3), vector shape (3,)
-        >>> result = xnp.swap_axes(data, 0, 1)
+        >>> result = xnp.swapaxes(data, 0, 1)
         >>> # result will have batch shape (3, 2), vector shape remains (3,)
     """
     # Get the batch shape to determine how many batch dimensions we have
@@ -866,7 +866,7 @@ def swap_axes(dataclass_instance: T, axis1: int, axis2: int) -> T:
     if axis2_norm < 0 or axis2_norm >= batch_ndim:
         raise ValueError(f"Axis {axis2} is out of bounds for batch dimensions {batch_shape}")
 
-    # Apply swap_axes only to the batch dimensions
+    # Apply swapaxes only to the batch dimensions
     def swap_batch_axes_only(field):
         # For fields with more dimensions than batch, we need to swap only the batch part
         field_ndim = field.ndim

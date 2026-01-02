@@ -1816,16 +1816,16 @@ def test_transpose_nested_dataclass():
     assert jnp.array_equal(result.simple.value, expected_simple_value)
 
 
-# Tests for swap_axes function
+# Tests for swapaxes function
 def test_swap_axes_2d_basic():
-    """Test basic swap_axes on 2D dataclass."""
+    """Test basic swapaxes on 2D dataclass."""
     data = SimpleData.default(shape=(2, 3))
     data = data.replace(
         id=jnp.array([[1, 2, 3], [4, 5, 6]], dtype=jnp.uint32),
         value=jnp.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=jnp.float32),
     )
 
-    result = xnp.swap_axes(data, 0, 1)
+    result = xnp.swapaxes(data, 0, 1)
 
     assert result.shape.batch == (3, 2)
     expected_id = jnp.array([[1, 4], [2, 5], [3, 6]], dtype=jnp.uint32)
@@ -1835,16 +1835,16 @@ def test_swap_axes_2d_basic():
 
 
 def test_swap_axes_3d_basic():
-    """Test basic swap_axes on 3D dataclass."""
+    """Test basic swapaxes on 3D dataclass."""
     data = SimpleData.default(shape=(2, 3, 4))
     data = data.replace(
         id=jnp.arange(24, dtype=jnp.uint32).reshape(2, 3, 4),
         value=jnp.arange(24, dtype=jnp.float32).reshape(2, 3, 4),
     )
 
-    result = xnp.swap_axes(data, 0, 2)
+    result = xnp.swapaxes(data, 0, 2)
 
-    # For xtructure, swap_axes should only affect batch dimensions
+    # For xtructure, swapaxes should only affect batch dimensions
     # Original batch shape: (2, 3, 4) -> Swapped axes 0,2: (4, 3, 2)
     assert result.shape.batch == (4, 3, 2)
 
@@ -1856,16 +1856,16 @@ def test_swap_axes_3d_basic():
 
 
 def test_swap_axes_with_negative_indices():
-    """Test swap_axes with negative indices."""
+    """Test swapaxes with negative indices."""
     data = SimpleData.default(shape=(2, 3, 4))
     data = data.replace(
         id=jnp.arange(24, dtype=jnp.uint32).reshape(2, 3, 4),
         value=jnp.arange(24, dtype=jnp.float32).reshape(2, 3, 4),
     )
 
-    result = xnp.swap_axes(data, -1, -2)
+    result = xnp.swapaxes(data, -1, -2)
 
-    # For xtructure, swap_axes should only affect batch dimensions
+    # For xtructure, swapaxes should only affect batch dimensions
     # Original batch shape: (2, 3, 4) -> Swapped axes -1,-2: (2, 4, 3)
     assert result.shape.batch == (2, 4, 3)
 
@@ -1877,16 +1877,16 @@ def test_swap_axes_with_negative_indices():
 
 
 def test_swap_axes_mixed_positive_negative():
-    """Test swap_axes with mixed positive and negative indices."""
+    """Test swapaxes with mixed positive and negative indices."""
     data = SimpleData.default(shape=(2, 3, 4))
     data = data.replace(
         id=jnp.arange(24, dtype=jnp.uint32).reshape(2, 3, 4),
         value=jnp.arange(24, dtype=jnp.float32).reshape(2, 3, 4),
     )
 
-    result = xnp.swap_axes(data, 1, -1)
+    result = xnp.swapaxes(data, 1, -1)
 
-    # For xtructure, swap_axes should only affect batch dimensions
+    # For xtructure, swapaxes should only affect batch dimensions
     # Original batch shape: (2, 3, 4) -> Swapped axes 1,-1: (2, 4, 3)
     assert result.shape.batch == (2, 4, 3)
 
@@ -1898,7 +1898,7 @@ def test_swap_axes_mixed_positive_negative():
 
 
 def test_swap_axes_vector_dataclass():
-    """Test swap_axes on dataclass with vector fields."""
+    """Test swapaxes on dataclass with vector fields."""
     data = VectorData.default(shape=(2, 3))
     data = data.replace(
         position=jnp.array(
@@ -1917,7 +1917,7 @@ def test_swap_axes_vector_dataclass():
         ),
     )
 
-    result = xnp.swap_axes(data, 0, 1)
+    result = xnp.swapaxes(data, 0, 1)
 
     assert result.shape.batch == (3, 2)
     expected_position = jnp.array(
@@ -1941,14 +1941,14 @@ def test_swap_axes_vector_dataclass():
 
 
 def test_swap_axes_1d_no_change():
-    """Test swap_axes on 1D dataclass (should be no-op)."""
+    """Test swapaxes on 1D dataclass (should be no-op)."""
     data = SimpleData.default(shape=(3,))
     data = data.replace(
         id=jnp.array([1, 2, 3], dtype=jnp.uint32),
         value=jnp.array([1.0, 2.0, 3.0], dtype=jnp.float32),
     )
 
-    result = xnp.swap_axes(data, 0, 0)  # Same axis
+    result = xnp.swapaxes(data, 0, 0)  # Same axis
 
     assert result.shape.batch == (3,)
     assert jnp.array_equal(result.id, data.id)
@@ -1956,15 +1956,15 @@ def test_swap_axes_1d_no_change():
 
 
 def test_swap_axes_equivalent_to_jnp_swapaxes():
-    """Test that xnp.swap_axes produces same result as manual jnp.swapaxes."""
+    """Test that xnp.swapaxes produces same result as manual jnp.swapaxes."""
     data = SimpleData.default(shape=(2, 3))
     data = data.replace(
         id=jnp.array([[1, 2, 3], [4, 5, 6]], dtype=jnp.uint32),
         value=jnp.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=jnp.float32),
     )
 
-    # Using our xnp.swap_axes
-    result_xnp = xnp.swap_axes(data, 0, 1)
+    # Using our xnp.swapaxes
+    result_xnp = xnp.swapaxes(data, 0, 1)
 
     # Using manual jnp.swapaxes
     result_manual = SimpleData(id=jnp.swapaxes(data.id, 0, 1), value=jnp.swapaxes(data.value, 0, 1))
@@ -1974,7 +1974,7 @@ def test_swap_axes_equivalent_to_jnp_swapaxes():
 
 
 def test_swap_axes_nested_dataclass():
-    """Test swap_axes on nested dataclass."""
+    """Test swapaxes on nested dataclass."""
     simple = SimpleData.default(shape=(2, 2))
     simple = simple.replace(
         id=jnp.array([[1, 2], [3, 4]], dtype=jnp.uint32),
@@ -2000,7 +2000,7 @@ def test_swap_axes_nested_dataclass():
     data = NestedData.default(shape=(2, 2))
     data = data.replace(simple=simple, vector=vector)
 
-    result = xnp.swap_axes(data, 0, 1)
+    result = xnp.swapaxes(data, 0, 1)
 
     assert result.shape.batch == (2, 2)
     # Check that nested fields are properly swapped
@@ -2011,7 +2011,7 @@ def test_swap_axes_nested_dataclass():
 
 
 def test_swap_axes_integration_with_other_ops():
-    """Test swap_axes integration with other xnp operations."""
+    """Test swapaxes integration with other xnp operations."""
     # Create base data
     data = SimpleData.default(shape=(2, 3))
     data = data.replace(
@@ -2020,7 +2020,7 @@ def test_swap_axes_integration_with_other_ops():
     )
 
     # Swap axes
-    swapped = xnp.swap_axes(data, 0, 1)
+    swapped = xnp.swapaxes(data, 0, 1)
     assert swapped.shape.batch == (3, 2)
 
     # Take specific elements from swapped data
@@ -2067,16 +2067,16 @@ def test_transpose_integration_with_other_ops():
 
 
 def test_transpose_swap_axes_equivalence():
-    """Test that transpose and swap_axes produce equivalent results for 2D arrays."""
+    """Test that transpose and swapaxes produce equivalent results for 2D arrays."""
     data = SimpleData.default(shape=(2, 3))
     data = data.replace(
         id=jnp.array([[1, 2, 3], [4, 5, 6]], dtype=jnp.uint32),
         value=jnp.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=jnp.float32),
     )
 
-    # Transpose should be equivalent to swap_axes(0, 1) for 2D arrays
+    # Transpose should be equivalent to swapaxes(0, 1) for 2D arrays
     result_transpose = xnp.transpose(data)
-    result_swap = xnp.swap_axes(data, 0, 1)
+    result_swap = xnp.swapaxes(data, 0, 1)
 
     assert jnp.array_equal(result_transpose.id, result_swap.id)
     assert jnp.array_equal(result_transpose.value, result_swap.value)
