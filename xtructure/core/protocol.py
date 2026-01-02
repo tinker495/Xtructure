@@ -1,4 +1,4 @@
-from typing import Any, ClassVar, Dict, NamedTuple, Protocol
+from typing import Any, ClassVar, Protocol
 from typing import Tuple as TypingTuple
 from typing import Type, TypeVar, runtime_checkable
 
@@ -9,24 +9,10 @@ from .structuredtype import StructuredType
 T = TypeVar("T")
 
 
-class shape_tuple(NamedTuple):
-    batch: tuple[int, ...]
-    fields: Dict[str, Any]
-
-
-class dtype_tuple(NamedTuple):
-    fields: Dict[str, Any]
-
-
 # Protocol defining the interface added by @xtructure_data
 class _XtructurableMeta(type(Protocol)):
     def __instancecheck__(cls, instance) -> bool:
-        if isinstance(instance, type):
-            return bool(getattr(instance, "is_xtructed", False))
-        try:
-            return super().__instancecheck__(instance)
-        except TypeError:
-            return False
+        return bool(getattr(instance, "is_xtructed", False))
 
     def __subclasscheck__(cls, subclass) -> bool:
         return bool(getattr(subclass, "is_xtructed", False))
@@ -45,21 +31,14 @@ class Xtructurable(Protocol[T], metaclass=_XtructurableMeta):
     # This is a namedtuple whose fields mirror the class attributes.
     default_dtype: ClassVar[Any]
 
-    # Fields from the original class that base_dataclass would process
-    # These are implicitly part of T. For the protocol to be complete,
-    # it assumes T will have __annotations__.
-    __annotations__: Dict[str, Any]
-    # __dict__ is used by the __getitem__ implementation
-    __dict__: Dict[str, Any]
-
     # Methods and properties added by add_shape_dtype_len
     @property
-    def shape(self) -> shape_tuple:
+    def shape(self) -> Any:
         """The shape of the data in the object, as a dynamically-generated namedtuple."""
         ...
 
     @property
-    def dtype(self) -> dtype_tuple:
+    def dtype(self) -> Any:
         """The dtype of the data in the object, as a dynamically-generated namedtuple."""
         ...
 
@@ -91,10 +70,10 @@ class Xtructurable(Protocol[T], metaclass=_XtructurableMeta):
         ...
 
     @property
-    def batch_shape(self) -> TypingTuple[int, ...]:
+    def batch_shape(self) -> TypingTuple[int, ...] | int:
         ...
 
-    def reshape(self: T, new_shape: TypingTuple[int, ...]) -> T:
+    def reshape(self: T, *new_shape: int | TypingTuple[int, ...]) -> T:
         ...
 
     def flatten(self: T) -> T:
@@ -157,6 +136,17 @@ class Xtructurable(Protocol[T], metaclass=_XtructurableMeta):
 
     # Method added by add_runtime_validation
     def check_invariants(self) -> None:
+        ...
+
+    # Methods added by base_dataclass
+    @classmethod
+    def from_tuple(cls: Type[T], args: TypingTuple[Any, ...]) -> T:
+        ...
+
+    def to_tuple(self) -> TypingTuple[Any, ...]:
+        ...
+
+    def replace(self: T, **kwargs: Any) -> T:
         ...
 
 

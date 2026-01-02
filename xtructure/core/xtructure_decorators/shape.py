@@ -137,6 +137,11 @@ def add_shape_dtype_len(cls: Type[T]) -> Type[T]:
 
     setattr(cls, "structured_type", property(get_structured_type))
 
+    def get_batch_shape(self):
+        return self.shape.batch
+
+    setattr(cls, "batch_shape", property(get_batch_shape))
+
     def get_ndim(self) -> int:
         """Return number of batch dimensions for structured instances."""
         shape = self.shape

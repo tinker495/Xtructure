@@ -127,6 +127,18 @@ def test_structured_type():
     assert nested.shape.batch == (5, 10)
 
 
+def test_batch_shape():
+    single = SimpleData.default()
+    assert single.batch_shape == ()
+
+    batched = SimpleData.default(shape=(5, 10))
+    assert batched.batch_shape == (5, 10)
+
+    unstructured = SimpleData(id=jnp.array(1), value=jnp.array([2.0, 3.0, 4.0]))
+    assert unstructured.structured_type == StructuredType.UNSTRUCTURED
+    assert unstructured.batch_shape == -1
+
+
 def test_len_semantics():
     # SINGLE -> 1
     single = SimpleData.default()
