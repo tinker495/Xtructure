@@ -282,6 +282,29 @@ def test_update_on_condition_array_advanced_indices():
     assert jnp.array_equal(result, expected)
 
 
+def test_transpose_array_matches_jnp():
+    """Array transpose delegates to jnp.transpose."""
+    original = jnp.arange(12, dtype=jnp.int32).reshape(3, 4)
+    result = xnp.transpose(original)
+    expected = jnp.transpose(original)
+    assert jnp.array_equal(result, expected)
+
+
+def test_transpose_dataclass_batch_only():
+    """Dataclass transpose swaps batch axes but keeps field dims intact."""
+    original = VectorData.default((2, 3))
+    position = jnp.arange(2 * 3 * 3, dtype=jnp.float32).reshape(2, 3, 3)
+    velocity = -position
+    original = original.replace(position=position, velocity=velocity)
+
+    result = xnp.transpose(original)
+
+    expected_position = jnp.transpose(position, (1, 0, 2))
+    expected_velocity = jnp.transpose(velocity, (1, 0, 2))
+    assert jnp.array_equal(result.position, expected_position)
+    assert jnp.array_equal(result.velocity, expected_velocity)
+
+
 def test_update_on_condition_structure_mismatch_raises():
     """Different dataclass structures should raise before attempting updates."""
     original = SimpleData.default((2,))
