@@ -8,6 +8,7 @@ import jax.numpy as jnp
 from xtructure.core.type_utils import is_xtructure_dataclass_instance
 
 from . import dataclass_ops as _dc
+from .array_ops import _update_array_on_condition
 
 
 def _is_xtructurable(value: Any) -> bool:
@@ -199,16 +200,18 @@ def unique_mask(
 
 
 def update_on_condition(dataclass_instance, indices, condition, values_to_set):
-    if not _is_xtructurable(dataclass_instance):
-        raise TypeError("update_on_condition expects an xtructure dataclass input.")
+    if _is_xtructurable(dataclass_instance):
+        if _is_xtructurable(values_to_set):
+            if jax.tree_util.tree_structure(values_to_set) != jax.tree_util.tree_structure(
+                dataclass_instance
+            ):
+                raise TypeError(
+                    "values_to_set must have the same tree structure as dataclass_instance."
+                )
+        return _dc.update_on_condition(dataclass_instance, indices, condition, values_to_set)
     if _is_xtructurable(values_to_set):
-        if jax.tree_util.tree_structure(values_to_set) != jax.tree_util.tree_structure(
-            dataclass_instance
-        ):
-            raise TypeError(
-                "values_to_set must have the same tree structure as dataclass_instance."
-            )
-    return _dc.update_on_condition(dataclass_instance, indices, condition, values_to_set)
+        raise TypeError("values_to_set must not be an xtructure dataclass when updating an array.")
+    return _update_array_on_condition(dataclass_instance, indices, condition, values_to_set)
 
 
 def expand_dims(a, axis: int | Sequence[int]):

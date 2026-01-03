@@ -240,6 +240,48 @@ def test_update_on_condition_nested_dataclass_first_true_wins_everywhere():
     assert jnp.allclose(result.vector.velocity, expected_velocity)
 
 
+def test_update_on_condition_array_basic():
+    """Array inputs follow the same first-true-wins semantics."""
+    original = jnp.zeros(5, dtype=jnp.float32)
+    indices = jnp.array([0, 2, 4])
+    condition = jnp.array([True, True, True])
+    values_to_set = jnp.array([1.0, 2.0, 3.0], dtype=jnp.float32)
+
+    result = xnp.update_on_condition(original, indices, condition, values_to_set)
+
+    expected = jnp.array([1.0, 0.0, 2.0, 0.0, 3.0], dtype=jnp.float32)
+    assert jnp.array_equal(result, expected)
+
+
+def test_update_on_condition_array_duplicate_indices_first_true():
+    """Array inputs with duplicate indices keep the first True update."""
+    original = jnp.zeros(3, dtype=jnp.float32)
+    indices = jnp.array([1, 1, 1], dtype=jnp.int32)
+    condition = jnp.array([True, True, True])
+    values_to_set = jnp.array([9.0, 8.0, 7.0], dtype=jnp.float32)
+
+    result = xnp.update_on_condition(original, indices, condition, values_to_set)
+
+    expected = jnp.array([0.0, 9.0, 0.0], dtype=jnp.float32)
+    assert jnp.array_equal(result, expected)
+
+
+def test_update_on_condition_array_advanced_indices():
+    """Tuple indices work for array inputs too."""
+    original = jnp.zeros((2, 2), dtype=jnp.float32)
+    row = jnp.array([0, 1, 1], dtype=jnp.int32)
+    col = jnp.array([1, 0, 1], dtype=jnp.int32)
+    condition = jnp.array([True, False, True])
+    values_to_set = jnp.array([5.0, 6.0, 7.0], dtype=jnp.float32)
+
+    result = xnp.update_on_condition(original, (row, col), condition, values_to_set)
+
+    expected = jnp.zeros((2, 2), dtype=jnp.float32)
+    expected = expected.at[0, 1].set(5.0)
+    expected = expected.at[1, 1].set(7.0)
+    assert jnp.array_equal(result, expected)
+
+
 def test_update_on_condition_structure_mismatch_raises():
     """Different dataclass structures should raise before attempting updates."""
     original = SimpleData.default((2,))
