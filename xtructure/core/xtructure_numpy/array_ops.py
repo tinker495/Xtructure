@@ -45,11 +45,11 @@ def _update_array_on_condition(
     sentinel_value = jnp.array(num_updates, dtype=index_dtype)
 
     update_order = jnp.arange(num_updates, dtype=index_dtype)
-    invalid_fill = jnp.full_like(indices_array, invalid_index)
-    true_indices = _where_no_broadcast(condition, indices_array, invalid_fill)
 
-    sentinel_fill = jnp.full_like(update_order, sentinel_value)
-    true_positions = _where_no_broadcast(condition, update_order, sentinel_fill)
+    # Optimized: Use scalar broadcasting in jnp.where instead of full_like arrays
+    # and bypass Python-side shape checks of _where_no_broadcast for internal logic
+    true_indices = jnp.where(condition, indices_array, invalid_index)
+    true_positions = jnp.where(condition, update_order, sentinel_value)
 
     first_true_pos = jnp.full((original_array.shape[0] + 1,), sentinel_value, dtype=index_dtype)
     first_true_pos = first_true_pos.at[true_indices].min(true_positions, mode="drop")
@@ -57,8 +57,8 @@ def _update_array_on_condition(
     first_true_for_updates = jnp.take(first_true_pos, indices_array, mode="clip")
     apply_mask = condition & (first_true_for_updates == update_order)
 
-    apply_mask = jnp.asarray(apply_mask, dtype=jnp.bool_)
-    safe_indices = _where_no_broadcast(apply_mask, indices_array, invalid_fill)
+    # Optimized: Use jnp.where directly
+    safe_indices = jnp.where(apply_mask, indices_array, invalid_index)
 
     value_array = jnp.asarray(values_to_set, dtype=original_array.dtype)
 
