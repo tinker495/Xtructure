@@ -34,6 +34,17 @@ def unique_mask_legacy(
     if batch_len is None:
         batch_len = val.shape.batch[0]
 
+    if batch_len == 0:
+        final_mask = jnp.zeros((0,), dtype=jnp.bool_)
+        if not return_index and not return_inverse:
+            return final_mask
+        returns = (final_mask,)
+        if return_index:
+            returns += (jnp.zeros((0,), dtype=jnp.int32),)
+        if return_inverse:
+            returns += (jnp.zeros((0,), dtype=jnp.int32),)
+        return returns
+
     unique_keys = hash_bytes
     if filled is not None:
         flat_keys = unique_keys.reshape(batch_len, -1)

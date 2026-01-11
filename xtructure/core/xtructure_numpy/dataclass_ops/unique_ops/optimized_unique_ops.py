@@ -91,6 +91,17 @@ def unique_mask(
     if batch_len is None:
         batch_len = val.shape.batch[0]
 
+    if batch_len == 0:
+        final_mask = jnp.zeros((0,), dtype=jnp.bool_)
+        if not return_index and not return_inverse:
+            return final_mask
+        returns = (final_mask,)
+        if return_index:
+            returns += (jnp.zeros((0,), dtype=jnp.int32),)
+        if return_inverse:
+            returns += (jnp.zeros((0,), dtype=jnp.int32),)
+        return returns
+
     if key is not None and len(key) != batch_len:
         raise ValueError(f"key length {len(key)} must match batch_len {batch_len}")
 
