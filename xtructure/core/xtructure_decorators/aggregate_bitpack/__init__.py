@@ -25,177 +25,17 @@ from jax import lax
 from xtructure.core.field_descriptors import FieldDescriptor, get_field_descriptors
 from xtructure.core.type_utils import is_xtructure_dataclass_type
 
+from .bits import _extract_bits, _insert_bits
+from .spec import (
+    _AggLeafSpec,
+    _build_agg_spec,
+    _ceil_div,
+    _compute_word_tail_layout,
+    _default_unpack_dtype,
+)
+from .view import build_unpacked_view_cls
+
 T = TypeVar("T")
-
-
-@dataclasses.dataclass(frozen=True)
-class _AggLeafSpec:
-    path: tuple[str, ...]
-    bits: int
-    unpacked_shape: tuple[int, ...]
-    # Number of values in this field (product of unpacked_shape)
-    nvalues: int
-    # Bit offset into the concatenated bitstream
-    bit_offset: int
-    # Total bits for this field
-    bit_len: int
-    # Default unpack dtype (uint8 for <=8, uint32 for >8, bool for 1)
-    unpack_dtype: Any
-    # Declared dtype on the original dataclass field (for reconstruction)
-    declared_dtype: Any
-
-
-def _default_unpack_dtype(bits: int) -> Any:
-    if bits == 1:
-        return jnp.bool_
-    if bits <= 8:
-        return jnp.uint8
-    return jnp.uint32
-
-
-def _build_agg_spec(root_cls: Type[Any]) -> tuple[list[_AggLeafSpec], int]:
-    """Build a flat list of leaf specs (including nested leaves) in deterministic order."""
-    specs: list[_AggLeafSpec] = []
-
-    def _walk(cls: Type[Any], prefix: tuple[str, ...], bit_offset: int) -> int:
-        descriptors = get_field_descriptors(cls)
-
-        for field in dataclasses.fields(cls):
-            name = field.name
-            descriptor = descriptors.get(name)
-            if descriptor is None:
-                continue
-
-            if is_xtructure_dataclass_type(descriptor.dtype):
-                # Only support scalar nested fields for now.
-                if tuple(descriptor.intrinsic_shape) not in ((),):
-                    raise NotImplementedError(
-                        f"aggregate_bitpack currently supports only scalar nested fields. "
-                        f"Got intrinsic_shape={descriptor.intrinsic_shape} on {cls.__name__}.{name}."
-                    )
-                nested_cls = descriptor.dtype
-                bit_offset = _walk(nested_cls, prefix + (name,), bit_offset)
-                continue
-
-            if descriptor.bits is None:
-                raise ValueError(
-                    f"aggregate_bitpack requires FieldDescriptor.bits on every primitive leaf. "
-                    f"Missing on {cls.__name__}.{name}."
-                )
-
-            bits = int(descriptor.bits)
-            unpacked_shape = tuple(descriptor.intrinsic_shape)
-            nvalues = (
-                int(np.prod(np.array(unpacked_shape, dtype=np.int64))) if unpacked_shape else 1
-            )
-            bit_len = int(nvalues * bits)
-
-            specs.append(
-                _AggLeafSpec(
-                    path=prefix + (name,),
-                    bits=bits,
-                    unpacked_shape=unpacked_shape,
-                    nvalues=nvalues,
-                    bit_offset=bit_offset,
-                    bit_len=bit_len,
-                    unpack_dtype=_default_unpack_dtype(bits),
-                    declared_dtype=descriptor.dtype,
-                )
-            )
-            bit_offset += bit_len
-
-        return bit_offset
-
-    total_bits = int(_walk(root_cls, (), 0))
-    return specs, total_bits
-
-
-def _ceil_div(a: int, b: int) -> int:
-    return int((a + b - 1) // b)
-
-
-def _mask_u32(bits: int) -> jnp.uint32:
-    return jnp.uint32(0xFFFFFFFF) if bits == 32 else jnp.uint32((1 << bits) - 1)
-
-
-def _compute_word_tail_layout(total_bits: int) -> tuple[int, int, int]:
-    """Return (words_all_len, stored_words_len, tail_bytes).
-
-    We always pack into `words_all_len = ceil(total_bits/32)` words internally.
-    Then we store either:
-    - all words (tail_bytes=0), or
-    - all but the last word + a 1..2 byte tail (tail_bytes in {1,2})
-
-    Heuristic: if the remainder would require 3 bytes, store the extra word instead.
-    """
-    if total_bits < 0:
-        raise ValueError("total_bits must be non-negative")
-    words_all_len = _ceil_div(total_bits, 32) if total_bits else 0
-    rem_bits = total_bits % 32
-    rem_bytes = _ceil_div(rem_bits, 8) if rem_bits else 0
-    if rem_bytes in (1, 2):
-        tail_bytes = rem_bytes
-        stored_words_len = max(words_all_len - 1, 0)
-    else:
-        tail_bytes = 0
-        stored_words_len = words_all_len
-    return words_all_len, stored_words_len, tail_bytes
-
-
-def _insert_bits(
-    words: jax.Array, bit_pos: jax.Array, value_u32: jax.Array, bits: int
-) -> jax.Array:
-    """Insert `bits` LSBs of value into words at bit_pos (little-endian bit numbering)."""
-    bit_pos = bit_pos.astype(jnp.uint32)
-    idx = jnp.right_shift(bit_pos, jnp.uint32(5)).astype(jnp.int32)
-    shift = (bit_pos & jnp.uint32(31)).astype(jnp.uint32)
-    bits_u32 = jnp.uint32(bits)
-    mask = _mask_u32(bits)
-    v = (value_u32.astype(jnp.uint32) & mask).astype(jnp.uint32)
-
-    def _fits(_):
-        w = lax.dynamic_index_in_dim(words, idx, axis=0, keepdims=False)
-        w2 = w | (v << shift)
-        return words.at[idx].set(w2)
-
-    def _spans(_):
-        low_bits = jnp.uint32(32) - shift  # in [1,31]
-        low_mask = (
-            jnp.uint32(0xFFFFFFFF)
-            if bits == 32
-            else (jnp.left_shift(jnp.uint32(1), low_bits) - jnp.uint32(1))
-        )
-        low_part = v & low_mask
-        high_part = v >> low_bits
-        w0 = lax.dynamic_index_in_dim(words, idx, axis=0, keepdims=False) | (low_part << shift)
-        w1 = lax.dynamic_index_in_dim(words, idx + 1, axis=0, keepdims=False) | high_part
-        out = words.at[idx].set(w0)
-        out = out.at[idx + 1].set(w1)
-        return out
-
-    return lax.cond(shift + bits_u32 <= jnp.uint32(32), _fits, _spans, operand=None)
-
-
-def _extract_bits(words: jax.Array, bit_pos: jax.Array, bits: int) -> jax.Array:
-    """Extract `bits` value from words at bit_pos (little-endian bit numbering)."""
-    bit_pos = bit_pos.astype(jnp.uint32)
-    idx = jnp.right_shift(bit_pos, jnp.uint32(5)).astype(jnp.int32)
-    shift = (bit_pos & jnp.uint32(31)).astype(jnp.uint32)
-    bits_u32 = jnp.uint32(bits)
-    mask = _mask_u32(bits)
-
-    def _fits(_):
-        w = lax.dynamic_index_in_dim(words, idx, axis=0, keepdims=False)
-        return (w >> shift) & mask
-
-    def _spans(_):
-        w0 = lax.dynamic_index_in_dim(words, idx, axis=0, keepdims=False)
-        w1 = lax.dynamic_index_in_dim(words, idx + 1, axis=0, keepdims=False)
-        low = w0 >> shift
-        high = w1 << (jnp.uint32(32) - shift)
-        return (low | high) & mask
-
-    return lax.cond(shift + bits_u32 <= jnp.uint32(32), _fits, _spans, operand=None)
 
 
 def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
@@ -231,50 +71,9 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
 
     # Build nested logical-view unpacked classes mirroring the original structure,
     # but using default unpack dtypes (bool/uint8/uint32) and with validate=False.
-    _view_cache: dict[type, type] = {}
-
-    def _view_dtype_for_field_bits(bits: int) -> Any:
-        return _default_unpack_dtype(bits)
-
-    def _build_view_type(orig: type) -> type:
-        cached = _view_cache.get(orig)
-        if cached is not None:
-            return cached
-
-        view_name = f"{orig.__name__}Unpacked"
-        View = type(view_name, (), {"__module__": orig.__module__})
-        descriptors = get_field_descriptors(orig)
-        annotations = {}
-        for field in dataclasses.fields(orig):
-            name = field.name
-            fd = descriptors.get(name)
-            if fd is None:
-                continue
-            if is_xtructure_dataclass_type(fd.dtype):
-                if tuple(fd.intrinsic_shape) not in ((),):
-                    raise NotImplementedError(
-                        f"aggregate_bitpack currently supports only scalar nested fields. "
-                        f"Got intrinsic_shape={fd.intrinsic_shape} on {orig.__name__}.{name}."
-                    )
-                nested_view = _build_view_type(fd.dtype)
-                annotations[name] = FieldDescriptor.scalar(dtype=nested_view)
-            else:
-                if fd.bits is None:
-                    raise ValueError(
-                        f"aggregate_bitpack requires FieldDescriptor.bits on every primitive leaf. "
-                        f"Missing on {orig.__name__}.{name}."
-                    )
-                annotations[name] = FieldDescriptor.tensor(
-                    dtype=_view_dtype_for_field_bits(int(fd.bits)),
-                    shape=tuple(fd.intrinsic_shape),
-                    fill_value=0,
-                )
-        View.__annotations__ = annotations
-        View = _xtructure_dataclass(View, validate=False, aggregate_bitpack=False)  # type: ignore[assignment]
-        _view_cache[orig] = View
-        return View
-
-    UnpackedView = _build_view_type(cls)
+    UnpackedView, _view_cache = build_unpacked_view_cls(
+        cls, default_unpack_dtype=_default_unpack_dtype
+    )
     setattr(Packed, "__agg_unpacked_view_cls__", UnpackedView)
 
     def _pack_instance(instance: Any) -> tuple[jax.Array, jax.Array]:
