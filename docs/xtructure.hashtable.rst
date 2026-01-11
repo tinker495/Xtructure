@@ -4,10 +4,10 @@ xtructure.hashtable package
 Submodules
 ----------
 
-xtructure.hashtable.hashtable module
-------------------------------------
+xtructure.hashtable.table module
+--------------------------------
 
-.. automodule:: xtructure.hashtable.hashtable
+.. automodule:: xtructure.hashtable.table
    :members:
    :show-inheritance:
    :undoc-members:
