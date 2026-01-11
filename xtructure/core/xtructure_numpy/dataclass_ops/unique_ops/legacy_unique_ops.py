@@ -1,4 +1,4 @@
-"""Deduplication utilities for dataclass batches."""
+"""Legacy unique_mask implementation for comparison."""
 
 from __future__ import annotations
 
@@ -7,11 +7,11 @@ from typing import Any, Callable, Union
 import jax
 import jax.numpy as jnp
 
-from ...xtructure_decorators import Xtructurable
-from ...xtructure_numpy.array_ops import _where_no_broadcast
+from ....xtructure_decorators import Xtructurable
+from ....xtructure_numpy.array_ops import _where_no_broadcast
 
 
-def unique_mask(
+def unique_mask_legacy(
     val: Xtructurable,
     key: jnp.ndarray | None = None,
     filled: jnp.ndarray | None = None,
@@ -20,7 +20,7 @@ def unique_mask(
     return_index: bool = False,
     return_inverse: bool = False,
 ) -> Union[jnp.ndarray, tuple]:
-    """Mask or index information for selecting unique states."""
+    """Legacy implementation using jnp.unique + scatter reduction."""
     if key_fn is None:
 
         def key_fn(x):
@@ -33,9 +33,6 @@ def unique_mask(
 
     if batch_len is None:
         batch_len = val.shape.batch[0]
-
-    if key is not None and len(key) != batch_len:
-        raise ValueError(f"key length {len(key)} must match batch_len {batch_len}")
 
     unique_keys = hash_bytes
     if filled is not None:
