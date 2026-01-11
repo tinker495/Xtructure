@@ -118,21 +118,23 @@ def unique_mask(
             hashes[i] = jnp.where(filled, hashes[i], max_val)
 
     # 4. Prepare columns for lexsort
+    # Lexsort expects [least_significant, ..., most_significant]
     sort_keys = []
 
+    # Tertiary key: original index (stable tie-breaking if hashes and keys are equal)
+    sort_keys.append(jnp.arange(batch_len, dtype=jnp.int32))
+
     if key is not None:
+        # Secondary key: cost (minimize cost within same hash group)
         if filled is not None:
             inf_fill = jnp.array(jnp.inf, dtype=key.dtype)
             valid_key = jnp.where(filled, key, inf_fill)
         else:
             valid_key = key
         sort_keys.append(valid_key)
-    else:
-        # Stable sort: prefer earlier index
-        sort_keys.append(jnp.arange(batch_len, dtype=jnp.int32))
 
-    # Add hashes as primary (last in lexsort list).
-    # Reversed so the first hash is most significant.
+    # Primary key: hashes (to group identical states)
+    # Reversed so the first hash is the most significant sorting factor.
     sort_keys.extend(reversed(hashes))
 
     # 5. Perform Lexsort
