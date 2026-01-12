@@ -3,7 +3,9 @@ import jax.numpy as jnp
 import numpy as np
 
 from xtructure import FieldDescriptor, xtructure_dataclass
-from xtructure.io.bitpack import packed_num_bytes
+from xtructure.core.xtructure_decorators.aggregate_bitpack.bitpack import (
+    packed_num_bytes,
+)
 
 
 @xtructure_dataclass(validate=True)

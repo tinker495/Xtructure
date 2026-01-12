@@ -1,7 +1,10 @@
 import chex
 import jax.numpy as jnp
 
-from xtructure.io.bitpack import from_uint8, to_uint8
+from xtructure.core.xtructure_decorators.aggregate_bitpack.bitpack import (
+    from_uint8,
+    to_uint8,
+)
 
 
 def test_bitpack_12bit_roundtrip_small():

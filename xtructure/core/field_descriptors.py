@@ -3,9 +3,27 @@ from typing import Any, Callable, Dict, Tuple, Type
 import jax.numpy as jnp
 import numpy as np
 
-from xtructure.io.bitpack import packed_num_bytes
-
 from .type_utils import is_xtructure_dataclass_type
+
+
+# Local implementation to avoid circular dependency with aggregate_bitpack
+def _packed_num_bytes(num_values: int, active_bits: int) -> int:
+    if num_values == 0:
+        return 0
+    if active_bits == 8:
+        return int(num_values)
+    if active_bits == 1:
+        return int((num_values + 7) // 8)
+    if active_bits in (2, 4):
+        values_per_byte = 8 // active_bits
+        return int((num_values + values_per_byte - 1) // values_per_byte)
+
+    L = int(np.lcm(active_bits, 8))
+    num_values_per_block = L // active_bits
+    num_bytes_per_block = L // 8
+    num_blocks = int((num_values + num_values_per_block - 1) // num_values_per_block)
+    return int(num_blocks * num_bytes_per_block)
+
 
 # Represents a JAX dtype, can be a specific type like jnp.int32 or a more generic jnp.dtype
 DType = Any
@@ -222,7 +240,7 @@ class FieldDescriptor:
             else:
                 unpacked_dtype = jnp.uint32
         num_values = int(np.prod(np.array(unpacked_shape_final, dtype=np.int64)))
-        packed_len = packed_num_bytes(num_values, packed_bits)
+        packed_len = _packed_num_bytes(num_values, packed_bits)
         return cls(
             dtype=storage_dtype,
             intrinsic_shape=(packed_len,),

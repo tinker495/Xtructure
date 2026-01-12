@@ -18,7 +18,11 @@ import jax.numpy as jnp
 import numpy as np
 
 from xtructure.core.field_descriptors import FieldDescriptor, get_field_descriptors
-from xtructure.io.bitpack import from_uint8, packed_num_bytes, to_uint8
+from xtructure.core.xtructure_decorators.aggregate_bitpack.bitpack import (
+    from_uint8,
+    packed_num_bytes,
+    to_uint8,
+)
 
 T = TypeVar("T")
 

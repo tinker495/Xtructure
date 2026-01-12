@@ -6,28 +6,8 @@ import jax
 import jax.numpy as jnp
 
 from ..core import Xtructurable
-from ..core.xtructure_decorators.hash import uint32ed_to_hash
-from .constants import (
-    DOUBLE_HASH_SECONDARY_DELTA,
-    FINGERPRINT_MIX_CONSTANT_A,
-    FINGERPRINT_MIX_CONSTANT_B,
-    SIZE_DTYPE,
-)
-
-
-def _mix_fingerprint(primary: chex.Array, secondary: chex.Array, length: chex.Array) -> chex.Array:
-    mix = jnp.asarray(primary, dtype=jnp.uint32)
-    secondary = jnp.asarray(secondary, dtype=jnp.uint32)
-    length = jnp.asarray(length, dtype=jnp.uint32)
-
-    mix ^= jnp.uint32(0x9E3779B9)
-    mix = jnp.uint32(
-        mix + secondary * FINGERPRINT_MIX_CONSTANT_A + length * FINGERPRINT_MIX_CONSTANT_B
-    )
-    mix ^= mix >> jnp.uint32(16)
-    mix *= jnp.uint32(0x7FEB352D)
-    mix ^= mix >> jnp.uint32(15)
-    return mix
+from ..core.xtructure_decorators.hash import _mix_fingerprint, uint32ed_to_hash
+from .constants import DOUBLE_HASH_SECONDARY_DELTA, SIZE_DTYPE
 
 
 def _first_occurrence_mask(

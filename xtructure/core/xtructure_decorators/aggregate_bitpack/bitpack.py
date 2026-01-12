@@ -48,6 +48,58 @@ def packed_num_bytes(num_values: int, active_bits: int) -> int:
     return int(num_blocks * num_bytes_per_block)
 
 
+def _mask_u32(bits: int) -> jnp.uint32:
+    return jnp.uint32(0xFFFFFFFF) if bits == 32 else jnp.uint32((1 << bits) - 1)
+
+
+def _insert_bits(
+    words: jax.Array, bit_pos: jax.Array, value_u32: jax.Array, bits: int
+) -> jax.Array:
+    """Insert `bits` LSBs of value into words at bit_pos (little-endian bit numbering)."""
+    # Optimized branch-free implementation
+    bit_pos = bit_pos.astype(jnp.uint32)
+    idx = jnp.right_shift(bit_pos, jnp.uint32(5)).astype(jnp.int32)
+    shift = (bit_pos & jnp.uint32(31)).astype(jnp.uint32)
+
+    # Mask value to ensure no upper bits pollute
+    mask = _mask_u32(bits)
+    v = (value_u32.astype(jnp.uint32) & mask).astype(jnp.uint32)
+
+    # Calculate contributions to current and next word
+    low_part = v << shift
+    high_part = v >> (jnp.uint32(32) - shift)
+
+    # Update current word
+    w0 = words[idx] | low_part
+    words = words.at[idx].set(w0)
+
+    # Update next word safely (branch-free OOB handling)
+    # We read w1 safely (fill 0 if OOB), OR in the high part, and write back.
+    # If OOB, the write is dropped.
+    w1 = jnp.take(words, idx + 1, mode="fill")
+    w1 = w1 | high_part
+    words = words.at[idx + 1].set(w1)
+
+    return words
+
+
+def _extract_bits(words: jax.Array, bit_pos: jax.Array, bits: int) -> jax.Array:
+    """Extract `bits` value from words at bit_pos (little-endian bit numbering)."""
+    # Optimized branch-free implementation
+    bit_pos = bit_pos.astype(jnp.uint32)
+    idx = jnp.right_shift(bit_pos, jnp.uint32(5)).astype(jnp.int32)
+    shift = (bit_pos & jnp.uint32(31)).astype(jnp.uint32)
+    mask = _mask_u32(bits)
+
+    w0 = words[idx]
+    w1 = jnp.take(words, idx + 1, mode="fill")
+
+    low = w0 >> shift
+    high = w1 << (jnp.uint32(32) - shift)
+
+    return (low | high) & mask
+
+
 def to_uint8(values: chex.Array, active_bits: int = 1) -> chex.Array:
     """Pack an array into a uint8 stream using `active_bits` per value.
 
@@ -106,39 +158,22 @@ def to_uint8(values: chex.Array, active_bits: int = 1) -> chex.Array:
         values_flat = jnp.concatenate([values_flat, jnp.zeros((padding,), dtype=values_flat.dtype)])
     grouped = values_flat.reshape((-1, num_values_per_block))
 
-    if L <= 32:
+    # General path for any other bit-width: pack into uint32 buffers and bitcast
+    def pack_block(group):
+        bits_needed = num_values_per_block * active_bits
+        words_needed = (bits_needed + 31) // 32
 
-        def pack_block(group):
-            acc = jnp.uint32(0)
-            for i in range(num_values_per_block):
-                acc = acc | (group[i].astype(jnp.uint32) << jnp.uint32(i * active_bits))
-            return jnp.array(
-                [(acc >> jnp.uint32(8 * j)) & jnp.uint32(0xFF) for j in range(num_bytes_per_block)],
-                dtype=jnp.uint8,
+        scratch = jnp.zeros((words_needed,), dtype=jnp.uint32)
+
+        for i in range(num_values_per_block):
+            val = group[i]
+            # Must cast to uint32 for shift operations inside _insert_bits
+            scratch = _insert_bits(
+                scratch, jnp.uint32(i * active_bits), val.astype(jnp.uint32), active_bits
             )
 
-        packed = jax.vmap(pack_block)(grouped)
-        return packed.reshape((-1,))
-
-    # Stream bytes out of a uint32 accumulator for larger blocks (e.g. bits=5,7,9,15,...).
-    def pack_block(group):
-        packed_bytes = jnp.zeros((num_bytes_per_block,), dtype=jnp.uint8)
-        acc = jnp.uint32(0)
-        bits_in_acc = 0
-        byte_idx = 0
-        for i in range(num_values_per_block):
-            acc = acc | (group[i].astype(jnp.uint32) << jnp.uint32(bits_in_acc))
-            bits_in_acc += active_bits
-            while bits_in_acc >= 8:
-                packed_bytes = packed_bytes.at[byte_idx].set(
-                    (acc & jnp.uint32(0xFF)).astype(jnp.uint8)
-                )
-                acc = acc >> jnp.uint32(8)
-                bits_in_acc -= 8
-                byte_idx += 1
-        if byte_idx < num_bytes_per_block:
-            packed_bytes = packed_bytes.at[byte_idx].set((acc & jnp.uint32(0xFF)).astype(jnp.uint8))
-        return packed_bytes
+        out_bytes = jax.lax.bitcast_convert_type(scratch, jnp.uint8)
+        return out_bytes.reshape(-1)[:num_bytes_per_block]
 
     packed = jax.vmap(pack_block)(grouped)
     return packed.reshape((-1,))
@@ -198,38 +233,26 @@ def from_uint8(
         packed_bytes = jnp.pad(packed_bytes, (0, total_bytes - packed_bytes.size), mode="constant")
     grouped = packed_bytes.reshape((-1, num_bytes_per_block))
 
-    if L <= 32:
-
-        def unpack_block(byte_group):
-            acc = jnp.uint32(0)
-            for j in range(num_bytes_per_block):
-                acc = acc | (byte_group[j].astype(jnp.uint32) << jnp.uint32(8 * j))
-            vals = [
-                (acc >> jnp.uint32(i * active_bits)) & mask for i in range(num_values_per_block)
-            ]
-            dtype_out = jnp.uint8 if active_bits <= 8 else jnp.uint32
-            return jnp.array(vals, dtype=dtype_out)
-
-        blocks = jax.vmap(unpack_block)(grouped)
-        all_values = blocks.reshape((-1,))
-        return all_values[:num_target_elements].reshape(target_shape)
-
     def unpack_block(byte_group):
-        # For bits > 8, values won't fit in uint8. We'll emit uint32 and let caller cast if desired.
+        # Cast bytes to uint32 words to use optimized _extract_bits
+        # Pad to multiple of 4 bytes first
+        pad = (-num_bytes_per_block) % 4
+        if pad:
+            byte_group = jnp.pad(byte_group, (0, pad), constant_values=0)
+
+        words = jax.lax.bitcast_convert_type(byte_group.reshape(-1, 4), jnp.uint32).reshape(-1)
+
+        # Extract values
+        # Since we are inside a block, indices are small, no overflow risk
+        idxs = jnp.arange(num_values_per_block, dtype=jnp.uint32)
+
+        def extract_one(i):
+            return _extract_bits(words, i * jnp.uint32(active_bits), active_bits)
+
+        vals = jax.vmap(extract_one)(idxs)
+
         out_dtype = jnp.uint8 if active_bits <= 8 else jnp.uint32
-        vals = jnp.zeros((num_values_per_block,), dtype=out_dtype)
-        acc = jnp.uint32(0)
-        bits_in_acc = 0
-        byte_idx = 0
-        for i in range(num_values_per_block):
-            while bits_in_acc < active_bits and byte_idx < num_bytes_per_block:
-                acc = acc | (byte_group[byte_idx].astype(jnp.uint32) << jnp.uint32(bits_in_acc))
-                bits_in_acc += 8
-                byte_idx += 1
-            vals = vals.at[i].set((acc & mask).astype(out_dtype))
-            acc = acc >> jnp.uint32(active_bits)
-            bits_in_acc -= active_bits
-        return vals
+        return vals.astype(out_dtype)
 
     blocks = jax.vmap(unpack_block)(grouped)
     all_values = blocks.reshape((-1,))

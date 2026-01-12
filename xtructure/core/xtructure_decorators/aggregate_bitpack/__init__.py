@@ -25,7 +25,7 @@ from jax import lax
 from xtructure.core.field_descriptors import FieldDescriptor, get_field_descriptors
 from xtructure.core.type_utils import is_xtructure_dataclass_type
 
-from .bits import _extract_bits, _insert_bits
+from .bitpack import _extract_bits, _insert_bits
 from .spec import (
     _AggLeafSpec,
     _build_agg_spec,

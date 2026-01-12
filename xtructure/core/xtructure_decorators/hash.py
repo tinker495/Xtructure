@@ -15,6 +15,24 @@ def _avalanche32(h):
     return h
 
 
+def _mix_fingerprint(primary, secondary, length):
+    """Mix two hash values and a length into a fingerprint."""
+    # Constants from cityhash/farmhash-like mixing
+    const_a = jnp.uint32(0x85EBCA6B)
+    const_b = jnp.uint32(0xC2B2AE35)
+
+    mix = jnp.asarray(primary, dtype=jnp.uint32)
+    secondary = jnp.asarray(secondary, dtype=jnp.uint32)
+    length = jnp.asarray(length, dtype=jnp.uint32)
+
+    mix ^= jnp.uint32(0x9E3779B9)
+    mix = jnp.uint32(mix + secondary * const_a + length * const_b)
+    mix ^= mix >> 16
+    mix *= jnp.uint32(0x7FEB352D)
+    mix ^= mix >> 15
+    return mix
+
+
 def _split_uint64_to_uint32(u64):
     """Split uint64 array into interleaved uint32 words."""
     lo = jnp.uint32(u64 & jnp.uint64(0xFFFFFFFF))

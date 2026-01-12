@@ -11,7 +11,10 @@ import numpy as np
 from xtructure.core.field_descriptors import get_field_descriptors
 from xtructure.core.protocol import Xtructurable
 from xtructure.core.type_utils import is_xtructure_dataclass_type
-from xtructure.io.bitpack import from_uint8, to_uint8
+from xtructure.core.xtructure_decorators.aggregate_bitpack.bitpack import (
+    from_uint8,
+    to_uint8,
+)
 
 METADATA_MODULE_KEY = "__xtructure_class_module__"
 METADATA_CLASS_NAME_KEY = "__xtructure_class_name__"
