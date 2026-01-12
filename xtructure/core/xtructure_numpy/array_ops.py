@@ -39,6 +39,11 @@ def _update_array_on_condition(
         return original_array
 
     indices_array = jnp.asarray(indices)
+    if condition.shape != indices_array.shape:
+        raise ValueError(
+            f"`condition` shape {condition.shape} must match `indices` shape {indices_array.shape}."
+        )
+
     indices_array = jnp.reshape(indices_array, (num_updates,))
     index_dtype = indices_array.dtype
     invalid_index = jnp.array(original_array.shape[0], dtype=index_dtype)

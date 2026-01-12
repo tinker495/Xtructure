@@ -277,7 +277,7 @@ def test_update_on_condition_condition_shape_mismatch_raises():
     indices = jnp.array([0, 1, 2], dtype=jnp.int32)
     condition = jnp.array([[True, False, True]], dtype=jnp.bool_)
 
-    with pytest.raises(ValueError, match="`condition` shape .* must match `true_values` shape"):
+    with pytest.raises(ValueError, match="`condition` shape .* must match `indices` shape"):
         xnp.update_on_condition(original, indices, condition, 5.0)
 
 
