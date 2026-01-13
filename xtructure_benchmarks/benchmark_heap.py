@@ -1,6 +1,7 @@
 import argparse
 import heapq
 import json
+import os
 from typing import Any, Dict, List, Optional
 
 import jax
@@ -216,6 +217,7 @@ def run_benchmarks(
     # Validate and save results
     validate_results_schema(results)
     output_path = "xtructure_benchmarks/results/heap_results.json"
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, "w") as f:
         json.dump(results, f, indent=4)
 

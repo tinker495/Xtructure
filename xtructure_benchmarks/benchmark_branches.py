@@ -43,7 +43,7 @@ def run_benchmarks(output_dir):
     
     # Run each script
     # We use the .venv python
-    python_exe = ".venv/bin/python"
+    python_exe = sys.executable
     
     common_args = "--trials 3 --batch-sizes 1024,4096"
     

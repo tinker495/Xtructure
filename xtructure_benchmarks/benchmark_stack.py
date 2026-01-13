@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 from typing import Any, Dict, List, Optional
 
 import jax
@@ -102,6 +103,7 @@ def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional
     # Validate and save results
     validate_results_schema(results)
     output_path = "xtructure_benchmarks/results/stack_results.json"
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, "w") as f:
         json.dump(results, f, indent=4)
 
