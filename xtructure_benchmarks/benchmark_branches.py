@@ -45,7 +45,7 @@ def run_benchmarks(output_dir):
     # We use the .venv python
     python_exe = sys.executable
     
-    common_args = "--trials 3 --batch-sizes 1024,4096"
+    common_args = "--trials 3 --batch-sizes 1024,4096,16384"
     
     for script_rel in scripts:
         script_path = repo_root / script_rel
