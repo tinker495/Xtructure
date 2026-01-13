@@ -45,4 +45,21 @@ All output files are saved in the `xtructure_benchmarks/results/` directory.
 - **PNG Files (`*_performance.png`)**: These files are graphical visualizations of the performance data.
   - **X-axis**: Batch Size (on a log base 2 scale)
   - **Y-axis**: Operations per Second (on a log scale)
-  - **Interpretation**: Higher values on the y-axis indicate better performance. The graphs clearly illustrate the performance difference as the amount of data processed in parallel increases.
+  - **Interpretation**: Higher values on the y-axis indicate better performance. 
+## Automated Branch Benchmarking
+
+To compare performance between two git branches (e.g., `main` vs `dev`), you can use the automated benchmarking script. This script switches branches, runs benchmarks, collects results, and generates a comparison table.
+
+```bash
+# Compare 'main' and 'dev' branches
+python3 xtructure_benchmarks/benchmark_branches.py main dev
+```
+
+### Manual Comparison
+
+If you already have result files generated (e.g. manually), you can use `compare_benchmarks.py` directly:
+
+```bash
+# Compare 'main' and 'feature-branch' stored in results folders
+python3 xtructure_benchmarks/compare_benchmarks.py main feature-branch
+```

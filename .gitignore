@@ -172,5 +172,3 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
-
-xtructure_benchmarks/results/*

@@ -1,0 +1,5 @@
+
+results/*
+**.json
+results_*/*
+comparison.txt
