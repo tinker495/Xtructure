@@ -261,27 +261,27 @@ def full_like(a, fill_value, dtype: Any | None = None, shape: Any = None, *, dev
     return jnp.full_like(a, fill_value, dtype=dtype, shape=shape, device=device)
 
 
-def zeros_like(a, dtype: Any | None = None, shape: Any = None, *, device=None):
+def zeros_like(a, dtype=None, shape=None, *, device=None, out_sharding=None):
     if _is_xtructurable(a):
         _reject_dataclass_kwargs("zeros_like", dtype=dtype, shape=shape, device=device)
         return _dc.zeros_like(a)
-    return jnp.zeros_like(a, dtype=dtype, shape=shape, device=device)
+    return jnp.zeros_like(a, dtype=dtype, shape=shape, device=device, out_sharding=out_sharding)
 
 
-def ones_like(a, dtype: Any | None = None, shape: Any = None, *, device=None):
+def ones_like(a, dtype=None, shape=None, *, device=None, out_sharding=None):
     if _is_xtructurable(a):
         _reject_dataclass_kwargs("ones_like", dtype=dtype, shape=shape, device=device)
         return _dc.ones_like(a)
-    return jnp.ones_like(a, dtype=dtype, shape=shape, device=device)
+    return jnp.ones_like(a, dtype=dtype, shape=shape, device=device, out_sharding=out_sharding)
 
 
-def equal(x: Any, y: Any) -> Any:
+def equal(x, y, /):
     if _is_xtructurable(x) or _is_xtructurable(y):
         return _dc.equal(x, y)
     return jnp.equal(x, y)
 
 
-def not_equal(x: Any, y: Any) -> Any:
+def not_equal(x, y, /):
     if _is_xtructurable(x) or _is_xtructurable(y):
         return _dc.not_equal(x, y)
     return jnp.not_equal(x, y)
@@ -321,10 +321,10 @@ def moveaxis(
     return jnp.moveaxis(a, source, destination)
 
 
-def broadcast_to(array: Any, shape: Sequence[int]) -> Any:
+def broadcast_to(array, shape, *, out_sharding=None):
     if _is_xtructurable(array):
         return _dc.broadcast_to(array, shape)
-    return jnp.broadcast_to(array, shape)
+    return jnp.broadcast_to(array, shape, out_sharding=out_sharding)
 
 
 def broadcast_arrays(*args: Any) -> list[Any]:
@@ -426,12 +426,7 @@ def rot90(
     return jnp.rot90(m, k=k, axes=axes)
 
 
-def astype(
-    x: Any,
-    dtype: Any,
-    copy: bool = False,
-    device: Any = None,
-) -> Any:
+def astype(x, dtype, /, *, copy: bool = False, device=None):
     if _is_xtructurable(x):
         return _dc.astype(x, dtype, copy=copy, device=device)
     # jnp.astype is not always top-level in older JAX versions, but usually is.
