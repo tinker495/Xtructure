@@ -261,18 +261,193 @@ def full_like(a, fill_value, dtype: Any | None = None, shape: Any = None, *, dev
     return jnp.full_like(a, fill_value, dtype=dtype, shape=shape, device=device)
 
 
-def zeros_like(a, dtype: Any | None = None, shape: Any = None, *, device=None):
+def zeros_like(a, dtype=None, shape=None, *, device=None, out_sharding=None):
     if _is_xtructurable(a):
         _reject_dataclass_kwargs("zeros_like", dtype=dtype, shape=shape, device=device)
         return _dc.zeros_like(a)
-    return jnp.zeros_like(a, dtype=dtype, shape=shape, device=device)
+    return jnp.zeros_like(a, dtype=dtype, shape=shape, device=device, out_sharding=out_sharding)
 
 
-def ones_like(a, dtype: Any | None = None, shape: Any = None, *, device=None):
+def ones_like(a, dtype=None, shape=None, *, device=None, out_sharding=None):
     if _is_xtructurable(a):
         _reject_dataclass_kwargs("ones_like", dtype=dtype, shape=shape, device=device)
         return _dc.ones_like(a)
-    return jnp.ones_like(a, dtype=dtype, shape=shape, device=device)
+    return jnp.ones_like(a, dtype=dtype, shape=shape, device=device, out_sharding=out_sharding)
+
+
+def equal(x, y, /):
+    if _is_xtructurable(x) or _is_xtructurable(y):
+        return _dc.equal(x, y)
+    return jnp.equal(x, y)
+
+
+def not_equal(x, y, /):
+    if _is_xtructurable(x) or _is_xtructurable(y):
+        return _dc.not_equal(x, y)
+    return jnp.not_equal(x, y)
+
+
+def isclose(
+    a: Any,
+    b: Any,
+    rtol: float = 1e-05,
+    atol: float = 1e-08,
+    equal_nan: bool = False,
+) -> Any:
+    if _is_xtructurable(a) or _is_xtructurable(b):
+        return _dc.isclose(a, b, rtol=rtol, atol=atol, equal_nan=equal_nan)
+    return jnp.isclose(a, b, rtol=rtol, atol=atol, equal_nan=equal_nan)
+
+
+def allclose(
+    a: Any,
+    b: Any,
+    rtol: float = 1e-05,
+    atol: float = 1e-08,
+    equal_nan: bool = False,
+) -> bool:
+    if _is_xtructurable(a) or _is_xtructurable(b):
+        return _dc.allclose(a, b, rtol=rtol, atol=atol, equal_nan=equal_nan)
+    return jnp.allclose(a, b, rtol=rtol, atol=atol, equal_nan=equal_nan)
+
+
+def moveaxis(
+    a: Any,
+    source: int | Sequence[int],
+    destination: int | Sequence[int],
+) -> Any:
+    if _is_xtructurable(a):
+        return _dc.moveaxis(a, source, destination)
+    return jnp.moveaxis(a, source, destination)
+
+
+def broadcast_to(array, shape, *, out_sharding=None):
+    if _is_xtructurable(array):
+        return _dc.broadcast_to(array, shape)
+    return jnp.broadcast_to(array, shape, out_sharding=out_sharding)
+
+
+def broadcast_arrays(*args: Any) -> list[Any]:
+    args_list = list(args)
+    if any(_is_xtructurable(arg) for arg in args_list):
+        return _dc.broadcast_arrays(*args_list)
+    return jnp.broadcast_arrays(*args_list)
+
+
+def atleast_1d(*arys: Any) -> Any:
+    if any(_is_xtructurable(arg) for arg in arys):
+        return _dc.atleast_1d(*arys)
+    return jnp.atleast_1d(*arys)
+
+
+def atleast_2d(*arys: Any) -> Any:
+    if any(_is_xtructurable(arg) for arg in arys):
+        return _dc.atleast_2d(*arys)
+    return jnp.atleast_2d(*arys)
+
+
+def atleast_3d(*arys: Any) -> Any:
+    if any(_is_xtructurable(arg) for arg in arys):
+        return _dc.atleast_3d(*arys)
+    return jnp.atleast_3d(*arys)
+
+
+def vstack(tup: Sequence[Any], dtype: Any = None) -> Any:
+    tup_list = _coerce_sequence(tup)
+    if _check_homogeneous_inputs("vstack", tup_list):
+        return _dc.vstack(tup_list, dtype=dtype)
+    return jnp.vstack(tup_list, dtype=dtype)
+
+
+def hstack(tup: Sequence[Any], dtype: Any = None) -> Any:
+    tup_list = _coerce_sequence(tup)
+    if _check_homogeneous_inputs("hstack", tup_list):
+        return _dc.hstack(tup_list, dtype=dtype)
+    return jnp.hstack(tup_list, dtype=dtype)
+
+
+def dstack(tup: Sequence[Any], dtype: Any = None) -> Any:
+    tup_list = _coerce_sequence(tup)
+    if _check_homogeneous_inputs("dstack", tup_list):
+        return _dc.dstack(tup_list, dtype=dtype)
+    return jnp.dstack(tup_list, dtype=dtype)
+
+
+def column_stack(tup: Sequence[Any]) -> Any:
+    tup_list = _coerce_sequence(tup)
+    if _check_homogeneous_inputs("column_stack", tup_list):
+        return _dc.column_stack(tup_list)
+    return jnp.column_stack(tup_list)
+
+
+def block(arrays: Any) -> Any:
+    # block takes a nested list.
+    
+    def _contains_xtructure(x: Any) -> bool:
+        if _is_xtructurable(x):
+            return True
+        if isinstance(x, (list, tuple)):
+            for item in x:
+                if _contains_xtructure(item):
+                    return True
+        return False
+
+    if _contains_xtructure(arrays):
+         return _dc.block(arrays)
+    return jnp.block(arrays)
+
+
+def roll(
+    a: Any,
+    shift: int | Sequence[int],
+    axis: int | Sequence[int] | None = None,
+) -> Any:
+    if _is_xtructurable(a):
+        return _dc.roll(a, shift, axis=axis)
+    return jnp.roll(a, shift, axis=axis)
+
+
+def flip(
+    m: Any,
+    axis: int | Sequence[int] | None = None,
+) -> Any:
+    if _is_xtructurable(m):
+        return _dc.flip(m, axis=axis)
+    return jnp.flip(m, axis=axis)
+
+
+def rot90(
+    m: Any,
+    k: int = 1,
+    axes: tuple[int, int] = (0, 1),
+) -> Any:
+    if _is_xtructurable(m):
+        return _dc.rot90(m, k=k, axes=axes)
+    return jnp.rot90(m, k=k, axes=axes)
+
+
+def astype(x, dtype, /, *, copy: bool = False, device=None):
+    if _is_xtructurable(x):
+        return _dc.astype(x, dtype, copy=copy, device=device)
+    # jnp.astype is not always top-level in older JAX versions, but usually is.
+    # If not, x.astype fallback?
+    if hasattr(jnp, "astype"):
+        return jnp.astype(x, dtype, copy=copy, device=device)
+    return x.astype(dtype, copy=copy, device=device) # Falback to method
+
+
+def result_type(*args: Any) -> Any:
+    if any(_is_xtructurable(arg) for arg in args):
+        return _dc.result_type(*args)
+    return jnp.result_type(*args)
+
+
+def can_cast(from_: Any, to: Any, casting: str = "safe") -> bool:
+    if _is_xtructurable(from_):
+         return _dc.can_cast(from_, to, casting=casting)
+    return jnp.can_cast(from_, to, casting=casting)
+
+
 
 
 __all__ = [
@@ -299,4 +474,25 @@ __all__ = [
     "zeros_like",
     "ones_like",
     "full_like",
+    "equal",
+    "not_equal",
+    "isclose",
+    "allclose",
+    "moveaxis",
+    "broadcast_to",
+    "broadcast_arrays",
+    "atleast_1d",
+    "atleast_2d",
+    "atleast_3d",
+    "vstack",
+    "hstack",
+    "dstack",
+    "column_stack",
+    "block",
+    "roll",
+    "flip",
+    "rot90",
+    "astype",
+    "result_type",
+    "can_cast",
 ]

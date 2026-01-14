@@ -29,7 +29,10 @@ def test_hash_table_insert():
     assert not jnp.any(old_found)
 
     # Insert states
-    batched_sample = sample.padding_as_batch((batch,))
+    # Insert states
+    current_count = sample.shape.batch[0] if sample.shape.batch else 1
+    pad_amount = batch - current_count
+    batched_sample = sample.pad((0, pad_amount))
     filled = jnp.zeros((batch,), dtype=jnp.bool_).at[:count].set(True)
     table, inserted, _, _ = table.parallel_insert(batched_sample, filled)
 
