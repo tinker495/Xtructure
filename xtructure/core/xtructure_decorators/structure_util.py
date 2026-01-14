@@ -136,26 +136,10 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
                         )
         return cls(**data)
 
-    def padding_as_batch(self, batch_shape: tuple[int, ...]):
-        if self.structured_type != StructuredType.BATCHED or len(self.shape.batch) > 1:
-            raise ValueError(
-                "Padding as batch operation is only supported for BATCHED structured types "
-                "with at most 1 batch dimension. "
-                f"Current type: {self.structured_type}, "
-                f"Current batch shape: {self.shape.batch}"
-            )
-        if self.shape.batch == batch_shape:
-            return self
-
-        new_default_state = self.default(batch_shape)
-        new_default_state = new_default_state.at[: self.shape.batch[0]].set(self)
-        return new_default_state
-
     setattr(cls, "random", classmethod(random))
-    setattr(cls, "padding_as_batch", padding_as_batch)
 
     # Note: reshape, flatten, transpose, swapaxes, moveaxis, squeeze, expand_dims,
-    # roll, flip, rot90, broadcast_to, astype are now added by
+    # roll, flip, rot90, broadcast_to, astype, pad, vstack, etc. are now added by
     # add_xnp_instance_methods() in method_factory.py
 
     return cls

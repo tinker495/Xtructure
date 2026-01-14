@@ -69,17 +69,17 @@ def test_pad_batched_before_after_inserts_correctly():
     assert jnp.allclose(result.value, expected_value)
 
 
-def test_pad_uses_existing_padding_as_batch():
-    """Test that pad function uses the existing padding_as_batch method when appropriate."""
+def test_pad_method_alias():
+    """Test that .pad() instance method works as alias to xnp.pad."""
     data = SimpleData.default((2,))
     data = data.replace(id=jnp.array([1, 2], dtype=jnp.uint32), value=jnp.array([1.0, 2.0]))
 
     result_xnp = xnp.pad(data, (0, 2))
-    result_builtin = data.padding_as_batch((4,))
+    result_method = data.pad((0, 2))
 
-    assert jnp.array_equal(result_xnp.id, result_builtin.id)
-    assert jnp.array_equal(result_xnp.value, result_builtin.value)
-    assert result_xnp.shape.batch == result_builtin.shape.batch
+    assert jnp.array_equal(result_xnp.id, result_method.id)
+    assert jnp.array_equal(result_xnp.value, result_method.value)
+    assert result_xnp.shape.batch == result_method.shape.batch
 
 
 def test_pad_batched_with_constant_values():

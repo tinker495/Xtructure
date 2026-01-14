@@ -35,6 +35,7 @@ def add_xnp_instance_methods(cls: Type[T]) -> Type[T]:
     """
     # Lazy import to avoid circular dependencies
     from xtructure.core.xtructure_numpy.dataclass_ops import (
+        batch_ops,
         comparison_ops,
         shape_ops,
         spatial_ops,
@@ -62,11 +63,21 @@ def add_xnp_instance_methods(cls: Type[T]) -> Type[T]:
         # Type operations
         "astype": type_ops.astype,
         
+        # Stacking operations
+        "vstack": batch_ops.vstack,
+        "hstack": batch_ops.hstack,
+        "dstack": batch_ops.dstack,
+        "column_stack": batch_ops.column_stack,
+        "block": batch_ops.block,
+        
+        # Pad operation
+        "pad": batch_ops.pad,
+
         # Comparison operations (return structure of bools)
         "equal": comparison_ops.equal,
         "not_equal": comparison_ops.not_equal,
         "isclose": comparison_ops.isclose,
-        
+
         # Comparison operations (return scalar bool)
         "allclose": comparison_ops.allclose,
     }
