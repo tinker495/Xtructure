@@ -260,10 +260,10 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
     setattr(cls, "random", classmethod(random))
     setattr(cls, "padding_as_batch", padding_as_batch)
 
-    # --- NEW METHODS ---
+    # --- SPECIAL BATCH-ONLY METHODS (not delegates to xnp) ---
 
     def swapaxes(self, axis1: int, axis2: int) -> T:
-        """Swap two batch axes."""
+        """Swap two batch axes (batch dimensions only, not full array axes)."""
         batch_shape = self.shape.batch
         batch_ndim = len(batch_shape) if batch_shape != () else 0
         if batch_ndim == 0:
@@ -280,48 +280,10 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
 
         return jax.tree_util.tree_map(swap_batch_axes, self)
 
-    def moveaxis(self, source: int | tuple[int, ...], destination: int | tuple[int, ...]) -> T:
-        """Move axes of an array to new positions."""
-        return jax.tree_util.tree_map(
-            lambda x: jnp.moveaxis(x, source=source, destination=destination), self
-        )
-
-    def squeeze(self, axis: int | tuple[int, ...] | None = None) -> T:
-        """Remove axes of length one."""
-        return jax.tree_util.tree_map(lambda x: jnp.squeeze(x, axis=axis), self)
-
-    def expand_dims(self, axis: int | tuple[int, ...]) -> T:
-        """Insert a new axis."""
-        return jax.tree_util.tree_map(lambda x: jnp.expand_dims(x, axis=axis), self)
-
-    def roll(self, shift: int | tuple[int, ...], axis: int | tuple[int, ...] | None = None) -> T:
-        """Roll array elements along a given axis."""
-        return jax.tree_util.tree_map(lambda x: jnp.roll(x, shift, axis=axis), self)
-
-    def flip(self, axis: int | tuple[int, ...] | None = None) -> T:
-        """Reverse the order of elements along the given axis."""
-        return jax.tree_util.tree_map(lambda x: jnp.flip(x, axis=axis), self)
-
-    def rot90(self, k: int = 1, axes: tuple[int, int] = (0, 1)) -> T:
-        """Rotate an array by 90 degrees in the plane specified by axes."""
-        return jax.tree_util.tree_map(lambda x: jnp.rot90(x, k=k, axes=axes), self)
-
-    def broadcast_to(self, shape: tuple[int, ...]) -> T:
-        """Broadcast to a new shape."""
-        return jax.tree_util.tree_map(lambda x: jnp.broadcast_to(x, shape=shape), self)
-
-    def astype(self, dtype) -> T:
-        """Copy of the array, cast to a specified type."""
-        return jax.tree_util.tree_map(lambda x: jnp.astype(x, dtype), self)
-
     setattr(cls, "swapaxes", swapaxes)
-    setattr(cls, "moveaxis", moveaxis)
-    setattr(cls, "squeeze", squeeze)
-    setattr(cls, "expand_dims", expand_dims)
-    setattr(cls, "roll", roll)
-    setattr(cls, "flip", flip)
-    setattr(cls, "rot90", rot90)
-    setattr(cls, "broadcast_to", broadcast_to)
-    setattr(cls, "astype", astype)
+
+    # Note: moveaxis, squeeze, expand_dims, roll, flip, rot90, broadcast_to, astype
+    # are now added by add_xnp_instance_methods() in method_factory.py
 
     return cls
+
