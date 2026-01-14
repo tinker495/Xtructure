@@ -44,16 +44,18 @@ def add_xnp_instance_methods(cls: Type[T]) -> Type[T]:
     # Registry of methods to add: (method_name, function_reference)
     # Only methods where the first argument is the dataclass instance
     _XNP_METHOD_REGISTRY = {
-        # Spatial operations
-        "roll": spatial_ops.roll,
-        "flip": spatial_ops.flip,
-        "rot90": spatial_ops.rot90,
-        
         # Shape operations
+        "transpose": shape_ops.transpose,
+        "swapaxes": shape_ops.swapaxes,
         "moveaxis": shape_ops.moveaxis,
         "squeeze": shape_ops.squeeze,
         "expand_dims": shape_ops.expand_dims,
         "broadcast_to": shape_ops.broadcast_to,
+        
+        # Spatial operations
+        "roll": spatial_ops.roll,
+        "flip": spatial_ops.flip,
+        "rot90": spatial_ops.rot90,
         
         # Type operations
         "astype": type_ops.astype,

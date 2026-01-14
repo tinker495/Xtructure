@@ -163,28 +163,6 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
             self,
         )
 
-    def transpose(self, axes: tuple[int, ...] | None = None) -> T:
-        if self.structured_type == StructuredType.UNSTRUCTURED:
-            raise ValueError(
-                "Transpose operation is only supported for SINGLE or BATCHED structured types. "
-                f"Current type: {self.structured_type}"
-            )
-
-        batch_shape = self.shape.batch
-        batch_ndim = len(batch_shape)
-
-        if axes is None:
-            axes = tuple(range(batch_ndim - 1, -1, -1))
-
-        def transpose_batch_only(field):
-            field_ndim = field.ndim
-            if field_ndim <= batch_ndim:
-                return jnp.transpose(field, axes=axes)
-            full_axes = list(axes) + list(range(batch_ndim, field_ndim))
-            return jnp.transpose(field, axes=full_axes)
-
-        return jax.tree_util.tree_map(transpose_batch_only, self)
-
     def random(cls, shape=(), key=None):
         if key is None:
             key = jax.random.PRNGKey(0)
@@ -256,34 +234,11 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
 
     setattr(cls, "reshape", reshape)
     setattr(cls, "flatten", flatten)
-    setattr(cls, "transpose", transpose)
     setattr(cls, "random", classmethod(random))
     setattr(cls, "padding_as_batch", padding_as_batch)
 
-    # --- SPECIAL BATCH-ONLY METHODS (not delegates to xnp) ---
-
-    def swapaxes(self, axis1: int, axis2: int) -> T:
-        """Swap two batch axes (batch dimensions only, not full array axes)."""
-        batch_shape = self.shape.batch
-        batch_ndim = len(batch_shape) if batch_shape != () else 0
-        if batch_ndim == 0:
-            raise ValueError("swapaxes requires at least 1 batch dimension.")
-
-        def normalize_axis(axis: int) -> int:
-            return axis if axis >= 0 else batch_ndim + axis
-
-        axis1_norm = normalize_axis(axis1)
-        axis2_norm = normalize_axis(axis2)
-
-        def swap_batch_axes(field: jnp.ndarray) -> jnp.ndarray:
-            return jnp.swapaxes(field, axis1_norm, axis2_norm)
-
-        return jax.tree_util.tree_map(swap_batch_axes, self)
-
-    setattr(cls, "swapaxes", swapaxes)
-
-    # Note: moveaxis, squeeze, expand_dims, roll, flip, rot90, broadcast_to, astype
-    # are now added by add_xnp_instance_methods() in method_factory.py
+    # Note: transpose, swapaxes, moveaxis, squeeze, expand_dims, roll, flip,
+    # rot90, broadcast_to, astype are now added by add_xnp_instance_methods()
+    # in method_factory.py
 
     return cls
-
