@@ -52,6 +52,8 @@ def unique_mask(
     batch_len: int | None = None,
     return_index: bool = False,
     return_inverse: bool = False,
+    size: int | None = None,
+    fill_value: int | None = None,
 ) -> Union[jnp.ndarray, tuple]:
     """Mask or index information for selecting unique states.
 
@@ -70,6 +72,8 @@ def unique_mask(
         batch_len: Explicit batch length (optional).
         return_index: Whether to return indices of unique items.
         return_inverse: Whether to return inverse indices.
+        size: Optional static size for returned unique indices (required for JIT).
+        fill_value: Value to fill padding with when size is specified.
 
     Returns:
         Mask (bool array) or tuple (mask, index, inverse).
@@ -165,7 +169,34 @@ def unique_mask(
     returns = (final_mask,)
 
     if return_index:
-        unique_indices = perm[mask_sorted]
+        use_static = size is not None
+        unique_indices = None
+
+        if not use_static:
+            try:
+                unique_indices = perm[mask_sorted]
+            except (jax.errors.NonConcreteBooleanIndexError, jax.errors.ConcretizationTypeError):
+                # Fallback to batch_len if concrete
+                if isinstance(batch_len, (int, jnp.integer)):
+                    use_static = True
+                    size = int(batch_len)
+                    if fill_value is None:
+                        fill_value = int(batch_len)
+                else:
+                    raise
+
+        if use_static:
+            if fill_value is None:
+                fill_value = 0
+
+            # JIT-safe path: use nonzero with fixed size
+            sentinel = batch_len
+            valid_positions = jnp.nonzero(mask_sorted, size=size, fill_value=sentinel)[0]
+
+            # Pad perm with fill_value at the sentinel position so invalid lookups get fill_value
+            perm_padded = jnp.concatenate([perm, jnp.array([fill_value], dtype=jnp.int32)])
+            unique_indices = perm_padded[valid_positions]
+
         returns += (unique_indices,)
 
     if return_inverse:
