@@ -82,3 +82,78 @@ def squeeze(dataclass_instance: T, axis: Union[int, tuple[int, ...], None] = Non
 def repeat(dataclass_instance: T, repeats: Union[int, jnp.ndarray], axis: int | None = None) -> T:
     """Repeat elements along the given axis."""
     return jax.tree_util.tree_map(lambda x: jnp.repeat(x, repeats, axis=axis), dataclass_instance)
+
+
+def moveaxis(
+    a: T,
+    source: Union[int, Sequence[int]],
+    destination: Union[int, Sequence[int]],
+) -> T:
+    """Move axes of an array to new positions."""
+    return jax.tree_util.tree_map(
+        lambda x: jnp.moveaxis(x, source=source, destination=destination), a
+    )
+
+
+def broadcast_to(array: T, shape: Sequence[int]) -> T:
+    """Broadcast an array to a new shape."""
+    return jax.tree_util.tree_map(lambda x: jnp.broadcast_to(x, shape=shape), array)
+
+
+def broadcast_arrays(*args: Any) -> list[Any]:
+    """
+    Broadcasts any number of arrays against each other.
+    Returns a list of broadcasted arrays (structures).
+    """
+    if not args:
+        return []
+
+    # Use tree_map to broadcast leaves against each other.
+    # jnp.broadcast_arrays(*leaves) returns a list of broadcasted leaves.
+    # Because tree_map expects a single return value per leaf call to maintain structure,
+    # and jnp.broadcast_arrays returns a list/tuple, we get a Structure of Lists.
+    
+    # We assume all args have the same structure (enforced by tree_map generally).
+    broadcasted_leaves_struct = jax.tree_util.tree_map(
+        lambda *xs: jnp.broadcast_arrays(*xs), *args
+    )
+    
+    # Check strictness: tree_map might be lenient. broadcast_arrays implies checked structures.
+    # If structures mismatch, tree_map raises error (usually).
+    
+    # Now valid: broadcasted_leaves_struct is a Pytree where leaves are Lists of Arrays.
+    # We want a List of Pytrees (structures).
+    
+    # We know the outer structure (treedef of args[0]).
+    outer_treedef = jax.tree_util.tree_structure(args[0])
+    
+    # We want to pull the List (length = len(args)) out.
+    # We can use jax.tree_util.tree_transpose.
+    # The 'inner' structure is the List structure.
+    inner_treedef = jax.tree_util.tree_structure([0] * len(args))
+    
+    return jax.tree_util.tree_transpose(outer_treedef, inner_treedef, broadcasted_leaves_struct)
+
+
+def atleast_1d(*arys: Any) -> Any:
+    """Convert inputs to arrays with at least one dimension."""
+    results = [jax.tree_util.tree_map(jnp.atleast_1d, arr) for arr in arys]
+    if len(arys) == 1:
+        return results[0]
+    return results
+
+
+def atleast_2d(*arys: Any) -> Any:
+    """Convert inputs to arrays with at least two dimensions."""
+    results = [jax.tree_util.tree_map(jnp.atleast_2d, arr) for arr in arys]
+    if len(arys) == 1:
+        return results[0]
+    return results
+
+
+def atleast_3d(*arys: Any) -> Any:
+    """Convert inputs to arrays with at least three dimensions."""
+    results = [jax.tree_util.tree_map(jnp.atleast_3d, arr) for arr in arys]
+    if len(arys) == 1:
+        return results[0]
+    return results

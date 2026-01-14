@@ -246,3 +246,87 @@ def split(
         result_dataclasses.append(jax.tree_util.tree_unflatten(treedef, new_leaves))
 
     return result_dataclasses
+
+
+def vstack(tup: Sequence[Any], dtype: Any = None) -> Any:
+    """Stack arrays in sequence vertically (row wise)."""
+    # jnp.vstack supports dtype in newer versions, but we might pass it down if supported?
+    # tree_map usually assumes one output.
+    # We will ignore dtype for now or apply astype after?
+    # jnp.vstack signature: vstack(tup, dtype=None, casting='same_kind')
+    # If we pass arguments to stack, we need lambda.
+    
+    # We map *tup.
+    return jax.tree_util.tree_map(lambda *xs: jnp.vstack(xs, dtype=dtype), *tup)
+
+
+def hstack(tup: Sequence[Any], dtype: Any = None) -> Any:
+    """Stack arrays in sequence horizontally (column wise)."""
+    return jax.tree_util.tree_map(lambda *xs: jnp.hstack(xs, dtype=dtype), *tup)
+
+
+def dstack(tup: Sequence[Any], dtype: Any = None) -> Any:
+    """Stack arrays in sequence depth wise (along third axis)."""
+    return jax.tree_util.tree_map(lambda *xs: jnp.dstack(xs, dtype=dtype), *tup)
+
+
+def column_stack(tup: Sequence[Any]) -> Any:
+    """Stack 1-D arrays as columns into a 2-D array."""
+    return jax.tree_util.tree_map(lambda *xs: jnp.column_stack(xs), *tup)
+
+
+def block(arrays: Any) -> Any:
+    """
+    Assemble an nd-array from nested lists of blocks.
+    """
+    # 1. Inspect the nested list to find the structure (treedef) of the leaves (Xtructures).
+    # We assume all leaves have the same structure.
+    
+    def find_structure(x):
+        if hasattr(x, "__dataclass_fields__"): # crude check for Xtructure or use is_xtructure...
+             return jax.tree_util.tree_structure(x)
+        if isinstance(x, (list, tuple)):
+             for item in x:
+                 res = find_structure(item)
+                 if res is not None:
+                     return res
+        return None
+
+    inner_treedef = find_structure(arrays)
+    if inner_treedef is None:
+        # Fallback for pure arrays (no structures found) - strict compliance might stick to xnp here
+        return jnp.block(arrays)
+
+    # 2. Define the outer structure (the nested list itself) by creating a skeleton
+    # that mimics 'arrays' but treats Xtructures as leaves.
+    # Actually, we can just use tree_transpose if we have 'arrays' as a pytree of Structs.
+    # arrays IS a Pytree.
+    # Outer structure is 'arrays' structure relative to Structs.
+    # Inner structure is Struct structure.
+    # jax.tree_util.tree_transpose(outer_def, inner_def, pytree)
+    # But to get outer_def, we need to treat Structs as leaves.
+    
+    # We can use jax.tree_util.tree_structure(arrays, is_leaf=lambda x: hasattr(x, "__dataclass_fields__"))
+    # Note: is_leaf checks are tried on nodes.
+    
+    outer_treedef = jax.tree_util.tree_structure(
+        arrays, 
+        is_leaf=lambda x: hasattr(x, "__dataclass_fields__")
+    )
+    
+    # 3. Transpose
+    try:
+        struct_of_nested_lists = jax.tree_util.tree_transpose(outer_treedef, inner_treedef, arrays)
+    except TypeError:
+        # Mismatch in structures or something else
+        raise ValueError("Inconsistent logical structure in block input.")
+
+    # 4. Apply block to each field (which is now a nested list of arrays)
+    # Use is_leaf to prevent tree_map from descending into the lists we just created.
+    res = jax.tree_util.tree_map(
+        jnp.block, 
+        struct_of_nested_lists, 
+        is_leaf=lambda x: isinstance(x, list)
+    )
+    return res
+
