@@ -87,82 +87,6 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
                 cfg["gen_dtype"] = actual_dtype
         _field_generation_configs.append(cfg)
 
-    def reshape(self, *new_shape: int | tuple[int, ...]) -> T:
-        if len(new_shape) == 0:
-            raise ValueError("new_shape must be provided")
-        if len(new_shape) == 1 and isinstance(new_shape[0], (tuple, list)):
-            new_shape = tuple(new_shape[0])
-        else:
-            new_shape = tuple(new_shape)
-
-        if self.structured_type == StructuredType.BATCHED:
-            total_length = np.prod(self.shape.batch)
-
-            # Handle -1 in new_shape by calculating the missing dimension
-            new_shape_list = list(new_shape)
-            if -1 in new_shape_list:
-                # Count how many -1s are in the shape
-                minus_one_count = new_shape_list.count(-1)
-                if minus_one_count > 1:
-                    raise ValueError("Only one -1 is allowed in new_shape")
-
-                # Calculate the product of all non-negative values in new_shape
-                non_negative_product = 1
-                for dim in new_shape_list:
-                    if dim != -1:
-                        non_negative_product *= dim
-
-                # Calculate what the -1 should be
-                if non_negative_product == 0:
-                    raise ValueError("Cannot infer -1 dimension when other dimensions are 0")
-
-                inferred_dim = total_length // non_negative_product
-                if total_length % non_negative_product != 0:
-                    raise ValueError(
-                        f"Total length {total_length} is not divisible by the product of "
-                        f"other dimensions {non_negative_product}"
-                    )
-
-                # Replace -1 with the calculated dimension
-                minus_one_index = new_shape_list.index(-1)
-                new_shape_list[minus_one_index] = inferred_dim
-                new_shape = tuple(new_shape_list)
-
-            new_total_length = np.prod(new_shape)
-            batch_dim = len(self.shape.batch)
-            if total_length != new_total_length:
-                raise ValueError(
-                    f"Total length of the state and new shape does not match: {total_length} != {new_total_length}"
-                )
-            return jax.tree_util.tree_map(
-                lambda x: jnp.reshape(x, new_shape + x.shape[batch_dim:]), self
-            )
-        else:
-            raise ValueError(
-                f"Reshape is only supported for BATCHED structured_type. Current type: '{self.structured_type}'."
-                f"Shape: {self.shape}, Default Shape: {self.default_shape}"
-            )
-
-    def flatten(self):
-        if self.structured_type != StructuredType.BATCHED:
-            raise ValueError(
-                f"Flatten operation is only supported for BATCHED structured types. "
-                f"Current type: {self.structured_type}"
-            )
-
-        current_batch_shape = self.shape.batch
-        # np.prod of an empty tuple array is 1, which is correct for total_length
-        # if current_batch_shape is ().
-        total_length = np.prod(np.array(current_batch_shape))
-        len_current_batch_shape = len(current_batch_shape)
-
-        return jax.tree_util.tree_map(
-            # Reshape each leaf: flatten batch dims, keep core dims.
-            # core_dims are obtained by stripping batch_dims from the start of x.shape.
-            lambda x: jnp.reshape(x, (total_length,) + x.shape[len_current_batch_shape:]),
-            self,
-        )
-
     def random(cls, shape=(), key=None):
         if key is None:
             key = jax.random.PRNGKey(0)
@@ -176,18 +100,13 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
 
             if cfg["type"] == "xtructure":
                 nested_class = cfg["nested_class_type"]
-                # For nested xtructures, combine batch shape with field shape
                 current_default_shape = cfg["default_field_shape"]
                 target_shape = shape + current_default_shape
-                # Recursively call random for the nested xtructure_data class.
                 data[field_name] = nested_class.random(shape=target_shape, key=field_key)
             else:
-                # This branch handles primitive JAX array fields.
                 current_default_shape = cfg["default_field_shape"]
                 if not isinstance(current_default_shape, tuple):
-                    current_default_shape = (
-                        current_default_shape,
-                    )  # Ensure it's a tuple for concatenation
+                    current_default_shape = (current_default_shape,)
 
                 target_shape = shape + current_default_shape
 
@@ -205,9 +124,9 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
                     )
                 elif cfg["type"] == "bool":
                     data[field_name] = jax.random.bernoulli(
-                        field_key, shape=target_shape  # p=0.5 by default
+                        field_key, shape=target_shape
                     )
-                else:  # Fallback for 'other' dtypes (cfg['type'] == 'other')
+                else:
                     try:
                         data[field_name] = jnp.zeros(target_shape, dtype=cfg["gen_dtype"])
                     except TypeError:
@@ -232,13 +151,12 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
         new_default_state = new_default_state.at[: self.shape.batch[0]].set(self)
         return new_default_state
 
-    setattr(cls, "reshape", reshape)
-    setattr(cls, "flatten", flatten)
     setattr(cls, "random", classmethod(random))
     setattr(cls, "padding_as_batch", padding_as_batch)
 
-    # Note: transpose, swapaxes, moveaxis, squeeze, expand_dims, roll, flip,
-    # rot90, broadcast_to, astype are now added by add_xnp_instance_methods()
-    # in method_factory.py
+    # Note: reshape, flatten, transpose, swapaxes, moveaxis, squeeze, expand_dims,
+    # roll, flip, rot90, broadcast_to, astype are now added by
+    # add_xnp_instance_methods() in method_factory.py
 
     return cls
+

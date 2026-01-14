@@ -44,7 +44,9 @@ def add_xnp_instance_methods(cls: Type[T]) -> Type[T]:
     # Registry of methods to add: (method_name, function_reference)
     # Only methods where the first argument is the dataclass instance
     _XNP_METHOD_REGISTRY = {
-        # Shape operations
+        # Core shape operations
+        "reshape": shape_ops.reshape,
+        "flatten": shape_ops.flatten,
         "transpose": shape_ops.transpose,
         "swapaxes": shape_ops.swapaxes,
         "moveaxis": shape_ops.moveaxis,

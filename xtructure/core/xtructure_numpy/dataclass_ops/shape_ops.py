@@ -2,22 +2,93 @@
 
 from __future__ import annotations
 
-from typing import TypeVar, Union
+from typing import Any, Sequence, TypeVar, Union
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 T = TypeVar("T")
 
 
-def reshape(dataclass_instance: T, new_shape: tuple[int, ...]) -> T:
-    """Delegate reshape to the dataclass instance."""
-    return dataclass_instance.reshape(new_shape)
+def reshape(dataclass_instance: T, new_shape: tuple[int, ...] | int, *args: int) -> T:
+    """Reshape the batch dimensions of a dataclass instance.
+    
+    Supports both reshape(instance, (2, 3)) and reshape(instance, 2, 3) syntax.
+    Also supports -1 for dimension inference.
+    """
+    # Handle varargs: reshape(instance, 2, 3) -> new_shape = (2, 3)
+    if args:
+        new_shape = (new_shape,) + args
+    elif isinstance(new_shape, int):
+        new_shape = (new_shape,)
+    else:
+        new_shape = tuple(new_shape)
+    
+    batch_shape = dataclass_instance.shape.batch
+    if batch_shape == () or batch_shape == -1:
+        raise ValueError(
+            f"Reshape is only supported for BATCHED structured_type. "
+            f"Shape: {dataclass_instance.shape}"
+        )
+    
+    total_length = int(np.prod(batch_shape))
+    batch_dim = len(batch_shape)
+    
+    # Handle -1 in new_shape by calculating the missing dimension
+    new_shape_list = list(new_shape)
+    if -1 in new_shape_list:
+        minus_one_count = new_shape_list.count(-1)
+        if minus_one_count > 1:
+            raise ValueError("Only one -1 is allowed in new_shape")
+        
+        non_negative_product = 1
+        for dim in new_shape_list:
+            if dim != -1:
+                non_negative_product *= dim
+        
+        if non_negative_product == 0:
+            raise ValueError("Cannot infer -1 dimension when other dimensions are 0")
+        
+        inferred_dim = total_length // non_negative_product
+        if total_length % non_negative_product != 0:
+            raise ValueError(
+                f"Total length {total_length} is not divisible by the product of "
+                f"other dimensions {non_negative_product}"
+            )
+        
+        minus_one_index = new_shape_list.index(-1)
+        new_shape_list[minus_one_index] = inferred_dim
+        new_shape = tuple(new_shape_list)
+    
+    new_total_length = int(np.prod(new_shape))
+    if total_length != new_total_length:
+        raise ValueError(
+            f"Total length of the state and new shape does not match: "
+            f"{total_length} != {new_total_length}"
+        )
+    
+    return jax.tree_util.tree_map(
+        lambda x: jnp.reshape(x, new_shape + x.shape[batch_dim:]), dataclass_instance
+    )
 
 
 def flatten(dataclass_instance: T) -> T:
-    """Delegate flatten to the dataclass instance."""
-    return dataclass_instance.flatten()
+    """Flatten the batch dimensions of a dataclass instance."""
+    batch_shape = dataclass_instance.shape.batch
+    if batch_shape == () or batch_shape == -1:
+        raise ValueError(
+            f"Flatten operation is only supported for BATCHED structured types. "
+            f"Shape: {dataclass_instance.shape}"
+        )
+    
+    total_length = int(np.prod(np.array(batch_shape)))
+    len_current_batch_shape = len(batch_shape)
+
+    return jax.tree_util.tree_map(
+        lambda x: jnp.reshape(x, (total_length,) + x.shape[len_current_batch_shape:]),
+        dataclass_instance,
+    )
 
 
 def transpose(dataclass_instance: T, axes: Union[tuple[int, ...], None] = None) -> T:
