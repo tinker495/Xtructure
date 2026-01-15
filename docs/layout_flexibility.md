@@ -24,11 +24,36 @@ objects for clarity.
 
 ## Bridging utilities
 
-- Layout-aware helpers (`reshape`, `flatten`, `unique_mask`, `padding_as_batch`)
+The `xtructure_numpy` module (`xnp`) provides layout-aware operations that work
+seamlessly with `@xtructure_dataclass` instances:
+
+```python
+from xtructure import numpy as xnp  # Recommended import
+```
+
+- Helpers like `xnp.reshape`, `xnp.flatten`, `xnp.unique_mask`, and `xnp.pad`
   use tree maps to manipulate only batch axes, ensuring intrinsic field shapes
   remain intact.
 - Hashing, serialisation, and deduplication reuse the SoA layout to derive byte
   representations or persistence formats without extra copying.
+
+### Instance methods
+
+The `@xtructure_dataclass` decorator also injects many `xnp` functions as
+instance methods, so you can call them directly on dataclass instances:
+
+```python
+# These are equivalent:
+reshaped = xnp.reshape(agents, (16, 8))
+reshaped = agents.reshape((16, 8))
+
+flipped = xnp.flip(agents, axis=0)
+flipped = agents.flip(axis=0)
+```
+
+Available instance methods: `reshape`, `flatten`, `transpose`, `swapaxes`,
+`moveaxis`, `squeeze`, `expand_dims`, `broadcast_to`, `roll`, `flip`, `rot90`,
+`astype`, `pad`, `equal`, `not_equal`, `isclose`, `allclose`.
 
 ## Example
 
@@ -46,9 +71,9 @@ class AgentState:
 
 
 key = jax.random.PRNGKey(0)
-agents = AgentState.random((128,), key=key)          # SoA storage for JIT speed
-frontiers = agents.reshape((16, 8))                  # reshape touches each field array
-first = frontiers[0]                                 # AoS-style instance
+agents = AgentState.random((128,), key=key)  # SoA storage for JIT speed
+frontiers = agents.reshape((16, 8))  # reshape touches each field array
+first = frontiers[0]  # AoS-style instance
 updated = frontiers.at[0].set(first.replace(cost=jnp.zeros_like(first.cost)))
 ```
 

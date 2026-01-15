@@ -14,10 +14,15 @@ from xtructure import numpy as xnp
 from xtructure import xtructure_numpy as xnp
 
 # Available functions in xnp:
-# concat, concatenate (same function), pad, stack, reshape, flatten,
-# where, where_no_broadcast, unique_mask, take, take_along_axis, update_on_condition,
-# tile, transpose, swapaxes, expand_dims, squeeze, repeat, split,
-# zeros_like, ones_like, full_like
+# Joining: concat, concatenate, stack, vstack, hstack, dstack, column_stack, block
+# Shape: reshape, ravel, flatten, pad, tile, repeat, split
+# Axis: transpose, swapaxes, moveaxis, expand_dims, squeeze
+# Selection: where, where_no_broadcast, take, take_along_axis, unique_mask, update_on_condition
+# Broadcasting: broadcast_to, broadcast_arrays, atleast_1d, atleast_2d, atleast_3d
+# Comparison: equal, not_equal, isclose, allclose
+# Manipulation: flip, roll, rot90
+# Creation: zeros_like, ones_like, full_like
+# Type utilities: astype, result_type, can_cast
 
 
 # Define example data structures
@@ -305,6 +310,124 @@ splits = xnp.split(batched_data, 2)  # list of 2 dataclasses each with shape (3,
     *   `dataclass_instance`: The prototype dataclass instance.
     *   `fill_value` (for full_like): The value to fill with.
 *   **Output**: New initialized dataclass instance.
+
+### **`xnp.vstack(tup, dtype=None)` / `xnp.hstack(tup, dtype=None)` / `xnp.dstack(tup, dtype=None)`**
+*   Stacks dataclasses vertically (row-wise), horizontally (column-wise), or depth-wise (along third axis).
+*   **Input**:
+    *   `tup`: Sequence of dataclass instances to stack.
+    *   `dtype`: Optional dtype (only for array inputs).
+*   **Output**: Stacked dataclass instance.
+*   **Behavior**:
+    *   `vstack`: Stacks along axis 0 (rows). Equivalent to `concatenate` along axis 0 after adding a dimension if needed.
+    *   `hstack`: Stacks along axis 1 (columns). For 1-D arrays, concatenates along axis 0.
+    *   `dstack`: Stacks along axis 2 (depth). Adds dimensions as needed.
+
+### **`xnp.column_stack(tup)`**
+*   Stacks 1-D dataclasses as columns into a 2-D dataclass.
+*   **Input**: Sequence of dataclass instances.
+*   **Output**: 2-D stacked dataclass instance.
+
+### **`xnp.block(arrays)`**
+*   Assembles dataclasses from nested lists of blocks.
+*   **Input**: Nested list of dataclass instances.
+*   **Output**: Assembled dataclass instance.
+*   **Behavior**: Similar to `jnp.block`, but works with xtructure dataclasses.
+
+### **`xnp.ravel(a, order='C')`**
+*   Flattens a dataclass into 1-D.
+*   **Input**: Dataclass instance.
+*   **Output**: Flattened dataclass instance.
+*   **Note**: Alias for `flatten`. Only `order='C'` is supported.
+
+### **`xnp.moveaxis(a, source, destination)`**
+*   Moves axes of a dataclass to new positions.
+*   **Input**:
+    *   `a`: Dataclass instance.
+    *   `source`: Original position(s) of axes to move (int or sequence).
+    *   `destination`: Destination position(s) for axes (int or sequence).
+*   **Output**: Dataclass with reordered axes.
+
+### **`xnp.broadcast_to(array, shape)`**
+*   Broadcasts a dataclass to a new shape.
+*   **Input**:
+    *   `array`: Dataclass instance.
+    *   `shape`: Target batch shape.
+*   **Output**: Broadcasted dataclass instance.
+
+### **`xnp.broadcast_arrays(*args)`**
+*   Broadcasts multiple dataclasses against each other.
+*   **Input**: Variable number of dataclass instances.
+*   **Output**: List of dataclass instances broadcasted to a common shape.
+
+### **`xnp.atleast_1d(*arys)` / `xnp.atleast_2d(*arys)` / `xnp.atleast_3d(*arys)`**
+*   Ensures dataclasses have at least 1, 2, or 3 dimensions.
+*   **Input**: One or more dataclass instances.
+*   **Output**: Dataclass instance(s) with guaranteed minimum dimensions.
+*   **Behavior**: Adds dimensions at the front as needed.
+
+### **`xnp.equal(x, y)` / `xnp.not_equal(x, y)`**
+*   Element-wise equality/inequality comparison between dataclasses.
+*   **Input**: Two dataclass instances.
+*   **Output**: Boolean array or tree of boolean arrays indicating equality.
+*   **Behavior**: Compares corresponding fields element-wise.
+
+### **`xnp.isclose(a, b, rtol=1e-05, atol=1e-08, equal_nan=False)`**
+*   Element-wise comparison for approximate equality.
+*   **Input**:
+    *   `a`, `b`: Dataclass instances.
+    *   `rtol`: Relative tolerance.
+    *   `atol`: Absolute tolerance.
+    *   `equal_nan`: Whether NaNs should compare equal.
+*   **Output**: Boolean array or tree indicating where values are close.
+
+### **`xnp.allclose(a, b, rtol=1e-05, atol=1e-08, equal_nan=False)`**
+*   Returns True if all elements of two dataclasses are approximately equal.
+*   **Input**: Same as `isclose`.
+*   **Output**: Single boolean value.
+
+### **`xnp.flip(m, axis=None)`**
+*   Reverses the order of elements in a dataclass along the given axis.
+*   **Input**:
+    *   `m`: Dataclass instance.
+    *   `axis`: Axis or axes along which to flip (int or sequence). If None, flips all axes.
+*   **Output**: Flipped dataclass instance.
+
+### **`xnp.roll(a, shift, axis=None)`**
+*   Rolls elements of a dataclass along a given axis.
+*   **Input**:
+    *   `a`: Dataclass instance.
+    *   `shift`: Number of places to shift (int or sequence).
+    *   `axis`: Axis or axes along which to roll (int or sequence). If None, rolls on flattened array.
+*   **Output**: Rolled dataclass instance.
+
+### **`xnp.rot90(m, k=1, axes=(0, 1))`**
+*   Rotates a dataclass by 90 degrees in the plane specified by axes.
+*   **Input**:
+    *   `m`: Dataclass instance.
+    *   `k`: Number of times to rotate by 90 degrees.
+    *   `axes`: Plane of rotation (2-tuple of ints).
+*   **Output**: Rotated dataclass instance.
+
+### **`xnp.astype(x, dtype)`**
+*   Casts a dataclass to a specified dtype.
+*   **Input**:
+    *   `x`: Dataclass instance.
+    *   `dtype`: Target dtype.
+*   **Output**: Dataclass with fields cast to the new dtype.
+*   **Note**: All numeric fields are cast to the specified dtype.
+
+### **`xnp.result_type(*args)`**
+*   Returns the result dtype for a set of dataclass instances.
+*   **Input**: Variable number of dataclass instances or dtypes.
+*   **Output**: The dtype that would result from combining inputs.
+
+### **`xnp.can_cast(from_, to, casting='safe')`**
+*   Checks if a dataclass can be cast to a target dtype.
+*   **Input**:
+    *   `from_`: Source dataclass instance or dtype.
+    *   `to`: Target dtype.
+    *   `casting`: Casting rule ('no', 'equiv', 'safe', 'same_kind', 'unsafe').
+*   **Output**: Boolean indicating if cast is allowed.
 
 ## Import Options
 
