@@ -1110,7 +1110,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "chex", specifier = ">=0.1.0" },
-    { name = "jax", extras = ["cuda"], specifier = "==0.9.0" },
+    { name = "jax", extras = ["cuda"], specifier = ">=0.4.0" },
     { name = "myst-parser", marker = "extra == 'dev'", specifier = ">=2.0.0" },
     { name = "numpy", specifier = ">=2.2.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
