@@ -128,4 +128,5 @@ def merge_arrays_parallel(ak: jax.Array, bk: jax.Array) -> Tuple[jax.Array, jax.
         merge_parallel_kernel,
         grid=(grid_size,),
         out_shape=(out_keys_shape_dtype, out_idx_shape_dtype),
+        backend="triton",
     )(ak, bk)
