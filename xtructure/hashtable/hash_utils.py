@@ -12,9 +12,24 @@ from ..core import Xtructurable
 from ..core.xtructure_decorators.hash import _mix_fingerprint, uint32ed_to_hash
 from .constants import DOUBLE_HASH_SECONDARY_DELTA, SIZE_DTYPE
 
-_DEDUPE_MODE = os.environ.get("XTRUCTURE_HASHTABLE_DEDUPE_MODE", "safe").strip().lower()
-if _DEDUPE_MODE not in {"fast", "safe", "exact"}:
-    raise ValueError("Invalid XTRUCTURE_HASHTABLE_DEDUPE_MODE. Expected one of: fast, safe, exact.")
+_DEDUPE_MODE_RAW = os.environ.get("XTRUCTURE_HASHTABLE_DEDUPE_MODE", "safe").strip().lower()
+
+# Dedupe mode semantics:
+# - "safe" (default): exact for small keys, signature sort for wide keys with collision detection
+#   and fallback to full-row sort when needed.
+# - "exact": always full-row sort.
+# - "approx": signature-only for wide keys; may drop distinct inputs on signature collision.
+#
+# Backward-compatibility: "fast" is treated as "safe" (correctness-preserving).
+if _DEDUPE_MODE_RAW == "fast":
+    _DEDUPE_MODE = "safe"
+else:
+    _DEDUPE_MODE = _DEDUPE_MODE_RAW
+
+if _DEDUPE_MODE not in {"approx", "safe", "exact"}:
+    raise ValueError(
+        "Invalid XTRUCTURE_HASHTABLE_DEDUPE_MODE. Expected one of: approx, safe, exact (or fast)."
+    )
 
 
 def _first_occurrence_mask(
