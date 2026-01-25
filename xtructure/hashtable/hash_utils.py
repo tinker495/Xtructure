@@ -1,6 +1,7 @@
 """Hash helpers for bucketed double hashing."""
 from __future__ import annotations
 
+import os
 from typing import Any, cast
 
 import chex
@@ -10,6 +11,10 @@ import jax.numpy as jnp
 from ..core import Xtructurable
 from ..core.xtructure_decorators.hash import _mix_fingerprint, uint32ed_to_hash
 from .constants import DOUBLE_HASH_SECONDARY_DELTA, SIZE_DTYPE
+
+_DEDUPE_MODE = os.environ.get("XTRUCTURE_HASHTABLE_DEDUPE_MODE", "safe").strip().lower()
+if _DEDUPE_MODE not in {"fast", "safe", "exact"}:
+    raise ValueError("Invalid XTRUCTURE_HASHTABLE_DEDUPE_MODE. Expected one of: fast, safe, exact.")
 
 
 def _first_occurrence_mask(
@@ -49,6 +54,11 @@ def _compute_unique_mask_from_uint32eds(
     if uint32eds.ndim == 1:
         uint32eds = uint32eds[:, None]
 
+    if batch_len == 0:
+        representative_indices = jnp.zeros((0,), dtype=jnp.int32)
+        unique_mask = jnp.zeros((0,), dtype=jnp.bool_)
+        return unique_mask, representative_indices
+
     # NOTE: Sorting by full uint32ed rows can be very expensive on GPU for wide keys.
     # For small keys we sort by the full row (exact). For wide keys we reduce each
     # row into a fixed-width (128-bit) signature (4x uint32) and sort/group on that.
@@ -60,41 +70,42 @@ def _compute_unique_mask_from_uint32eds(
     word_count = int(keys.shape[1])
     indices = jnp.arange(batch_len, dtype=jnp.int32)
 
-    if word_count <= 8:
-        if batch_len == 0:
-            representative_indices = jnp.zeros((0,), dtype=jnp.int32)
-            unique_mask = jnp.zeros((0,), dtype=jnp.bool_)
-            return unique_mask, representative_indices
-
+    def _full_row_sort() -> tuple[jax.Array, jax.Array]:
         if word_count == 0:
             sorted_indices = indices
             row_changed = jnp.zeros((batch_len - 1,), dtype=jnp.bool_)
-        else:
-            sentinel = jnp.broadcast_to(jnp.uint32(0xFFFFFFFF), (batch_len,))
-            sort_keys = []
-            for i in range(word_count):
-                sort_keys.append(
-                    jnp.asarray(jax.lax.select(filled, keys[:, i], sentinel), dtype=jnp.uint32)
-                )
+            return cast(jax.Array, sorted_indices), cast(jax.Array, row_changed)
 
-            operand = tuple(sort_keys) + (indices,)
-            sorted = cast(
-                tuple[jax.Array, ...],
-                jax.lax.sort(
-                    operand,
-                    dimension=0,
-                    is_stable=True,
-                    num_keys=word_count,
-                ),
+        sentinel = jnp.broadcast_to(jnp.uint32(0xFFFFFFFF), (batch_len,))
+        sort_keys = []
+        for i in range(word_count):
+            sort_keys.append(
+                jnp.asarray(jax.lax.select(filled, keys[:, i], sentinel), dtype=jnp.uint32)
             )
-            sorted_keys = sorted[:word_count]
-            sorted_indices = cast(jax.Array, sorted[word_count])
 
-            row_changed = jnp.zeros((batch_len - 1,), dtype=jnp.bool_)
-            for i in range(word_count):
-                k = cast(jax.Array, sorted_keys[i])
-                row_changed = jnp.logical_or(row_changed, k[1:] != k[:-1])
+        operand = tuple(sort_keys) + (indices,)
+        sorted = cast(
+            tuple[jax.Array, ...],
+            jax.lax.sort(
+                operand,
+                dimension=0,
+                is_stable=True,
+                num_keys=word_count,
+            ),
+        )
+        sorted_keys = sorted[:word_count]
+        sorted_indices = cast(jax.Array, sorted[word_count])
+
+        row_changed = jnp.zeros((batch_len - 1,), dtype=jnp.bool_)
+        for i in range(word_count):
+            k = cast(jax.Array, sorted_keys[i])
+            row_changed = jnp.logical_or(row_changed, k[1:] != k[:-1])
+        return cast(jax.Array, sorted_indices), cast(jax.Array, row_changed)
+
+    if _DEDUPE_MODE == "exact" or word_count <= 8:
+        sorted_indices, row_changed = _full_row_sort()
     else:
+        # Wide-key path: sort/group on a 128-bit signature.
         if word_count == 0:
             h1 = jnp.zeros((batch_len,), dtype=jnp.uint32)
             h2 = jnp.zeros((batch_len,), dtype=jnp.uint32)
@@ -118,7 +129,7 @@ def _compute_unique_mask_from_uint32eds(
         h3 = jnp.asarray(jax.lax.select(filled, h3, sentinel), dtype=jnp.uint32)
         h4 = jnp.asarray(jax.lax.select(filled, h4, sentinel), dtype=jnp.uint32)
 
-        sorted_h1, sorted_h2, sorted_h3, sorted_h4, sorted_indices = cast(
+        sorted_h1, sorted_h2, sorted_h3, sorted_h4, sorted_indices_sig = cast(
             tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array],
             jax.lax.sort(
                 (h1, h2, h3, h4, indices),
@@ -128,16 +139,41 @@ def _compute_unique_mask_from_uint32eds(
             ),
         )
 
-        if batch_len == 0:
-            representative_indices = jnp.zeros((0,), dtype=jnp.int32)
-            unique_mask = jnp.zeros((0,), dtype=jnp.bool_)
-            return unique_mask, representative_indices
-
-        row_changed = jnp.logical_or(
+        row_changed_sig = jnp.logical_or(
             sorted_h1[1:] != sorted_h1[:-1], sorted_h2[1:] != sorted_h2[:-1]
         )
-        row_changed = jnp.logical_or(row_changed, sorted_h3[1:] != sorted_h3[:-1])
-        row_changed = jnp.logical_or(row_changed, sorted_h4[1:] != sorted_h4[:-1])
+        row_changed_sig = jnp.logical_or(row_changed_sig, sorted_h3[1:] != sorted_h3[:-1])
+        row_changed_sig = jnp.logical_or(row_changed_sig, sorted_h4[1:] != sorted_h4[:-1])
+
+        if _DEDUPE_MODE == "safe":
+            sorted_filled_sig = filled[sorted_indices_sig]
+            same_sig = jnp.logical_not(row_changed_sig)
+            same_sig = jnp.logical_and(same_sig, sorted_filled_sig[1:])
+            same_sig = jnp.logical_and(same_sig, sorted_filled_sig[:-1])
+            has_sig_dups = jnp.any(same_sig)
+
+            def _check_collision(_):
+                lhs = keys[sorted_indices_sig[1:]]
+                rhs = keys[sorted_indices_sig[:-1]]
+                adj_equal = jnp.all(lhs == rhs, axis=1)
+                collision = jnp.any(jnp.logical_and(same_sig, jnp.logical_not(adj_equal)))
+                return collision
+
+            collision = jax.lax.cond(
+                has_sig_dups,
+                _check_collision,
+                lambda _: jnp.bool_(False),
+                operand=None,
+            )
+
+            sorted_indices, row_changed = jax.lax.cond(
+                collision,
+                lambda _: _full_row_sort(),
+                lambda _: (sorted_indices_sig, row_changed_sig),
+                operand=None,
+            )
+        else:
+            sorted_indices, row_changed = sorted_indices_sig, row_changed_sig
 
     sorted_filled = filled[sorted_indices]
 
