@@ -1,3 +1,6 @@
+import os
+from typing import cast
+
 import jax
 import jax.numpy as jnp
 
@@ -118,18 +121,39 @@ def byterize_hash_func_builder(x: Xtructurable):
         JIT-compiled hash function that takes a pytree and seed
     """
 
+    Packed = getattr(x, "Packed", None)
+    agg_tail_bytes = getattr(Packed, "__agg_tail_bytes__", None) if Packed is not None else None
+    agg_words_len = getattr(Packed, "__agg_words_len__", None) if Packed is not None else None
+
+    has_agg_layout = agg_tail_bytes is not None and agg_words_len is not None
+    agg_mode = os.environ.get("XTRUCTURE_HASH_AGG_MODE", "raw").strip().lower()
+    if agg_mode not in {"raw", "packed", "auto"}:
+        raise ValueError("XTRUCTURE_HASH_AGG_MODE must be one of: raw, packed, auto")
+
+    if not has_agg_layout:
+        use_agg_packed = False
+    elif agg_mode == "packed":
+        use_agg_packed = True
+    elif agg_mode == "raw":
+        use_agg_packed = False
+    else:
+        # auto: prefer raw on GPU/CPU (usually faster), packed on TPU.
+        use_agg_packed = jax.default_backend() == "tpu"
+
+    tail_bytes = int(cast(int, agg_tail_bytes)) if use_agg_packed else 0
+    stored_words_len = int(cast(int, agg_words_len)) if use_agg_packed else 0
+
     @jax.jit
-    def _to_bytes(x):
-        """Convert input to byte array."""
-        # Check if x is a JAX boolean array and cast to uint8 if true
+    def _to_bytes_leaf(x):
+        """Convert a single leaf to a byte array."""
         if x.dtype == jnp.bool_:
             x = x.astype(jnp.uint8)
         return jax.lax.bitcast_convert_type(x, jnp.uint8).reshape(-1)
 
     @jax.jit
-    def _byterize(x):
+    def _byterize_raw(x):
         """Convert entire state tree to flattened byte array."""
-        x = jax.tree_util.tree_map(_to_bytes, x)
+        x = jax.tree_util.tree_map(_to_bytes_leaf, x)
         x, _ = jax.tree_util.tree_flatten(x)
         if len(x) == 0:
             return jnp.array([], dtype=jnp.uint8)
@@ -154,7 +178,7 @@ def byterize_hash_func_builder(x: Xtructurable):
     def _leaf_to_uint32(leaf):
         """Convert a single leaf to uint32 representation."""
         if not hasattr(leaf, "dtype"):
-            return _to_uint32_from_bytes(_to_bytes(leaf))
+            return _to_uint32_from_bytes(_to_bytes_leaf(leaf))
 
         dtype = leaf.dtype
         if dtype == jnp.bool_:
@@ -179,9 +203,9 @@ def byterize_hash_func_builder(x: Xtructurable):
             if dtype in (jnp.float16, jnp.bfloat16):
                 return _pack_uint16_to_uint32(jax.lax.bitcast_convert_type(leaf, jnp.uint16))
 
-        return _to_uint32_from_bytes(_to_bytes(leaf))
+        return _to_uint32_from_bytes(_to_bytes_leaf(leaf))
 
-    def _to_uint32(x):
+    def _to_uint32_raw(x):
         """Convert pytree to uint32 array."""
         uint32_leaves = jax.tree_util.tree_map(_leaf_to_uint32, x)
         flat_leaves, _ = jax.tree_util.tree_flatten(uint32_leaves)
@@ -189,17 +213,53 @@ def byterize_hash_func_builder(x: Xtructurable):
             return jnp.zeros((0,), dtype=jnp.uint32)
         return jnp.concatenate(flat_leaves)
 
+    if use_agg_packed:
+
+        def _words_all_from_packed_instance(packed):
+            words = jnp.asarray(packed.words, dtype=jnp.uint32).reshape((-1,))
+            if tail_bytes == 0:
+                return words
+            tail = jnp.asarray(packed.tail, dtype=jnp.uint8).reshape((-1,))
+            last = jnp.uint32(0)
+            for i in range(tail_bytes):
+                last = last | (tail[i].astype(jnp.uint32) << jnp.uint32(8 * i))
+            if stored_words_len:
+                return jnp.concatenate([words, last[None]], axis=0)
+            return last[None]
+
+        @jax.jit
+        def _byterize_fn(x):
+            """Byte representation based on aggregate-packed storage."""
+            packed = x.packed
+            words = jnp.asarray(packed.words, dtype=jnp.uint32).reshape((-1,))
+            words_bytes = jax.lax.bitcast_convert_type(words, jnp.uint8).reshape((-1,))
+            if tail_bytes == 0:
+                return words_bytes
+            tail = jnp.asarray(packed.tail, dtype=jnp.uint8).reshape((-1,))
+            if words_bytes.size == 0:
+                return tail
+            return jnp.concatenate([words_bytes, tail], axis=0)
+
+        @jax.jit
+        def _to_uint32_fn(x):
+            """Uint32 representation based on aggregate-packed words_all."""
+            return _words_all_from_packed_instance(x.packed)
+
+    else:
+        _byterize_fn = _byterize_raw
+        _to_uint32_fn = _to_uint32_raw
+
     def _h(x, seed=0):
         """Main hash function that converts state to uint32 lanes and hashes them."""
-        return uint32ed_to_hash(_to_uint32(x), seed)
+        return uint32ed_to_hash(_to_uint32_fn(x), seed)
 
     def _h_pair(x, seed=0):
         """Hash function that returns two 32-bit hashes."""
-        return uint32ed_to_hash_pair(_to_uint32(x), seed)
+        return uint32ed_to_hash_pair(_to_uint32_fn(x), seed)
 
     def _h_pair_with_uint32ed(x, seed=0):
         """Hash function that returns two 32-bit hashes and the uint32 lanes."""
-        uint32ed = _to_uint32(x)
+        uint32ed = _to_uint32_fn(x)
         return uint32ed_to_hash_pair(uint32ed, seed), uint32ed
 
     def _h_with_uint32ed(x, seed=0):
@@ -207,12 +267,12 @@ def byterize_hash_func_builder(x: Xtructurable):
         Main hash function that converts state to uint32 lanes and hashes them.
         Returns both hash value and its uint32 representation.
         """
-        uint32ed = _to_uint32(x)
+        uint32ed = _to_uint32_fn(x)
         return uint32ed_to_hash(uint32ed, seed), uint32ed
 
     return (
-        jax.jit(_byterize),
-        jax.jit(_to_uint32),
+        jax.jit(_byterize_fn),
+        jax.jit(_to_uint32_fn),
         jax.jit(_h),
         jax.jit(_h_with_uint32ed),
         jax.jit(_h_pair),

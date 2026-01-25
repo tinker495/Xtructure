@@ -15,6 +15,7 @@ Rules:
 from __future__ import annotations
 
 import dataclasses
+import os
 from typing import Any, Type, TypeVar
 
 import jax
@@ -25,10 +26,12 @@ from jax import lax
 from xtructure.core.field_descriptors import FieldDescriptor, get_field_descriptors
 from xtructure.core.type_utils import is_xtructure_dataclass_type
 
-from .bitpack import _extract_bits, _insert_bits
+from .bitpack import _extract_bits
+from .kernels import pack_words_all_pallas, pack_words_all_xla
 from .spec import (
     _AggLeafSpec,
     _build_agg_spec,
+    _build_word_contrib_tables,
     _ceil_div,
     _compute_word_tail_layout,
     _default_unpack_dtype,
@@ -41,6 +44,7 @@ T = TypeVar("T")
 def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
     specs, total_bits = _build_agg_spec(cls)
     words_all_len, stored_words_len, tail_bytes = _compute_word_tail_layout(total_bits)
+    tables = _build_word_contrib_tables(specs, words_all_len=words_all_len)
 
     # Build a Packed class with a uint32 word-stream plus optional uint8 tail.
     packed_name = f"{cls.__name__}Packed"
@@ -67,6 +71,8 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
     setattr(Packed, "__agg_words_all_len__", words_all_len)
     setattr(Packed, "__agg_words_len__", stored_words_len)
     setattr(Packed, "__agg_tail_bytes__", tail_bytes)
+    setattr(Packed, "__agg_total_values__", int(tables.total_values))
+    setattr(Packed, "__agg_word_tables__", tables)
     setattr(Packed, "__agg_unpacked_cls__", cls)
 
     # Build nested logical-view unpacked classes mirroring the original structure,
@@ -75,6 +81,45 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
         cls, default_unpack_dtype=_default_unpack_dtype
     )
     setattr(Packed, "__agg_unpacked_view_cls__", UnpackedView)
+
+    def _parse_backend_env(name: str, default: str) -> str:
+        value = os.environ.get(name, default)
+        value = value.strip().lower()
+        if value in {"auto", "pallas", "xla", "off"}:
+            return value
+        raise ValueError(f"{name} must be one of: auto, pallas, xla, off")
+
+    def _parse_int_env(name: str, default: int) -> int:
+        value = os.environ.get(name)
+        if value is None:
+            return default
+        value = value.strip().lower()
+        if value in {"", "none", "auto"}:
+            return default
+        try:
+            parsed = int(value)
+        except ValueError as exc:
+            raise ValueError(f"{name} must be an integer") from exc
+        if parsed <= 0:
+            raise ValueError(f"{name} must be positive")
+        return parsed
+
+    def _pack_backend() -> str:
+        choice = _parse_backend_env("XTRUCTURE_AGG_BITPACK_PACK_BACKEND", "auto")
+        if choice == "off":
+            return "xla"
+        if choice in {"pallas", "xla"}:
+            return choice
+        # auto
+        backend = jax.default_backend()
+        # For the typical <=1e3 byte packed payloads, the vectorized XLA path is
+        # generally faster on GPU, while TPU benefits more consistently from pallas.
+        if backend == "tpu":
+            return "pallas"
+        return "xla"
+
+    def _pack_word_tile() -> int:
+        return _parse_int_env("XTRUCTURE_AGG_BITPACK_PACK_WORD_TILE", 4)
 
     def _pack_instance(instance: Any) -> tuple[jax.Array, jax.Array]:
         # Determine batch shape from the first field (xtructure invariant already implies consistent batching)
@@ -91,55 +136,57 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
                 out = getattr(out, p)
             return out
 
-        # Prepare per-leaf flattened arrays of shape (flat_n, nvalues)
-        field_rows = []
+        # Prepare per-leaf flattened arrays of shape (flat_n, nvalues), cast to uint32.
+        fields_u32 = []
         for s in specs:
             arr = jnp.asarray(_get_path(instance, s.path))
-            arr_flat = arr.reshape((flat_n, s.nvalues))
-            field_rows.append(arr_flat)
+            arr_flat = arr.reshape((flat_n, s.nvalues)).astype(jnp.uint32)
+            fields_u32.append(arr_flat)
 
-        def _pack_row(*row_fields):
-            # Pack into full uint32 word stream of length words_all_len.
-            words = jnp.zeros((words_all_len,), dtype=jnp.uint32)
-
-            for s, values in zip(specs, row_fields):
-                vals_u32 = values.astype(jnp.uint32)
-
-                def body(i, w):
-                    bit_pos = jnp.uint32(s.bit_offset) + jnp.uint32(i) * jnp.uint32(s.bits)
-                    v = vals_u32[i]
-                    return _insert_bits(w, bit_pos, v, s.bits)
-
-                words = lax.fori_loop(0, s.nvalues, body, words)
-
-            if tail_bytes == 0:
-                stored_words = words
-                tail = jnp.zeros((0,), dtype=jnp.uint8)
-                return stored_words, tail
-
-            # Split last word into 1..2 byte tail.
-            last = words[-1]
-            tail = jnp.stack(
-                [
-                    ((last >> jnp.uint32(8 * i)) & jnp.uint32(0xFF)).astype(jnp.uint8)
-                    for i in range(tail_bytes)
-                ]
+        total_values = int(tables.total_values)
+        if total_values == 0:
+            words_all_2d = jnp.zeros((flat_n, words_all_len), dtype=jnp.uint32)
+        else:
+            values_stream = (
+                jnp.concatenate(fields_u32, axis=1) if len(fields_u32) > 1 else fields_u32[0]
             )
-            stored_words = words[:-1] if words_all_len > 1 else jnp.zeros((0,), dtype=jnp.uint32)
-            return stored_words, tail
+            if values_stream.shape[1] != total_values:
+                raise ValueError("aggregate_bitpack internal error: total_values mismatch")
 
-        packed_words_2d, packed_tail_2d = jax.vmap(_pack_row)(*field_rows)
-        packed_words = packed_words_2d.reshape(batch + (stored_words_len,))
+            backend_choice = _pack_backend()
+            if backend_choice == "pallas":
+                pallas_backend = "triton" if jax.default_backend() == "gpu" else "mosaic_tpu"
+                words_all_2d = pack_words_all_pallas(
+                    values_stream,
+                    tables,
+                    backend=pallas_backend,
+                    word_tile=_pack_word_tile(),
+                )
+            else:
+                words_all_2d = pack_words_all_xla(values_stream, tables)
+
+        if tail_bytes == 0:
+            stored_words_2d = words_all_2d
+            tail_2d = jnp.zeros((flat_n, 0), dtype=jnp.uint8)
+        else:
+            last = words_all_2d[:, -1]
+            stored_words_2d = (
+                words_all_2d[:, :-1] if words_all_len > 1 else jnp.zeros((flat_n, 0), jnp.uint32)
+            )
+            shifts = jnp.arange(tail_bytes, dtype=jnp.uint32) * jnp.uint32(8)
+            tail_2d = ((last[:, None] >> shifts[None, :]) & jnp.uint32(0xFF)).astype(jnp.uint8)
+
+        packed_words = stored_words_2d.reshape(batch + (stored_words_len,))
         packed_tail = (
-            packed_tail_2d.reshape(batch + (tail_bytes,))
+            tail_2d.reshape(batch + (tail_bytes,))
             if tail_bytes
-            else jnp.zeros(batch + (0,), dtype=jnp.uint8)
+            else jnp.zeros(batch + (0,), jnp.uint8)
         )
         return packed_words, packed_tail
 
     def packed_prop(self):
         words, tail = _pack_instance(self)
-        return Packed(words=words, tail=tail)
+        return Packed(words=words, tail=tail)  # type: ignore[call-arg]
 
     setattr(cls, "Packed", Packed)
     setattr(cls, "packed", property(packed_prop))
@@ -210,7 +257,19 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
         idxs = _normalize_indices(indices, nvalues=s.nvalues)
         # Convert to bit positions and extract bits per index.
         bit_pos = jnp.uint32(s.bit_offset) + idxs.astype(jnp.uint32) * jnp.uint32(s.bits)
-        vals = jax.vmap(lambda bp: _extract_bits(row_words, bp, s.bits))(bit_pos).astype(jnp.uint32)
+
+        # Vectorized extraction (avoids per-element vmap).
+        word_idx = jnp.right_shift(bit_pos, jnp.uint32(5)).astype(jnp.int32)
+        shift = (bit_pos & jnp.uint32(31)).astype(jnp.uint32)
+
+        w0 = row_words[word_idx]
+        w1 = jnp.take(row_words, word_idx + 1, mode="fill")
+
+        low = jnp.right_shift(w0, shift)
+        high = jnp.where(shift == 0, jnp.uint32(0), jnp.left_shift(w1, jnp.uint32(32) - shift))
+
+        mask = jnp.uint32(0xFFFFFFFF) if s.bits == 32 else jnp.uint32((1 << s.bits) - 1)
+        vals = jnp.bitwise_and(jnp.bitwise_or(low, high), mask).astype(jnp.uint32)
         if s.bits == 1:
             if s.unpack_dtype == jnp.bool_:
                 return vals.astype(jnp.bool_)

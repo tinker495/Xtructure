@@ -6,12 +6,14 @@ from typing import Any, Callable, Union
 
 import jax
 import jax.numpy as jnp
+from jax import lax
 
 from ....xtructure_decorators import Xtructurable
 
 
-def _hash_to_wide(keys: jnp.ndarray) -> list[jnp.ndarray]:
+def _hash_to_wide(keys: Any) -> list[jax.Array]:
     """Hash (N, K) uint32 keys into a fixed-width wide hash."""
+    keys = jnp.asarray(keys)
     n, k = keys.shape
 
     # Check if x64 is enabled
@@ -26,9 +28,17 @@ def _hash_to_wide(keys: jnp.ndarray) -> list[jnp.ndarray]:
         # 128-bit via two uint64
         h1 = keys[:, 0].astype(jnp.uint64)
         h2 = keys[:, 0].astype(jnp.uint64)
-        for i in range(1, k):
-            h1 = h1 * jnp.uint64(0x9E3779B1) + keys[:, i].astype(jnp.uint64)
-            h2 = h2 * jnp.uint64(0x85EBCA6B) + keys[:, i].astype(jnp.uint64)
+        c1 = jnp.uint64(0x9E3779B1)
+        c2 = jnp.uint64(0x85EBCA6B)
+
+        def _hash_to_wide_step_u64(i, carry):
+            hh1, hh2 = carry
+            col = lax.dynamic_index_in_dim(keys, i, axis=1, keepdims=False).astype(jnp.uint64)
+            hh1 = hh1 * c1 + col
+            hh2 = hh2 * c2 + col
+            return hh1, hh2
+
+        h1, h2 = lax.fori_loop(1, k, _hash_to_wide_step_u64, (h1, h2))
         return [h1, h2]
     else:
         # 128-bit via four uint32
@@ -36,11 +46,21 @@ def _hash_to_wide(keys: jnp.ndarray) -> list[jnp.ndarray]:
         h2 = keys[:, 0].astype(jnp.uint32)
         h3 = keys[:, 0].astype(jnp.uint32)
         h4 = keys[:, 0].astype(jnp.uint32)
-        for i in range(1, k):
-            h1 = h1 * jnp.uint32(0x9E3779B1) + keys[:, i].astype(jnp.uint32)
-            h2 = h2 * jnp.uint32(0x85EBCA6B) + keys[:, i].astype(jnp.uint32)
-            h3 = jnp.bitwise_xor(h3, keys[:, i].astype(jnp.uint32)) * jnp.uint32(0xC2B2AE35)
-            h4 = jnp.bitwise_xor(h4, keys[:, i].astype(jnp.uint32)) * jnp.uint32(0x278DDE6E)
+        c1 = jnp.uint32(0x9E3779B1)
+        c2 = jnp.uint32(0x85EBCA6B)
+        c3 = jnp.uint32(0xC2B2AE35)
+        c4 = jnp.uint32(0x278DDE6E)
+
+        def _hash_to_wide_step_u32(i, carry):
+            hh1, hh2, hh3, hh4 = carry
+            col = lax.dynamic_index_in_dim(keys, i, axis=1, keepdims=False).astype(jnp.uint32)
+            hh1 = hh1 * c1 + col
+            hh2 = hh2 * c2 + col
+            hh3 = jnp.bitwise_xor(hh3, col) * c3
+            hh4 = jnp.bitwise_xor(hh4, col) * c4
+            return hh1, hh2, hh3, hh4
+
+        h1, h2, h3, h4 = lax.fori_loop(1, k, _hash_to_wide_step_u32, (h1, h2, h3, h4))
         return [h1, h2, h3, h4]
 
 
@@ -78,24 +98,29 @@ def unique_mask(
     Returns:
         Mask (bool array) or tuple (mask, index, inverse).
     """
-    if key_fn is None:
+    key_fn_local = key_fn
+    if key_fn_local is None:
 
-        def key_fn(x):
+        def _key_fn(x):
             # Prefer aggregate-packed representation if available for density
             if hasattr(x, "packed") and hasattr(x, "bitpack_schema"):
                 return x.packed.words
             return x.uint32ed
 
+        key_fn_local = _key_fn
+
     # 1. Generate keys for uniqueness
     try:
-        unique_keys = jax.vmap(key_fn)(val)
+        unique_keys = jax.vmap(key_fn_local)(val)
     except Exception as e:
         raise ValueError(f"key_fn failed to generate hashable keys: {e}")
 
     if batch_len is None:
-        batch_len = val.shape.batch[0]
+        batch_len_i = int(val.shape.batch[0])
+    else:
+        batch_len_i = int(batch_len)
 
-    if batch_len == 0:
+    if batch_len_i == 0:
         final_mask = jnp.zeros((0,), dtype=jnp.bool_)
         if not return_index and not return_inverse:
             return final_mask
@@ -106,10 +131,10 @@ def unique_mask(
             returns += (jnp.zeros((0,), dtype=jnp.int32),)
         return returns
 
-    if key is not None and len(key) != batch_len:
-        raise ValueError(f"key length {len(key)} must match batch_len {batch_len}")
+    if key is not None and len(key) != batch_len_i:
+        raise ValueError(f"key length {len(key)} must match batch_len {batch_len_i}")
 
-    keys_flat = unique_keys.reshape(batch_len, -1)
+    keys_flat = jnp.asarray(unique_keys).reshape((batch_len_i, -1))
 
     # 2. Wide Hashing to reduce sort columns (128-bit)
     hashes = _hash_to_wide(keys_flat)
@@ -126,7 +151,7 @@ def unique_mask(
     sort_keys = []
 
     # Tertiary key: original index (stable tie-breaking if hashes and keys are equal)
-    sort_keys.append(jnp.arange(batch_len, dtype=jnp.int32))
+    sort_keys.append(jnp.arange(batch_len_i, dtype=jnp.int32))
 
     if key is not None:
         # Secondary key: cost (minimize cost within same hash group)
@@ -161,7 +186,7 @@ def unique_mask(
         mask_sorted = jnp.logical_and(mask_sorted, is_valid_sorted)
 
     # 8. Map back to original order
-    final_mask = jnp.zeros(batch_len, dtype=jnp.bool_).at[perm].set(mask_sorted)
+    final_mask = jnp.zeros(batch_len_i, dtype=jnp.bool_).at[perm].set(mask_sorted)
 
     if not return_index and not return_inverse:
         return final_mask
@@ -177,11 +202,11 @@ def unique_mask(
                 unique_indices = perm[mask_sorted]
             except (jax.errors.NonConcreteBooleanIndexError, jax.errors.ConcretizationTypeError):
                 # Fallback to batch_len if concrete
-                if isinstance(batch_len, (int, jnp.integer)):
+                if isinstance(batch_len_i, (int, jnp.integer)):
                     use_static = True
-                    size = int(batch_len)
+                    size = int(batch_len_i)
                     if fill_value is None:
-                        fill_value = int(batch_len)
+                        fill_value = int(batch_len_i)
                 else:
                     raise
 
@@ -190,7 +215,7 @@ def unique_mask(
                 fill_value = 0
 
             # JIT-safe path: use nonzero with fixed size
-            sentinel = batch_len
+            sentinel = batch_len_i
             valid_positions = jnp.nonzero(mask_sorted, size=size, fill_value=sentinel)[0]
 
             # Pad perm with fill_value at the sentinel position so invalid lookups get fill_value
@@ -201,7 +226,7 @@ def unique_mask(
 
     if return_inverse:
         group_id_sorted = jnp.cumsum(mask_sorted) - 1
-        inv = jnp.zeros(batch_len, dtype=jnp.int32).at[perm].set(group_id_sorted)
+        inv = jnp.zeros(batch_len_i, dtype=jnp.int32).at[perm].set(group_id_sorted)
         returns += (inv,)
 
     return returns

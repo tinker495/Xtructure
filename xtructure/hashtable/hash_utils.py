@@ -7,6 +7,7 @@ from typing import Any, cast
 import chex
 import jax
 import jax.numpy as jnp
+from jax import lax
 
 from ..core import Xtructurable
 from ..core.xtructure_decorators.hash import _mix_fingerprint, uint32ed_to_hash
@@ -127,16 +128,28 @@ def _compute_unique_mask_from_uint32eds(
             h3 = jnp.zeros((batch_len,), dtype=jnp.uint32)
             h4 = jnp.zeros((batch_len,), dtype=jnp.uint32)
         else:
+            # NOTE: do not use Python loops over word_count; it can be huge for wide keys
+            # and causes XLA graph explosion at trace time.
             h1 = keys[:, 0]
             h2 = keys[:, 0]
             h3 = keys[:, 0]
             h4 = keys[:, 0]
-            for i in range(1, word_count):
-                col = keys[:, i]
-                h1 = h1 * jnp.uint32(0x9E3779B1) + col
-                h2 = h2 * jnp.uint32(0x85EBCA6B) + col
-                h3 = jnp.bitwise_xor(h3, col) * jnp.uint32(0xC2B2AE35)
-                h4 = jnp.bitwise_xor(h4, col) * jnp.uint32(0x278DDE6E)
+
+            c1 = jnp.uint32(0x9E3779B1)
+            c2 = jnp.uint32(0x85EBCA6B)
+            c3 = jnp.uint32(0xC2B2AE35)
+            c4 = jnp.uint32(0x278DDE6E)
+
+            def _sig_body(i, carry):
+                hh1, hh2, hh3, hh4 = carry
+                col = lax.dynamic_index_in_dim(keys, i, axis=1, keepdims=False)
+                hh1 = hh1 * c1 + col
+                hh2 = hh2 * c2 + col
+                hh3 = jnp.bitwise_xor(hh3, col) * c3
+                hh4 = jnp.bitwise_xor(hh4, col) * c4
+                return hh1, hh2, hh3, hh4
+
+            h1, h2, h3, h4 = lax.fori_loop(1, word_count, _sig_body, (h1, h2, h3, h4))
 
         sentinel = jnp.broadcast_to(jnp.uint32(0xFFFFFFFF), h1.shape)
         h1 = jnp.asarray(jax.lax.select(filled, h1, sentinel), dtype=jnp.uint32)
@@ -245,12 +258,38 @@ def _compute_unique_mask_from_hash_pairs(
     secondary_hashes: chex.Array,
     filled: chex.Array,
     unique_key: chex.Array | None,
+    *,
+    uint32eds: chex.Array | None = None,
 ) -> tuple[chex.Array, chex.Array]:
+    """Compute an in-batch uniqueness mask using a (primary, secondary) hash pair.
+
+    In safe mode (default), this detects hash-pair collisions using `uint32eds`
+    and falls back to an exact full-row dedupe when needed.
+
+    Args:
+        primary_hashes: (N,) uint32 hashes.
+        secondary_hashes: (N,) uint32 hashes.
+        filled: (N,) bool mask (or scalar bool) for active entries.
+        unique_key: Optional cost array; picks min cost per group (ties -> smallest index).
+        uint32eds: Optional (N, K) uint32 representation of the values. Required for collision
+            detection in safe mode.
+    """
     primary_hashes = jnp.asarray(primary_hashes, dtype=jnp.uint32).reshape(-1)
     secondary_hashes = jnp.asarray(secondary_hashes, dtype=jnp.uint32).reshape(-1)
     batch_len = int(primary_hashes.shape[0])
     if secondary_hashes.shape[0] != batch_len:
         raise ValueError("primary_hashes and secondary_hashes must have the same length.")
+
+    # Exact mode semantics: do not rely on hash pairs.
+    if _DEDUPE_MODE == "exact":
+        if uint32eds is None:
+            raise ValueError("exact dedupe requires uint32eds")
+        keys = jnp.asarray(uint32eds, dtype=jnp.uint32)
+        if keys.ndim == 1:
+            keys = keys[:, None]
+        return _compute_unique_mask_from_uint32eds(
+            uint32eds=keys, filled=filled, unique_key=unique_key
+        )
 
     filled = cast(jax.Array, jnp.asarray(filled, dtype=jnp.bool_))
     if filled.ndim == 0:
@@ -274,59 +313,106 @@ def _compute_unique_mask_from_hash_pairs(
     )
     sorted_filled = filled[sorted_indices]
 
-    if batch_len == 0:
-        representative_indices = jnp.zeros((0,), dtype=jnp.int32)
-        unique_mask = jnp.zeros((0,), dtype=jnp.bool_)
-        return unique_mask, representative_indices
+    def _compute_from_sorted() -> tuple[chex.Array, chex.Array]:
+        if batch_len == 0:
+            representative_indices = jnp.zeros((0,), dtype=jnp.int32)
+            unique_mask = jnp.zeros((0,), dtype=jnp.bool_)
+            return unique_mask, representative_indices
 
-    row_changed = jnp.logical_or(sorted_h1[1:] != sorted_h1[:-1], sorted_h2[1:] != sorted_h2[:-1])
-    is_group_start = jnp.concatenate([jnp.array([True]), row_changed], axis=0)
-    group_id = jnp.cumsum(is_group_start.astype(jnp.int32)) - jnp.int32(1)
-
-    batch_len_i32 = jnp.int32(batch_len)
-
-    if unique_key is not None:
-        unique_key_arr = cast(jax.Array, jnp.asarray(unique_key))
-        if unique_key_arr.ndim == 0:
-            unique_key_arr = cast(jax.Array, jnp.full((batch_len,), unique_key_arr))
-        elif unique_key_arr.shape[0] != batch_len:
-            raise ValueError("unique_key must match hash arrays leading dimension.")
-
-        sorted_unique_key = unique_key_arr[sorted_indices]
-        masked_key = jnp.where(sorted_filled, sorted_unique_key, jnp.inf)
-        min_keys = (
-            jnp.full((batch_len,), jnp.inf, dtype=masked_key.dtype).at[group_id].min(masked_key)
+        row_changed = jnp.logical_or(
+            sorted_h1[1:] != sorted_h1[:-1],
+            sorted_h2[1:] != sorted_h2[:-1],
         )
-        candidate_indices = jnp.where(
-            masked_key == min_keys[group_id],
-            sorted_indices,
-            batch_len_i32,
+        is_group_start = jnp.concatenate([jnp.array([True]), row_changed], axis=0)
+        group_id = jnp.cumsum(is_group_start.astype(jnp.int32)) - jnp.int32(1)
+
+        batch_len_i32 = jnp.int32(batch_len)
+
+        if unique_key is not None:
+            unique_key_arr = cast(jax.Array, jnp.asarray(unique_key))
+            if unique_key_arr.ndim == 0:
+                unique_key_arr = cast(jax.Array, jnp.full((batch_len,), unique_key_arr))
+            elif unique_key_arr.shape[0] != batch_len:
+                raise ValueError("unique_key must match hash arrays leading dimension.")
+
+            sorted_unique_key = unique_key_arr[sorted_indices]
+            masked_key = jnp.where(sorted_filled, sorted_unique_key, jnp.inf)
+            min_keys = (
+                jnp.full((batch_len,), jnp.inf, dtype=masked_key.dtype).at[group_id].min(masked_key)
+            )
+            candidate_indices = jnp.where(
+                masked_key == min_keys[group_id],
+                sorted_indices,
+                batch_len_i32,
+            )
+        else:
+            candidate_indices = jnp.where(sorted_filled, sorted_indices, batch_len_i32)
+
+        representative_per_group = (
+            jnp.full((batch_len,), batch_len_i32, dtype=jnp.int32)
+            .at[group_id]
+            .min(candidate_indices)
         )
-    else:
-        candidate_indices = jnp.where(sorted_filled, sorted_indices, batch_len_i32)
+        representative_per_group = jnp.where(
+            representative_per_group == batch_len_i32,
+            jnp.int32(0),
+            representative_per_group,
+        )
+        representative_sorted = representative_per_group[group_id]
 
-    representative_per_group = (
-        jnp.full((batch_len,), batch_len_i32, dtype=jnp.int32).at[group_id].min(candidate_indices)
-    )
-    representative_per_group = jnp.where(
-        representative_per_group == batch_len_i32,
-        jnp.int32(0),
-        representative_per_group,
-    )
-    representative_sorted = representative_per_group[group_id]
+        representative_indices = cast(jax.Array, jnp.zeros((batch_len,), dtype=jnp.int32))
+        representative_indices = cast(
+            jax.Array,
+            representative_indices.at[sorted_indices].set(representative_sorted),
+        )
+        representative_indices = cast(
+            jax.Array,
+            jnp.where(filled, representative_indices, jnp.int32(0)),
+        )
 
-    representative_indices = cast(jax.Array, jnp.zeros((batch_len,), dtype=jnp.int32))
-    representative_indices = cast(
-        jax.Array,
-        representative_indices.at[sorted_indices].set(representative_sorted),
-    )
-    representative_indices = cast(
-        jax.Array,
-        jnp.where(filled, representative_indices, jnp.int32(0)),
-    )
+        indices_local = jnp.arange(batch_len, dtype=jnp.int32)
+        unique_mask = jnp.logical_and(filled, indices_local == representative_indices)
+        return unique_mask, cast(jax.Array, representative_indices)
 
-    unique_mask = jnp.logical_and(filled, indices == representative_indices)
-    return unique_mask, cast(jax.Array, representative_indices)
+    # Collision detection (safe mode): if two adjacent entries share the same hash pair
+    # but have different underlying uint32ed rows, we must fall back to an exact dedupe.
+    if _DEDUPE_MODE == "safe":
+        if uint32eds is None:
+            raise ValueError("safe dedupe requires uint32eds for collision detection")
+
+        keys = jnp.asarray(uint32eds, dtype=jnp.uint32)
+        if keys.ndim == 1:
+            keys = keys[:, None]
+        if keys.shape[0] != batch_len:
+            raise ValueError("uint32eds must match hash arrays leading dimension.")
+
+        same_pair = jnp.logical_and(
+            sorted_h1[1:] == sorted_h1[:-1],
+            sorted_h2[1:] == sorted_h2[:-1],
+        )
+        same_pair = jnp.logical_and(same_pair, sorted_filled[1:])
+        same_pair = jnp.logical_and(same_pair, sorted_filled[:-1])
+        has_dups = jnp.any(same_pair)
+
+        def _check_collision(_):
+            lhs = keys[sorted_indices[1:]]
+            rhs = keys[sorted_indices[:-1]]
+            adj_equal = jnp.all(lhs == rhs, axis=1)
+            return jnp.any(jnp.logical_and(same_pair, jnp.logical_not(adj_equal)))
+
+        collision = lax.cond(has_dups, _check_collision, lambda _: jnp.bool_(False), operand=None)
+
+        def _fallback(_):
+            return _compute_unique_mask_from_uint32eds(
+                uint32eds=keys, filled=filled, unique_key=unique_key
+            )
+
+        def _no_fallback(_):
+            return _compute_from_sorted()
+
+        return lax.cond(collision, _fallback, _no_fallback, operand=None)
+
+    return _compute_from_sorted()
 
 
 def _normalize_probe_step(step: chex.Array, modulus: int) -> chex.Array:
