@@ -1,7 +1,7 @@
 """Lookup helpers for HashTable."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import Any, cast
 
 import chex
 import jax
@@ -12,19 +12,20 @@ from .constants import SIZE_DTYPE, SLOT_IDX_DTYPE
 from .hash_utils import get_new_idx_byterized
 from .types import BucketIdx, HashIdx
 
-if TYPE_CHECKING:
-    from .table import HashTable
+BucketIdxCls = cast(Any, BucketIdx)
+HashIdxCls = cast(Any, HashIdx)
 
 
 def _hashtable_lookup_internal(
-    table: "HashTable",
+    table: Any,
     input: Xtructurable,
     input_uint32ed: chex.Array,
-    idx: BucketIdx,
+    idx: Any,
     probe_step: chex.Array,
-    input_fingerprint: chex.Array,
-    found: bool,
-) -> tuple[BucketIdx, bool]:
+    input_tag0: chex.Array,
+    input_tag1: chex.Array,
+    found: chex.Array,
+) -> tuple[Any, chex.Array]:
     probe_step = jnp.asarray(probe_step, dtype=SIZE_DTYPE)
     bucket_size = int(table.bucket_size)
     max_probes_u32 = SIZE_DTYPE(int(table.max_probes))
@@ -36,34 +37,39 @@ def _hashtable_lookup_internal(
     slot_offsets_u32 = slot_offsets.astype(SIZE_DTYPE)
     bucket_size_u32 = SIZE_DTYPE(bucket_size)
 
-    def _cond(val: tuple[BucketIdx, bool, chex.Array]) -> bool:
+    def _cond(val: tuple[Any, chex.Array, chex.Array]) -> chex.Array:
         _, found, probes = val
-        return jnp.logical_and(~found, probes < max_probes_u32)
+        return jnp.logical_and(jnp.logical_not(found), probes < max_probes_u32)
 
-    def _body(val: tuple[BucketIdx, bool, chex.Array]) -> tuple[BucketIdx, bool, chex.Array]:
+    def _body(val: tuple[Any, chex.Array, chex.Array]) -> tuple[Any, chex.Array, chex.Array]:
         idx, found, probes = val
         bucket_idx = jnp.asarray(idx.index, dtype=SIZE_DTYPE)
         filled_limit = table.bucket_fill_levels[bucket_idx].astype(SLOT_IDX_DTYPE)
         filled_limit_u32 = filled_limit.astype(SIZE_DTYPE)
 
         flat_indices = bucket_idx * bucket_size_u32 + slot_offsets_u32
-        stored_fps = table.fingerprints[flat_indices]
+        stored_tag0 = table.tag0[flat_indices]
+        stored_tag1 = table.tag1[flat_indices]
 
         is_filled = slot_offsets < filled_limit
-        fp_matches = jnp.logical_and(is_filled, stored_fps == input_fingerprint)
-        has_fp_match = jnp.any(fp_matches)
-        first_match_slot = jnp.argmax(fp_matches).astype(SLOT_IDX_DTYPE)
+        tag_matches = jnp.logical_and(
+            is_filled,
+            jnp.logical_and(stored_tag0 == input_tag0, stored_tag1 == input_tag1),
+        )
+        has_tag_match = jnp.any(tag_matches)
+        first_match_slot = jnp.argmax(tag_matches).astype(SLOT_IDX_DTYPE)
         candidate_flat = bucket_idx * bucket_size_u32 + first_match_slot.astype(SIZE_DTYPE)
 
         def _compare_first() -> chex.Array:
             return jnp.asarray(table.table[candidate_flat] == input, dtype=jnp.bool_)
 
         found_fast = jnp.logical_and(
-            has_fp_match, jax.lax.cond(has_fp_match, _compare_first, lambda: jnp.bool_(False))
+            has_tag_match,
+            jax.lax.cond(has_tag_match, _compare_first, lambda: jnp.bool_(False)),
         )
 
-        other_fp_matches = jnp.logical_and(fp_matches, slot_offsets != first_match_slot)
-        need_fallback = jnp.logical_and(~found_fast, jnp.any(other_fp_matches))
+        other_tag_matches = jnp.logical_and(tag_matches, slot_offsets != first_match_slot)
+        need_fallback = jnp.logical_and(jnp.logical_not(found_fast), jnp.any(other_tag_matches))
 
         def _fallback_scan() -> tuple[chex.Array, chex.Array]:
             def _check_slot(off: chex.Array, match: chex.Array) -> chex.Array:
@@ -74,7 +80,7 @@ def _hashtable_lookup_internal(
                     lambda: jnp.bool_(False),
                 )
 
-            slot_equals = jax.vmap(_check_slot)(slot_offsets, other_fp_matches)
+            slot_equals = jax.vmap(_check_slot)(slot_offsets, other_tag_matches)
             found_in_bucket = jnp.any(slot_equals)
             match_slot = jnp.argmax(slot_equals).astype(SLOT_IDX_DTYPE)
             return found_in_bucket, match_slot
@@ -86,21 +92,24 @@ def _hashtable_lookup_internal(
         )
 
         new_found = jnp.logical_or(found_fast, found_fb)
-        match_slot = jnp.where(found_fast, first_match_slot, match_fb).astype(SLOT_IDX_DTYPE)
+        match_slot = cast(jax.Array, jnp.where(found_fast, first_match_slot, match_fb))
 
         bucket_full = filled_limit_u32 == bucket_size_u32
         should_stop = jnp.logical_or(new_found, jnp.logical_not(bucket_full))
 
-        out_slot = jnp.where(new_found, match_slot, filled_limit).astype(SLOT_IDX_DTYPE)
+        out_slot = cast(jax.Array, jnp.where(new_found, match_slot, filled_limit))
         next_bucket = (bucket_idx + probe_step) & mask
 
-        updated_idx = BucketIdx(
-            index=jnp.where(should_stop, bucket_idx, next_bucket).astype(SIZE_DTYPE),
-            slot_index=jnp.where(should_stop, out_slot, SLOT_IDX_DTYPE(0)),
+        updated_idx = BucketIdxCls(
+            index=cast(jax.Array, jnp.where(should_stop, bucket_idx, next_bucket)),
+            slot_index=cast(
+                jax.Array,
+                jnp.where(should_stop, out_slot, SLOT_IDX_DTYPE(0)),
+            ),
         )
 
         probes = probes + bucket_size_u32
-        probes = jnp.where(should_stop, max_probes_u32, probes)
+        probes = cast(jax.Array, jnp.where(should_stop, max_probes_u32, probes))
         return updated_idx, new_found, probes
 
     idx, found, _ = jax.lax.while_loop(_cond, _body, (idx, found, jnp.uint32(0)))
@@ -109,35 +118,37 @@ def _hashtable_lookup_internal(
 
 @jax.jit
 def _hashtable_lookup_bucket_jit(
-    table: "HashTable", input: Xtructurable
-) -> tuple[BucketIdx, bool, chex.Array]:
-    index, step, input_uint32ed, fingerprint = get_new_idx_byterized(
+    table: Any, input: Xtructurable
+) -> tuple[Any, chex.Array, chex.Array, chex.Array]:
+    index, step, input_uint32ed, tag0, tag1 = get_new_idx_byterized(
         input, table._capacity, table.seed
     )
-    idx = BucketIdx(index=index, slot_index=SLOT_IDX_DTYPE(0))
+    idx = BucketIdxCls(index=index, slot_index=SLOT_IDX_DTYPE(0))
     idx, found = _hashtable_lookup_internal(
-        table, input, input_uint32ed, idx, step, fingerprint, False
+        table, input, input_uint32ed, idx, step, tag0, tag1, jnp.bool_(False)
     )
-    return idx, found, fingerprint
+    # Return tags so insert can reuse them without rehashing.
+    return idx, found, tag0, tag1
 
 
 @jax.jit
-def _hashtable_lookup_jit(table: "HashTable", input: Xtructurable) -> tuple[HashIdx, bool]:
-    idx, found, _ = _hashtable_lookup_bucket_jit(table, input)
+def _hashtable_lookup_jit(table: Any, input: Xtructurable) -> tuple[Any, chex.Array]:
+    idx, found, _, _ = _hashtable_lookup_bucket_jit(table, input)
     bucket_size_u32 = SIZE_DTYPE(table.bucket_size)
-    return HashIdx(index=idx.index * bucket_size_u32 + idx.slot_index), found
+    return HashIdxCls(index=idx.index * bucket_size_u32 + idx.slot_index), found
 
 
 def _hashtable_lookup_parallel_internal(
-    table: "HashTable",
+    table: Any,
     inputs: Xtructurable,
     input_uint32eds: chex.Array,
-    idxs: BucketIdx,
+    idxs: Any,
     probe_steps: chex.Array,
-    fingerprints: chex.Array,
+    tag0: chex.Array,
+    tag1: chex.Array,
     founds: chex.Array,
     active: chex.Array | None = None,
-) -> tuple[BucketIdx, chex.Array]:
+) -> tuple[Any, chex.Array]:
     if active is None:
         active = jnp.ones(inputs.shape.batch, dtype=jnp.bool_)
 
@@ -148,19 +159,21 @@ def _hashtable_lookup_parallel_internal(
     capacity = jnp.asarray(table._capacity, dtype=SIZE_DTYPE)
     mask = capacity - SIZE_DTYPE(1)
     probe_steps = jnp.asarray(probe_steps, dtype=SIZE_DTYPE)
+    tag0 = cast(jax.Array, jnp.asarray(tag0, dtype=jnp.uint32)).reshape((-1,))
+    tag1 = cast(jax.Array, jnp.asarray(tag1, dtype=jnp.uint32)).reshape((-1,))
     bucket_size_u32 = SIZE_DTYPE(bucket_size)
     slot_offsets = jnp.arange(bucket_size, dtype=SLOT_IDX_DTYPE)
     slot_offsets_u32 = slot_offsets.astype(SIZE_DTYPE)
 
     probes = jnp.zeros(inputs.shape.batch, dtype=SIZE_DTYPE)
 
-    def _cond(val: tuple[BucketIdx, chex.Array, chex.Array, chex.Array]) -> chex.Array:
+    def _cond(val: tuple[Any, chex.Array, chex.Array, chex.Array]) -> chex.Array:
         _, _, _, active = val
         return jnp.any(active)
 
     def _body(
-        val: tuple[BucketIdx, chex.Array, chex.Array, chex.Array]
-    ) -> tuple[BucketIdx, chex.Array, chex.Array, chex.Array]:
+        val: tuple[Any, chex.Array, chex.Array, chex.Array]
+    ) -> tuple[Any, chex.Array, chex.Array, chex.Array]:
         idxs, founds, probes, active = val
 
         bucket_indices = jnp.asarray(idxs.index, dtype=SIZE_DTYPE)
@@ -168,19 +181,29 @@ def _hashtable_lookup_parallel_internal(
         filled_limits_u32 = filled_limits.astype(SIZE_DTYPE)
         under_limit = probes < max_probes_u32
 
-        step_active = jnp.logical_and(active, jnp.logical_and(~founds, under_limit))
+        step_active = jnp.logical_and(
+            active,
+            jnp.logical_and(jnp.logical_not(founds), under_limit),
+        )
 
         flat_indices = bucket_indices[:, None] * bucket_size_u32 + slot_offsets_u32[None, :]
-        stored_fps = table.fingerprints[flat_indices]
+        stored_tag0 = table.tag0[flat_indices]
+        stored_tag1 = table.tag1[flat_indices]
 
         is_filled = slot_offsets[None, :] < filled_limits[:, None]
-        fp_matches = jnp.logical_and(
-            jnp.logical_and(is_filled, stored_fps == fingerprints[:, None]),
+        tag_matches = jnp.logical_and(
+            jnp.logical_and(
+                is_filled,
+                jnp.logical_and(
+                    stored_tag0 == tag0[:, None],
+                    stored_tag1 == tag1[:, None],
+                ),
+            ),
             step_active[:, None],
         )
 
-        has_fp_match_row = jnp.any(fp_matches, axis=1)
-        first_match_slot = jnp.argmax(fp_matches, axis=1).astype(SLOT_IDX_DTYPE)
+        has_tag_match_row = jnp.any(tag_matches, axis=1)
+        first_match_slot = jnp.argmax(tag_matches, axis=1).astype(SLOT_IDX_DTYPE)
         candidate_flat = bucket_indices * bucket_size_u32 + first_match_slot.astype(SIZE_DTYPE)
 
         def _maybe_compare(
@@ -193,61 +216,82 @@ def _hashtable_lookup_parallel_internal(
             )
 
         found_fast = jax.vmap(_maybe_compare)(
-            jnp.logical_and(step_active, has_fp_match_row), candidate_flat, inputs
+            jnp.logical_and(step_active, has_tag_match_row), candidate_flat, inputs
         )
 
-        other_fp_matches = jnp.logical_and(
-            fp_matches,
+        other_tag_matches = jnp.logical_and(
+            tag_matches,
             slot_offsets[None, :] != first_match_slot[:, None],
         )
-        need_fallback = jnp.logical_and(~found_fast, jnp.any(other_fp_matches, axis=1))
-        any_need_fallback = jnp.any(need_fallback)
+        need_fallback = jnp.logical_and(
+            jnp.logical_not(found_fast),
+            jnp.any(other_tag_matches, axis=1),
+        )
 
-        def _fallback_scan():
-            bucket_vals = table.table[flat_indices]
-            value_equals = jax.vmap(lambda bv, inp: jax.vmap(lambda s: s == inp)(bv))(
-                bucket_vals, inputs
+        def _fallback_one(
+            need: chex.Array,
+            flat_row: chex.Array,
+            inp: Xtructurable,
+            other_row: chex.Array,
+        ) -> tuple[chex.Array, chex.Array]:
+            def _do():
+                bucket_vals = table.table[flat_row]
+                value_equals = jax.vmap(lambda s: s == inp)(bucket_vals)
+                match_found = jnp.logical_and(value_equals, other_row)
+                found_fb = jnp.any(match_found)
+                idx_fb = jnp.argmax(match_found).astype(SLOT_IDX_DTYPE)
+                return found_fb, idx_fb
+
+            return jax.lax.cond(
+                need,
+                _do,
+                lambda: (jnp.bool_(False), SLOT_IDX_DTYPE(0)),
             )
-            match_found = jnp.logical_and(value_equals, other_fp_matches)
-            match_found = jnp.logical_and(match_found, need_fallback[:, None])
-            found_fb = jnp.any(match_found, axis=1)
-            idx_fb = jnp.argmax(match_found, axis=1).astype(SLOT_IDX_DTYPE)
-            return found_fb, idx_fb
 
-        found_fb, idx_fb = jax.lax.cond(
-            any_need_fallback,
-            _fallback_scan,
-            lambda: (
-                jnp.zeros_like(need_fallback, dtype=jnp.bool_),
-                jnp.zeros_like(first_match_slot, dtype=SLOT_IDX_DTYPE),
-            ),
+        found_fb, idx_fb = jax.vmap(_fallback_one)(
+            need_fallback, flat_indices, inputs, other_tag_matches
         )
 
         new_founds_in_bucket = jnp.logical_or(found_fast, found_fb)
         founds = jnp.logical_or(founds, new_founds_in_bucket)
 
-        match_slot = jnp.where(found_fast, first_match_slot, idx_fb).astype(SLOT_IDX_DTYPE)
+        match_slot = cast(jax.Array, jnp.where(found_fast, first_match_slot, idx_fb))
 
         bucket_full = filled_limits_u32 == bucket_size_u32
 
-        out_slot = jnp.where(new_founds_in_bucket, match_slot, filled_limits).astype(SLOT_IDX_DTYPE)
+        out_slot = cast(
+            jax.Array,
+            jnp.where(new_founds_in_bucket, match_slot, filled_limits),
+        )
 
         probes = probes + step_active.astype(SIZE_DTYPE) * bucket_size_u32
         under_limit_next = probes < max_probes_u32
 
         continue_mask = jnp.logical_and(
             step_active,
-            jnp.logical_and(~new_founds_in_bucket, jnp.logical_and(bucket_full, under_limit_next)),
+            jnp.logical_and(
+                jnp.logical_not(new_founds_in_bucket),
+                jnp.logical_and(bucket_full, under_limit_next),
+            ),
         )
 
         next_bucket_indices = (bucket_indices + probe_steps) & mask
-        updated_idxs = BucketIdx(
-            index=jnp.where(continue_mask, next_bucket_indices, bucket_indices).astype(SIZE_DTYPE),
-            slot_index=jnp.where(continue_mask, SLOT_IDX_DTYPE(0), out_slot),
+        updated_idxs = BucketIdxCls(
+            index=cast(
+                jax.Array,
+                jnp.where(continue_mask, next_bucket_indices, bucket_indices),
+            ),
+            slot_index=cast(
+                jax.Array,
+                jnp.where(continue_mask, SLOT_IDX_DTYPE(0), out_slot),
+            ),
         )
-        idxs = BucketIdx(
-            index=jnp.where(step_active, updated_idxs.index, idxs.index),
-            slot_index=jnp.where(step_active, updated_idxs.slot_index, idxs.slot_index),
+        idxs = BucketIdxCls(
+            index=cast(jax.Array, jnp.where(step_active, updated_idxs.index, idxs.index)),
+            slot_index=cast(
+                jax.Array,
+                jnp.where(step_active, updated_idxs.slot_index, idxs.slot_index),
+            ),
         )
 
         active = continue_mask
@@ -259,28 +303,31 @@ def _hashtable_lookup_parallel_internal(
 
 @jax.jit
 def _hashtable_lookup_parallel_jit(
-    table: "HashTable", inputs: Xtructurable, filled: chex.Array | bool = True
-) -> tuple[HashIdx, chex.Array]:
+    table: Any, inputs: Xtructurable, filled: chex.Array | bool = True
+) -> tuple[Any, chex.Array]:
     filled = jnp.asarray(filled)
     batch_size = inputs.shape.batch
 
     def _process_batch(filled_mask):
-        initial_idx, steps, input_uint32eds, fingerprints = jax.vmap(
+        initial_idx, steps, input_uint32eds, tag0, tag1 = jax.vmap(
             get_new_idx_byterized, in_axes=(0, None, None)
         )(inputs, table._capacity, table.seed)
 
-        idxs = BucketIdx(index=initial_idx, slot_index=jnp.zeros(batch_size, dtype=SLOT_IDX_DTYPE))
+        idxs = BucketIdxCls(
+            index=initial_idx,
+            slot_index=jnp.zeros(batch_size, dtype=SLOT_IDX_DTYPE),
+        )
         founds = jnp.zeros(batch_size, dtype=jnp.bool_)
 
         idx, found = _hashtable_lookup_parallel_internal(
-            table, inputs, input_uint32eds, idxs, steps, fingerprints, founds, filled_mask
+            table, inputs, input_uint32eds, idxs, steps, tag0, tag1, founds, filled_mask
         )
         bucket_size_u32 = SIZE_DTYPE(table.bucket_size)
-        return HashIdx(index=idx.index * bucket_size_u32 + idx.slot_index), found
+        return HashIdxCls(index=idx.index * bucket_size_u32 + idx.slot_index), found
 
     def _empty_result(_):
         return (
-            HashIdx(index=jnp.zeros(batch_size, dtype=SIZE_DTYPE)),
+            HashIdxCls(index=jnp.zeros(batch_size, dtype=SIZE_DTYPE)),
             jnp.zeros(batch_size, dtype=jnp.bool_),
         )
 
@@ -295,5 +342,5 @@ def _hashtable_lookup_parallel_jit(
 
 
 @jax.jit
-def _hashtable_getitem_jit(table: "HashTable", idx: HashIdx) -> Xtructurable:
+def _hashtable_getitem_jit(table: Any, idx: Any) -> Xtructurable:
     return table.table[idx.index]
