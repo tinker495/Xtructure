@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from functools import partial
+from typing import Any, cast
 
 import chex
 import jax
@@ -16,7 +17,6 @@ from .lookup import (
     _hashtable_lookup_jit,
     _hashtable_lookup_parallel_jit,
 )
-from .types import BucketIdx, HashIdx
 
 
 @partial(jax.jit, static_argnums=(0, 1, 2, 3, 4, 5))
@@ -39,18 +39,21 @@ def _hashtable_build_jit(
         max_probes = _capacity * bucket_size
 
     table = dataclass.default(((_capacity + 1) * bucket_size,))
-    bucket_fill_levels = jnp.zeros((_capacity + 1), dtype=jnp.uint8)
+    bucket_fill_levels = jnp.zeros((_capacity + 1), dtype=SIZE_DTYPE)
+    bucket_occupancy = jnp.zeros((_capacity + 1), dtype=jnp.uint32)
     fingerprints = jnp.zeros(((_capacity + 1) * bucket_size,), dtype=jnp.uint32)
-    return HashTable(
-        seed=seed,
-        capacity=capacity,
-        _capacity=_capacity,
-        bucket_size=bucket_size,
-        size=size,
-        table=table,
-        bucket_fill_levels=bucket_fill_levels,
-        fingerprints=fingerprints,
-        max_probes=int(max_probes),
+    table_cls = cast(Any, HashTable)
+    return table_cls(
+        seed,
+        capacity,
+        _capacity,
+        bucket_size,
+        size,
+        table,
+        bucket_fill_levels,
+        bucket_occupancy,
+        fingerprints,
+        int(max_probes),
     )
 
 
@@ -72,6 +75,7 @@ class HashTable:
     size: int
     table: Xtructurable
     bucket_fill_levels: chex.Array
+    bucket_occupancy: chex.Array
     fingerprints: chex.Array
     max_probes: int
 
@@ -91,27 +95,27 @@ class HashTable:
             dataclass, seed, capacity, bucket_size, hash_size_multiplier, max_probes
         )
 
-    def lookup_bucket(self, input: Xtructurable) -> tuple[BucketIdx, bool, chex.Array]:
+    def lookup_bucket(self, input: Xtructurable) -> tuple[Xtructurable, chex.Array, chex.Array]:
         return _hashtable_lookup_bucket_jit(self, input)
 
-    def lookup(self, input: Xtructurable) -> tuple[HashIdx, bool]:
+    def lookup(self, input: Xtructurable) -> tuple[Xtructurable, bool]:
         return _hashtable_lookup_jit(self, input)
 
     def lookup_parallel(
         self, inputs: Xtructurable, filled: chex.Array | bool = True
-    ) -> tuple[HashIdx, chex.Array]:
+    ) -> tuple[Xtructurable, chex.Array]:
         return _hashtable_lookup_parallel_jit(self, inputs, filled)
 
-    def insert(self, input: Xtructurable) -> tuple["HashTable", bool, HashIdx]:
+    def insert(self, input: Xtructurable) -> tuple["HashTable", bool, Xtructurable]:
         return _hashtable_insert_jit(self, input)
 
     def parallel_insert(
         self,
         inputs: Xtructurable,
-        filled: chex.Array | bool = None,
-        unique_key: chex.Array = None,
+        filled: chex.Array | bool | None = None,
+        unique_key: chex.Array | None = None,
     ):
         return _hashtable_parallel_insert_jit(self, inputs, filled, unique_key)
 
-    def __getitem__(self, idx: HashIdx) -> Xtructurable:
+    def __getitem__(self, idx: Xtructurable) -> Xtructurable:
         return _hashtable_getitem_jit(self, idx)

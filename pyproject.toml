@@ -1,6 +1,6 @@
 [project]
 name = "xtructure"
-version = "0.1.3"
+version = "0.1.4"
 authors = [
   {name = "tinker495", email = "wjdrbtjr495@gmail.com"},
 ]

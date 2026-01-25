@@ -88,8 +88,6 @@ class Xtructurable(Protocol[T], metaclass=_XtructurableMeta):
     ) -> T:  # Ellipsis for default value
         ...
 
-
-
     # Methods and properties added by add_string_representation_methods
     def __str__(
         self,
@@ -116,6 +114,14 @@ class Xtructurable(Protocol[T], metaclass=_XtructurableMeta):
         ...
 
     def hash_with_uint32ed(self: T, seed: int = 0) -> TypingTuple[int, chex.Array]:
+        ...
+
+    def hash_pair(self: T, seed: int = 0) -> TypingTuple[int, int]:
+        ...
+
+    def hash_pair_with_uint32ed(
+        self: T, seed: int = 0
+    ) -> TypingTuple[TypingTuple[int, int], chex.Array]:
         ...
 
     # Method added by add_comparison_operators

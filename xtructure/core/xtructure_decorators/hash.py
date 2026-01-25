@@ -69,9 +69,41 @@ def hash_fast_uint32ed(uint32ed, seed=jnp.uint32(0)):
     return _avalanche32(combined)
 
 
+@jax.jit
+def hash_fast_uint32ed_pair(uint32ed, seed=jnp.uint32(0)):
+    """Vectorized hash reducer for uint32 streams (returns two 32-bit hashes).
+
+    This is intended to support double-hashing and wide signatures without
+    requiring a second full pass over the input.
+    """
+    uint32ed = jnp.asarray(uint32ed, dtype=jnp.uint32).reshape(-1)
+    seed = jnp.uint32(seed)
+    if uint32ed.size == 0:
+        h0 = _avalanche32(seed ^ jnp.uint32(0x9E3779B1))
+        h1 = _avalanche32(seed ^ jnp.uint32(0x85EBCA6B))
+        return h0, h1
+
+    idx = jnp.arange(uint32ed.shape[0], dtype=jnp.uint32)
+    salt = idx * jnp.uint32(0x9E3779B1)
+    lanes = _avalanche32(uint32ed ^ salt ^ seed)
+
+    combined0 = jnp.bitwise_xor.reduce(lanes)
+    combined1 = jnp.bitwise_xor.reduce(lanes ^ (salt * jnp.uint32(0x85EBCA6B)))
+
+    length_mix = jnp.uint32(uint32ed.shape[0] << 2)
+    combined0 = combined0 ^ length_mix ^ seed
+    combined1 = combined1 ^ length_mix ^ (seed ^ jnp.uint32(0xC2B2AE35))
+    return _avalanche32(combined0), _avalanche32(combined1)
+
+
 def uint32ed_to_hash(uint32ed, seed):
     """Convert uint32 array to hash value."""
     return hash_fast_uint32ed(uint32ed, seed)
+
+
+def uint32ed_to_hash_pair(uint32ed, seed):
+    """Convert uint32 array to a pair of 32-bit hashes."""
+    return hash_fast_uint32ed_pair(uint32ed, seed)
 
 
 def byterize_hash_func_builder(x: Xtructurable):
@@ -161,6 +193,15 @@ def byterize_hash_func_builder(x: Xtructurable):
         """Main hash function that converts state to uint32 lanes and hashes them."""
         return uint32ed_to_hash(_to_uint32(x), seed)
 
+    def _h_pair(x, seed=0):
+        """Hash function that returns two 32-bit hashes."""
+        return uint32ed_to_hash_pair(_to_uint32(x), seed)
+
+    def _h_pair_with_uint32ed(x, seed=0):
+        """Hash function that returns two 32-bit hashes and the uint32 lanes."""
+        uint32ed = _to_uint32(x)
+        return uint32ed_to_hash_pair(uint32ed, seed), uint32ed
+
     def _h_with_uint32ed(x, seed=0):
         """
         Main hash function that converts state to uint32 lanes and hashes them.
@@ -169,18 +210,34 @@ def byterize_hash_func_builder(x: Xtructurable):
         uint32ed = _to_uint32(x)
         return uint32ed_to_hash(uint32ed, seed), uint32ed
 
-    return jax.jit(_byterize), jax.jit(_to_uint32), jax.jit(_h), jax.jit(_h_with_uint32ed)
+    return (
+        jax.jit(_byterize),
+        jax.jit(_to_uint32),
+        jax.jit(_h),
+        jax.jit(_h_with_uint32ed),
+        jax.jit(_h_pair),
+        jax.jit(_h_pair_with_uint32ed),
+    )
 
 
 def hash_function_decorator(cls):
     """
     Decorator to add a hash function to a class.
     """
-    _byterize, _to_uint32, _h, _h_with_uint32ed = byterize_hash_func_builder(cls)
+    (
+        _byterize,
+        _to_uint32,
+        _h,
+        _h_with_uint32ed,
+        _h_pair,
+        _h_pair_with_uint32ed,
+    ) = byterize_hash_func_builder(cls)
 
     setattr(cls, "bytes", property(_byterize))
     setattr(cls, "uint32ed", property(_to_uint32))
     setattr(cls, "hash", _h)
     setattr(cls, "hash_with_uint32ed", _h_with_uint32ed)
+    setattr(cls, "hash_pair", _h_pair)
+    setattr(cls, "hash_pair_with_uint32ed", _h_pair_with_uint32ed)
 
     return cls

@@ -7,7 +7,8 @@ from xtructure import HashTable
 
 def test_hash_table_lookup():
     count = 1000
-    sample = HashValueAB.random((count,))
+    key = jax.random.PRNGKey(0)
+    sample = HashValueAB.random((count,), key=key)
     table: HashTable = HashTable.build(HashValueAB, 1, int(1e4))
 
     idx, found = table.lookup_parallel(sample)
@@ -22,7 +23,8 @@ def test_hash_table_insert():
     batch = 4000
     table: HashTable = HashTable.build(HashValueAB, 1, int(1e4))
 
-    sample = HashValueAB.random((count,))
+    key = jax.random.PRNGKey(0)
+    sample = HashValueAB.random((count,), key=key)
 
     # Check initial state
     _, old_found = table.lookup_parallel(sample)
@@ -51,11 +53,12 @@ def test_same_state_insert_at_batch():
     all_samples = []
     for i in range(num):
         key = jax.random.PRNGKey(i)
-        samples = HashValueAB.random((batch,))
-        cloned_sample_num = jax.random.randint(key, (), 1, batch // 2)
-        cloned_sample_idx = jax.random.randint(key, (cloned_sample_num,), 0, batch)
+        key_samples, key_clone = jax.random.split(key)
+        samples = HashValueAB.random((batch,), key=key_samples)
+        cloned_sample_num = jax.random.randint(key_clone, (), 1, batch // 2)
+        cloned_sample_idx = jax.random.randint(key_clone, (cloned_sample_num,), 0, batch)
         cloned_sample_idx = jnp.sort(cloned_sample_idx)
-        new_clone_idx = jax.random.randint(key, (cloned_sample_num,), 0, batch)
+        new_clone_idx = jax.random.randint(key_clone, (cloned_sample_num,), 0, batch)
 
         # Create deliberate duplicates within the batch
         samples = samples.at[new_clone_idx].set(samples[cloned_sample_idx])
@@ -107,7 +110,8 @@ def test_large_hash_table():
     batch = int(1e4)
     table: HashTable = HashTable.build(HashValueAB, 1, count)
 
-    sample = HashValueAB.random((count,))
+    key = jax.random.PRNGKey(0)
+    sample = HashValueAB.random((count,), key=key)
     hash, bytes = jax.vmap(lambda x: x.hash_with_uint32ed(0))(sample)
     unique_bytes = jnp.unique(bytes, axis=0, return_index=True)[1]
     unique_bytes_len = unique_bytes.shape[0]
@@ -131,6 +135,16 @@ def test_large_hash_table():
     # Verify all states can be found
     _, found = table.lookup_parallel(sample)
     assert jnp.mean(found) == 1.0  # All states should be found
+
+    # Spot-check value integrity (guard against false positives)
+    subset_size = 1024
+    stride = count // subset_size
+    subset_idx = jnp.arange(0, subset_size * stride, stride, dtype=jnp.int32)
+    subset = sample[subset_idx]
+    subset_lookup_idx, subset_found = table.lookup_parallel(subset)
+    assert jnp.all(subset_found)
+    contents = table[subset_lookup_idx]
+    assert jnp.all(jax.vmap(lambda x, y: x == y)(contents, subset))
 
 
 def test_default_value_insertion():

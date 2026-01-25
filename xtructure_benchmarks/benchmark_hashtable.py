@@ -76,13 +76,16 @@ def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional
         # --- xtructure.HashTable Benchmark ---
         xtructure_table = HashTable.build(BenchmarkValue, 1, table_size)
 
-        def insert_op(batch):
+        def insert_op(table, batch):
             # The key and value are the same in this benchmark
-            return xtructure_table.parallel_insert(batch)[0]
+            return table.parallel_insert(batch)[0]
 
-        insert_args_supplier = (
-            lambda: (jax.device_put(keys_host),) if mode == "e2e" else (keys_device,)
-        )
+        def insert_args_supplier():
+            return (
+                xtructure_table,
+                jax.device_put(keys_host) if mode == "e2e" else keys_device,
+            )
+
         insert_durations = run_jax_trials(
             insert_op,
             trials=trials,
@@ -94,12 +97,15 @@ def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional
         table_with_data, _, _, _ = xtructure_table.parallel_insert(keys_device)
         jax.block_until_ready(table_with_data)
 
-        def lookup_op(batch):
-            return table_with_data.lookup_parallel(batch)
+        def lookup_op(table, batch):
+            return table.lookup_parallel(batch)
 
-        lookup_args_supplier = (
-            lambda: (jax.device_put(keys_host),) if mode == "e2e" else (keys_device,)
-        )
+        def lookup_args_supplier():
+            return (
+                table_with_data,
+                jax.device_put(keys_host) if mode == "e2e" else keys_device,
+            )
+
         lookup_durations = run_jax_trials(
             lookup_op,
             trials=trials,

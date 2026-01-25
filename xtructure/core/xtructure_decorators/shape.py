@@ -39,10 +39,21 @@ def add_shape_dtype_len(cls: Type[T]) -> Type[T]:
         Returns a namedtuple containing the batch shape (if present) and the shapes of all fields.
         If a field is itself a xtructure_dataclass, its shape is included as a nested namedtuple.
         """
+        # Return cached shape if available
+        # Use simple attribute access with default.
+        # 'shape' property itself prevents direct access to _shape_cache if valid?
+        # No, _shape_cache is a separate attribute.
+        try:
+            return self._shape_cache
+        except AttributeError:
+            pass
+
         # Determine batch: if all fields have a leading batch dimension of the same size, use it.
         # Otherwise, batch is ().
         if not field_names:
-            return shape_tuple((), *[])
+            result = shape_tuple((), *[])
+            object.__setattr__(self, "_shape_cache", result)
+            return result
 
         values = _field_getter(self)
         if len(field_names) == 1:
@@ -93,7 +104,10 @@ def add_shape_dtype_len(cls: Type[T]) -> Type[T]:
             if batch_shape == -1 or final_batch_shape != batch_shape:
                 final_batch_shape = -1
                 break
-        return shape_tuple(final_batch_shape, *field_shapes)
+        result = shape_tuple(final_batch_shape, *field_shapes)
+        # Cache the result using object.__setattr__ to avoid potential frozen issues or overhead
+        object.__setattr__(self, "_shape_cache", result)
+        return result
 
     setattr(cls, "shape", property(get_shape))
 
@@ -101,7 +115,14 @@ def add_shape_dtype_len(cls: Type[T]) -> Type[T]:
 
     def get_type(self) -> type_tuple:
         """Get dtypes of all fields in the dataclass"""
-        return type_tuple(*[getattr(self, field_name).dtype for field_name in field_names])
+        try:
+            return self._dtype_cache
+        except AttributeError:
+            pass
+
+        result = type_tuple(*[getattr(self, field_name).dtype for field_name in field_names])
+        object.__setattr__(self, "_dtype_cache", result)
+        return result
 
     setattr(cls, "dtype", property(get_type))
 
@@ -127,13 +148,21 @@ def add_shape_dtype_len(cls: Type[T]) -> Type[T]:
     setattr(cls, "__len__", get_len)
 
     def get_structured_type(self) -> StructuredType:
+        try:
+            return self._structured_type_cache
+        except AttributeError:
+            pass
+
         shape = self.shape
         if shape.batch == ():
-            return StructuredType.SINGLE
+            result = StructuredType.SINGLE
         elif shape.batch == -1:
-            return StructuredType.UNSTRUCTURED
+            result = StructuredType.UNSTRUCTURED
         else:
-            return StructuredType.BATCHED
+            result = StructuredType.BATCHED
+
+        object.__setattr__(self, "_structured_type_cache", result)
+        return result
 
     setattr(cls, "structured_type", property(get_structured_type))
 

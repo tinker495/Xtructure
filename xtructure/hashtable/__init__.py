@@ -1,3 +1,4 @@
-from .table import HashIdx, HashTable
+from .table import HashTable
+from .types import HashIdx
 
 __all__ = ["HashTable", "HashIdx"]
