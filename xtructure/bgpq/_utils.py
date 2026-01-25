@@ -14,6 +14,31 @@ def sort_arrays(k: chex.Array, v: Xtructurable):
     return sorted_k, sorted_v
 
 
+def _scatter_update_rows(
+    operand: chex.Array,
+    indices: chex.Array,
+    updates: chex.Array,
+    *,
+    indices_are_sorted: bool,
+) -> chex.Array:
+    scatter_indices = indices.astype(jnp.int32)[:, None]
+    update_window_dims = tuple(range(1, updates.ndim))
+    dimension_numbers = jax.lax.ScatterDimensionNumbers(
+        update_window_dims=update_window_dims,
+        inserted_window_dims=(0,),
+        scatter_dims_to_operand_dims=(0,),
+    )
+    return jax.lax.scatter(
+        operand,
+        scatter_indices,
+        updates,
+        dimension_numbers,
+        indices_are_sorted=indices_are_sorted,
+        unique_indices=True,
+        mode=jax.lax.GatherScatterMode.FILL_OR_DROP,
+    )
+
+
 @jax.jit
 def _next(current, target):
     """

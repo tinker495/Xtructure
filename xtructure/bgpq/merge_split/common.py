@@ -1,13 +1,14 @@
 import jax.numpy as jnp
 from jax import lax
 
-from xtructure.core.xtructure_numpy.array_ops import _where_no_broadcast
-
 
 def _get_sentinels(dtype):
     """Returns the min and max sentinel values for a given dtype."""
-    finfo = jnp.finfo(dtype)
-    return finfo.min, finfo.max
+    if jnp.issubdtype(dtype, jnp.floating):
+        finfo = jnp.finfo(dtype)
+        return finfo.min, finfo.max
+    iinfo = jnp.iinfo(dtype)
+    return iinfo.min, iinfo.max
 
 
 def binary_search_partition(k, a, b):
@@ -64,37 +65,28 @@ def binary_search_partition(k, a, b):
         # 2. Perform the load unconditionally.
         # 3. Use `where` to replace the loaded value with a sentinel if the
         #    original index was out of bounds.
-        cond_safe_a = jnp.asarray(is_a_safe, dtype=jnp.bool_)
         i_minus_one = jnp.asarray(i - 1)
-        safe_a_idx = _where_no_broadcast(
-            cond_safe_a,
-            i_minus_one,
-            jnp.zeros_like(i_minus_one),
-        )
+        zero_idx = jnp.zeros_like(i_minus_one)
+        safe_a_idx = lax.select(is_a_safe, i_minus_one, zero_idx)
         a_val_loaded = a[safe_a_idx]
         min_val_array = jnp.full_like(a_val_loaded, min_val)
-        a_val = _where_no_broadcast(cond_safe_a, a_val_loaded, min_val_array)
+        a_val = lax.select(is_a_safe, a_val_loaded, min_val_array)
 
-        cond_safe_b = jnp.asarray(is_b_safe, dtype=jnp.bool_)
         j_array = jnp.asarray(j)
-        safe_b_idx = _where_no_broadcast(
-            cond_safe_b,
-            j_array,
-            jnp.zeros_like(j_array),
-        )
+        zero_j = jnp.zeros_like(j_array)
+        safe_b_idx = lax.select(is_b_safe, j_array, zero_j)
         b_val_loaded = b[safe_b_idx]
         max_val_array = jnp.full_like(b_val_loaded, max_val)
-        b_val = _where_no_broadcast(cond_safe_b, b_val_loaded, max_val_array)
+        b_val = lax.select(is_b_safe, b_val_loaded, max_val_array)
 
         # The condition for a valid partition from `a`'s perspective.
         # If `a[i-1] <= b[j]`, then `i` is a valid candidate, and we can
         # potentially take even more from `a`. So, we search in `[i, high]`.
         # Otherwise, `i` is too high, and we must search in `[low, i-1]`.
         is_partition_valid = a_val <= b_val
-        cond_partition = jnp.asarray(is_partition_valid, dtype=jnp.bool_)
-        new_low = _where_no_broadcast(cond_partition, jnp.asarray(i), jnp.asarray(low_i))
-        new_high = _where_no_broadcast(
-            cond_partition,
+        new_low = lax.select(is_partition_valid, jnp.asarray(i), jnp.asarray(low_i))
+        new_high = lax.select(
+            is_partition_valid,
             jnp.asarray(high_i),
             i_minus_one,
         )

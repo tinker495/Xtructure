@@ -9,7 +9,8 @@ import jax.numpy as jnp
 
 from .merge_split import merge_arrays_parallel, merge_sort_split_idx
 
-SORT_STABLE = True  # Use stable sorting to maintain insertion order for equal keys
+_SORT_STABLE_ENV = os.environ.get("XTRUCTURE_BGPQ_SORT_STABLE", "true").lower()
+SORT_STABLE = _SORT_STABLE_ENV not in {"0", "false", "off"}
 SIZE_DTYPE = jnp.uint32
 
 # Backend selection
