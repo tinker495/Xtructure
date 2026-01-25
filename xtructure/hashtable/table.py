@@ -39,9 +39,9 @@ def _hashtable_build_jit(
         max_probes = _capacity * bucket_size
 
     table = dataclass.default(((_capacity + 1) * bucket_size,))
-    bucket_fill_levels = jnp.zeros((_capacity + 1), dtype=jnp.uint8)
-    tag0 = jnp.zeros(((_capacity + 1) * bucket_size,), dtype=jnp.uint32)
-    tag1 = jnp.zeros(((_capacity + 1) * bucket_size,), dtype=jnp.uint32)
+    bucket_fill_levels = jnp.zeros((_capacity + 1), dtype=SIZE_DTYPE)
+    bucket_occupancy = jnp.zeros((_capacity + 1), dtype=jnp.uint32)
+    fingerprints = jnp.zeros(((_capacity + 1) * bucket_size,), dtype=jnp.uint32)
     table_cls = cast(Any, HashTable)
     return table_cls(
         seed,
@@ -51,8 +51,8 @@ def _hashtable_build_jit(
         size,
         table,
         bucket_fill_levels,
-        tag0,
-        tag1,
+        bucket_occupancy,
+        fingerprints,
         int(max_probes),
     )
 
@@ -75,8 +75,8 @@ class HashTable:
     size: int
     table: Xtructurable
     bucket_fill_levels: chex.Array
-    tag0: chex.Array
-    tag1: chex.Array
+    bucket_occupancy: chex.Array
+    fingerprints: chex.Array
     max_probes: int
 
     @staticmethod
@@ -95,9 +95,7 @@ class HashTable:
             dataclass, seed, capacity, bucket_size, hash_size_multiplier, max_probes
         )
 
-    def lookup_bucket(
-        self, input: Xtructurable
-    ) -> tuple[Xtructurable, chex.Array, chex.Array, chex.Array]:
+    def lookup_bucket(self, input: Xtructurable) -> tuple[Xtructurable, chex.Array, chex.Array]:
         return _hashtable_lookup_bucket_jit(self, input)
 
     def lookup(self, input: Xtructurable) -> tuple[Xtructurable, bool]:

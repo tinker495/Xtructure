@@ -10,6 +10,7 @@ from typing_extensions import dataclass_transform  # pytype: disable=not-support
 
 FrozenInstanceError = dataclasses.FrozenInstanceError
 _RESERVED_DCLS_FIELD_NAMES = frozenset(("from_tuple", "replace", "to_tuple"))
+_INTERNAL_CACHE_KEYS = frozenset(("_shape_cache", "_dtype_cache", "_structured_type_cache"))
 
 
 @dataclass_transform()
@@ -214,7 +215,7 @@ def _flatten_with_path(dcls):
                 ordered_keys.append(name)
                 seen.add(name)
 
-    extra_keys = [k for k in dct.keys() if k not in seen]
+    extra_keys = [k for k in dct.keys() if k not in seen and k not in _INTERNAL_CACHE_KEYS]
     extra_keys.sort()
     ordered_keys.extend(extra_keys)
 
@@ -265,7 +266,7 @@ def register_dataclass_type_with_jax_tree_util(data_class, static_fields: tuple[
                     ordered_keys.append(name)
                     seen.add(name)
 
-        extra_keys = [k for k in dct.keys() if k not in seen]
+        extra_keys = [k for k in dct.keys() if k not in seen and k not in _INTERNAL_CACHE_KEYS]
         extra_keys.sort()
         ordered_keys.extend(extra_keys)
 
@@ -306,7 +307,7 @@ def register_dataclass_type_with_jax_tree_util(data_class, static_fields: tuple[
                     ordered_keys.append(name)
                     seen.add(name)
 
-        extra_keys = [k for k in dct.keys() if k not in seen]
+        extra_keys = [k for k in dct.keys() if k not in seen and k not in _INTERNAL_CACHE_KEYS]
         extra_keys.sort()
         ordered_keys.extend(extra_keys)
 
