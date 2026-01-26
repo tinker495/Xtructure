@@ -3,7 +3,6 @@ from typing import Any, Type, TypeVar
 
 import jax.numpy as jnp
 
-from ..protocol import Xtructurable
 from ..xtructure_numpy.array_ops import _update_array_on_condition
 
 T = TypeVar("T")
@@ -14,12 +13,19 @@ class _Updater:
         self.obj_instance = obj_instance
         self.indices = index
         self.cls = obj_instance.__class__
-        # Cache field order and an attrgetter for both the instance and (optionally) value instances.
-        if hasattr(self.cls, "__dataclass_fields__"):
-            self._field_names = tuple(self.cls.__dataclass_fields__.keys())
+        # Prefer per-class cached field order/getter injected by add_indexing_methods.
+        cached_names = getattr(self.cls, "__xtructure_field_names__", None)
+        cached_getter = getattr(self.cls, "__xtructure_field_getter__", None)
+        if cached_names is not None and cached_getter is not None:
+            self._field_names = cached_names
+            self._field_getter = cached_getter
         else:
-            self._field_names = tuple(getattr(self.cls, "__annotations__", {}).keys())
-        self._field_getter = attrgetter(*self._field_names) if self._field_names else None
+            # Fallback: compute from dataclass/annotations.
+            if hasattr(self.cls, "__dataclass_fields__"):
+                self._field_names = tuple(self.cls.__dataclass_fields__.keys())
+            else:
+                self._field_names = tuple(getattr(self.cls, "__annotations__", {}).keys())
+            self._field_getter = attrgetter(*self._field_names) if self._field_names else None
 
     def set(self, values_to_set):
         new_field_data = {}
@@ -88,42 +94,49 @@ class _Updater:
                 f"The .at[...].set_as_condition(...) feature expects a dataclass structure."
             )
 
-        for field_name in self.cls.__dataclass_fields__:
-            original_field_value: Xtructurable = getattr(self.obj_instance, field_name)
+        is_value_instance = isinstance(value_to_conditionally_set, self.cls)
+        values_getter = self._field_getter if is_value_instance else None
+        values_tuple = None
+        if is_value_instance and values_getter is not None:
+            values_tuple = values_getter(value_to_conditionally_set)
+            if len(self._field_names) == 1:
+                values_tuple = (values_tuple,)
 
-            update_val_for_this_field_if_true = None
-            if isinstance(value_to_conditionally_set, self.cls):
-                update_val_for_this_field_if_true = getattr(value_to_conditionally_set, field_name)
-            else:
-                update_val_for_this_field_if_true = value_to_conditionally_set
+        instance_values = self._field_getter(self.obj_instance) if self._field_getter else ()
+        if len(self._field_names) == 1:
+            instance_values = (instance_values,)
+
+        for i, (field_name, original_field_value) in enumerate(
+            zip(self._field_names, instance_values)
+        ):
+            update_val_for_this_field_if_true = (
+                values_tuple[i] if values_tuple is not None else value_to_conditionally_set
+            )
 
             try:
-                # Check if the field itself supports recursive .at.set_as_condition
-                if isinstance(getattr(original_field_value, "at", None), AtIndexer):
+                if hasattr(original_field_value, "at"):
                     nested_updater = original_field_value.at[self.indices]
-                    new_field_data[field_name] = nested_updater.set_as_condition(
-                        condition, update_val_for_this_field_if_true
-                    )
-                # Check if it's a standard JAX array that can be updated
-                elif hasattr(original_field_value, "at") and hasattr(
-                    original_field_value.at[self.indices], "set"
-                ):
-                    new_field_data[field_name] = _update_array_on_condition(
-                        original_field_value,
-                        self.indices,
-                        condition,
-                        update_val_for_this_field_if_true,
-                    )
-                else:
-                    new_field_data[field_name] = original_field_value
-            except Exception as e:
-                import sys
 
-                print(
-                    f"Warning: Could not apply conditional set to field '{field_name}' "
-                    f"of class '{self.cls.__name__}'. Error: {e}",
-                    file=sys.stderr,
-                )
+                    # Recursive dataclass update path.
+                    if hasattr(nested_updater, "set_as_condition"):
+                        new_field_data[field_name] = nested_updater.set_as_condition(
+                            condition, update_val_for_this_field_if_true
+                        )
+                        continue
+
+                    # Array-like update path.
+                    if hasattr(nested_updater, "set"):
+                        new_field_data[field_name] = _update_array_on_condition(
+                            original_field_value,
+                            self.indices,
+                            condition,
+                            update_val_for_this_field_if_true,
+                        )
+                        continue
+
+                new_field_data[field_name] = original_field_value
+            except Exception:
+                # Preserve legacy behavior: if a field can't be updated, keep original value.
                 new_field_data[field_name] = original_field_value
 
         return self.cls(**new_field_data)
@@ -158,6 +171,10 @@ def add_indexing_methods(cls: Type[T]) -> Type[T]:
         _field_names = tuple(getattr(cls, "__annotations__", {}).keys())
 
     _field_getter = attrgetter(*_field_names) if _field_names else None
+
+    # Expose cached metadata for _Updater (avoids repeated introspection).
+    setattr(cls, "__xtructure_field_names__", _field_names)
+    setattr(cls, "__xtructure_field_getter__", _field_getter)
 
     def getitem(self, index):
         """Support indexing operations on the dataclass"""

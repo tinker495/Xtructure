@@ -15,6 +15,12 @@ from .constants import DOUBLE_HASH_SECONDARY_DELTA, SIZE_DTYPE
 
 _DEDUPE_MODE_RAW = os.environ.get("XTRUCTURE_HASHTABLE_DEDUPE_MODE", "safe").strip().lower()
 
+_SORT_BACKEND = os.environ.get("XTRUCTURE_HASHTABLE_SORT_BACKEND", "stable_argsort").strip().lower()
+if _SORT_BACKEND not in {"stable_argsort", "lax_unstable", "lax_stable"}:
+    raise ValueError(
+        "Invalid XTRUCTURE_HASHTABLE_SORT_BACKEND. Expected one of: stable_argsort, lax_unstable, lax_stable."
+    )
+
 # Dedupe mode semantics:
 # - "safe" (default): exact for small keys, signature sort for wide keys with collision detection
 #   and fallback to full-row sort when needed.
@@ -31,6 +37,10 @@ if _DEDUPE_MODE not in {"approx", "safe", "exact"}:
     raise ValueError(
         "Invalid XTRUCTURE_HASHTABLE_DEDUPE_MODE. Expected one of: approx, safe, exact (or fast)."
     )
+
+
+# Exported for call-site specialization (read at import time).
+HASHTABLE_DEDUPE_MODE = _DEDUPE_MODE
 
 
 def _first_occurrence_mask(
@@ -86,6 +96,10 @@ def _compute_unique_mask_from_uint32eds(
     word_count = int(keys.shape[1])
     indices = jnp.arange(batch_len, dtype=jnp.int32)
 
+    def _stable_sort_perm(perm_in: jax.Array, key_1d: jax.Array) -> jax.Array:
+        order = jnp.argsort(key_1d[perm_in], stable=True)
+        return perm_in[order]
+
     def _full_row_sort() -> tuple[jax.Array, jax.Array]:
         if word_count == 0:
             sorted_indices = indices
@@ -99,18 +113,13 @@ def _compute_unique_mask_from_uint32eds(
                 jnp.asarray(jax.lax.select(filled, keys[:, i], sentinel), dtype=jnp.uint32)
             )
 
-        operand = tuple(sort_keys) + (indices,)
-        sorted = cast(
-            tuple[jax.Array, ...],
-            jax.lax.sort(
-                operand,
-                dimension=0,
-                is_stable=True,
-                num_keys=word_count,
-            ),
-        )
-        sorted_keys = sorted[:word_count]
-        sorted_indices = cast(jax.Array, sorted[word_count])
+        perm = indices
+        # Primary key is column 0, then 1, ...; apply stable sorts from least-significant.
+        for k in reversed(sort_keys):
+            perm = _stable_sort_perm(perm, cast(jax.Array, k))
+
+        sorted_indices = cast(jax.Array, perm)
+        sorted_keys = [cast(jax.Array, k)[sorted_indices] for k in sort_keys]
 
         row_changed = jnp.zeros((batch_len - 1,), dtype=jnp.bool_)
         for i in range(word_count):
@@ -157,15 +166,17 @@ def _compute_unique_mask_from_uint32eds(
         h3 = jnp.asarray(jax.lax.select(filled, h3, sentinel), dtype=jnp.uint32)
         h4 = jnp.asarray(jax.lax.select(filled, h4, sentinel), dtype=jnp.uint32)
 
-        sorted_h1, sorted_h2, sorted_h3, sorted_h4, sorted_indices_sig = cast(
-            tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array],
-            jax.lax.sort(
-                (h1, h2, h3, h4, indices),
-                dimension=0,
-                is_stable=True,
-                num_keys=4,
-            ),
-        )
+        perm_sig = indices
+        perm_sig = _stable_sort_perm(perm_sig, h4)
+        perm_sig = _stable_sort_perm(perm_sig, h3)
+        perm_sig = _stable_sort_perm(perm_sig, h2)
+        perm_sig = _stable_sort_perm(perm_sig, h1)
+
+        sorted_indices_sig = cast(jax.Array, perm_sig)
+        sorted_h1 = h1[sorted_indices_sig]
+        sorted_h2 = h2[sorted_indices_sig]
+        sorted_h3 = h3[sorted_indices_sig]
+        sorted_h4 = h4[sorted_indices_sig]
 
         row_changed_sig = jnp.logical_or(
             sorted_h1[1:] != sorted_h1[:-1], sorted_h2[1:] != sorted_h2[:-1]
@@ -302,15 +313,34 @@ def _compute_unique_mask_from_hash_pairs(
     h2 = jnp.asarray(jax.lax.select(filled, secondary_hashes, sentinel), dtype=jnp.uint32)
 
     indices = jnp.arange(batch_len, dtype=jnp.int32)
-    sorted_h1, sorted_h2, sorted_indices = cast(
-        tuple[jax.Array, jax.Array, jax.Array],
-        jax.lax.sort(
-            (h1, h2, indices),
-            dimension=0,
-            is_stable=True,
-            num_keys=2,
-        ),
-    )
+
+    if _SORT_BACKEND == "stable_argsort":
+
+        def _stable_sort_perm(perm_in: jax.Array, key_1d: jax.Array) -> jax.Array:
+            order = jnp.argsort(key_1d[perm_in], stable=True)
+            return perm_in[order]
+
+        perm = indices
+        # Primary key is h1; apply stable sorts from least-significant (h2).
+        perm = _stable_sort_perm(perm, h2)
+        perm = _stable_sort_perm(perm, h1)
+
+        sorted_indices = cast(jax.Array, perm)
+        sorted_h1 = h1[sorted_indices]
+        sorted_h2 = h2[sorted_indices]
+
+    else:
+        is_stable = _SORT_BACKEND == "lax_stable"
+        sorted_h1, sorted_h2, sorted_indices = cast(
+            tuple[jax.Array, jax.Array, jax.Array],
+            jax.lax.sort(
+                (h1, h2, indices),
+                dimension=0,
+                is_stable=is_stable,
+                num_keys=2,
+            ),
+        )
+
     sorted_filled = filled[sorted_indices]
 
     def _compute_from_sorted() -> tuple[chex.Array, chex.Array]:
@@ -469,3 +499,30 @@ def get_new_idx_byterized(
     step = _normalize_probe_step(secondary_hash, modulus)
     fingerprint = _mix_fingerprint(primary_hash, secondary_hash, jnp.uint32(0))
     return idx, step, uint32ed, fingerprint, primary_hash, secondary_hash
+
+
+def get_new_idx_hashed(
+    input: Xtructurable,
+    modulus: int,
+    seed: int,
+) -> tuple[chex.Array, chex.Array, chex.Array, chex.Array, chex.Array]:
+    """Hash a Xtructurable and return index, step, fingerprint, and hash pair.
+
+    This avoids materializing/returning the (potentially very wide) uint32ed buffer.
+    """
+    primary_hash, secondary_hash = cast(
+        tuple[jax.Array, jax.Array],
+        cast(Any, input).hash_pair(seed),
+    )
+    primary_hash = jnp.asarray(primary_hash, dtype=jnp.uint32)
+    secondary_hash = jnp.asarray(secondary_hash, dtype=jnp.uint32)
+    modulus_u32 = jnp.asarray(modulus, dtype=SIZE_DTYPE)
+    modulus_u32 = jnp.maximum(modulus_u32, SIZE_DTYPE(1))
+    mask = modulus_u32 - SIZE_DTYPE(1)
+    is_pow2 = jnp.logical_and(modulus_u32 > 0, (modulus_u32 & mask) == 0)
+    idx = jax.lax.select(
+        is_pow2, jnp.asarray(primary_hash, dtype=SIZE_DTYPE) & mask, primary_hash % modulus_u32
+    )
+    step = _normalize_probe_step(secondary_hash, modulus)
+    fingerprint = _mix_fingerprint(primary_hash, secondary_hash, jnp.uint32(0))
+    return idx, step, fingerprint, primary_hash, secondary_hash

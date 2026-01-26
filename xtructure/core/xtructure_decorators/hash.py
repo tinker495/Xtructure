@@ -1,5 +1,5 @@
 import os
-from typing import cast
+from typing import Any, cast
 
 import jax
 import jax.numpy as jnp
@@ -130,6 +130,17 @@ def byterize_hash_func_builder(x: Xtructurable):
     if agg_mode not in {"raw", "packed", "auto"}:
         raise ValueError("XTRUCTURE_HASH_AGG_MODE must be one of: raw, packed, auto")
 
+    stream_mode = os.environ.get("XTRUCTURE_HASH_STREAM", "auto").strip().lower()
+    if stream_mode not in {"off", "on", "auto"}:
+        raise ValueError("XTRUCTURE_HASH_STREAM must be one of: off, on, auto")
+
+    try:
+        stream_threshold = int(os.environ.get("XTRUCTURE_HASH_STREAM_THRESHOLD_U32", "8192"))
+    except ValueError as exc:
+        raise ValueError("XTRUCTURE_HASH_STREAM_THRESHOLD_U32 must be an integer") from exc
+    if stream_threshold < 0:
+        raise ValueError("XTRUCTURE_HASH_STREAM_THRESHOLD_U32 must be >= 0")
+
     if not has_agg_layout:
         use_agg_packed = False
     elif agg_mode == "packed":
@@ -213,6 +224,62 @@ def byterize_hash_func_builder(x: Xtructurable):
             return jnp.zeros((0,), dtype=jnp.uint32)
         return jnp.concatenate(flat_leaves)
 
+    def _hash_streaming_from_leaves(flat_leaves, seed):
+        """Hash without materializing the full concatenated uint32ed buffer."""
+        seed_u32 = jnp.uint32(seed)
+        if len(flat_leaves) == 0:
+            return _avalanche32(seed_u32 ^ jnp.uint32(0x9E3779B1))
+
+        combined = jnp.uint32(0)
+        const_salt = jnp.uint32(0x9E3779B1)
+
+        offset = 0
+        for leaf in flat_leaves:
+            leaf_u32 = jnp.asarray(leaf, dtype=jnp.uint32).reshape(-1)
+            seg_len = int(leaf_u32.shape[0])
+            if seg_len == 0:
+                continue
+            idx = jnp.arange(seg_len, dtype=jnp.uint32) + jnp.uint32(offset)
+            salt = idx * const_salt
+            lanes = _avalanche32(leaf_u32 ^ salt ^ seed_u32)
+            combined = combined ^ jnp.bitwise_xor.reduce(lanes)
+            offset += seg_len
+
+        combined = combined ^ jnp.uint32(offset << 2) ^ seed_u32
+        return _avalanche32(combined)
+
+    def _hash_pair_streaming_from_leaves(flat_leaves, seed):
+        """Hash pair without materializing the full concatenated uint32ed buffer."""
+        seed_u32 = jnp.uint32(seed)
+        if len(flat_leaves) == 0:
+            h0 = _avalanche32(seed_u32 ^ jnp.uint32(0x9E3779B1))
+            h1 = _avalanche32(seed_u32 ^ jnp.uint32(0x85EBCA6B))
+            return h0, h1
+
+        combined0 = jnp.uint32(0)
+        combined1 = jnp.uint32(0)
+        const_salt = jnp.uint32(0x9E3779B1)
+        const_b = jnp.uint32(0x85EBCA6B)
+        const_c = jnp.uint32(0xC2B2AE35)
+
+        offset = 0
+        for leaf in flat_leaves:
+            leaf_u32 = jnp.asarray(leaf, dtype=jnp.uint32).reshape(-1)
+            seg_len = int(leaf_u32.shape[0])
+            if seg_len == 0:
+                continue
+            idx = jnp.arange(seg_len, dtype=jnp.uint32) + jnp.uint32(offset)
+            salt = idx * const_salt
+            lanes = _avalanche32(leaf_u32 ^ salt ^ seed_u32)
+            combined0 = combined0 ^ jnp.bitwise_xor.reduce(lanes)
+            combined1 = combined1 ^ jnp.bitwise_xor.reduce(lanes ^ (salt * const_b))
+            offset += seg_len
+
+        length_mix = jnp.uint32(offset << 2)
+        combined0 = combined0 ^ length_mix ^ seed_u32
+        combined1 = combined1 ^ length_mix ^ (seed_u32 ^ const_c)
+        return _avalanche32(combined0), _avalanche32(combined1)
+
     if use_agg_packed:
 
         def _words_all_from_packed_instance(packed):
@@ -247,15 +314,43 @@ def byterize_hash_func_builder(x: Xtructurable):
 
     else:
         _byterize_fn = _byterize_raw
-        _to_uint32_fn = _to_uint32_raw
+        _to_uint32_fn = cast(Any, jax.jit(_to_uint32_raw))
 
     def _h(x, seed=0):
         """Main hash function that converts state to uint32 lanes and hashes them."""
-        return uint32ed_to_hash(_to_uint32_fn(x), seed)
+        if use_agg_packed or stream_mode == "off":
+            return uint32ed_to_hash(_to_uint32_fn(x), seed)
+
+        uint32_leaves = jax.tree_util.tree_map(_leaf_to_uint32, x)
+        flat_leaves, _ = jax.tree_util.tree_flatten(uint32_leaves)
+        total_len = 0
+        for leaf in flat_leaves:
+            total_len += int(jnp.asarray(leaf).shape[0])
+
+        if stream_mode == "auto" and total_len <= stream_threshold:
+            if len(flat_leaves) == 0:
+                return uint32ed_to_hash(jnp.zeros((0,), dtype=jnp.uint32), seed)
+            return uint32ed_to_hash(jnp.concatenate(flat_leaves), seed)
+
+        return _hash_streaming_from_leaves(flat_leaves, seed)
 
     def _h_pair(x, seed=0):
         """Hash function that returns two 32-bit hashes."""
-        return uint32ed_to_hash_pair(_to_uint32_fn(x), seed)
+        if use_agg_packed or stream_mode == "off":
+            return uint32ed_to_hash_pair(_to_uint32_fn(x), seed)
+
+        uint32_leaves = jax.tree_util.tree_map(_leaf_to_uint32, x)
+        flat_leaves, _ = jax.tree_util.tree_flatten(uint32_leaves)
+        total_len = 0
+        for leaf in flat_leaves:
+            total_len += int(jnp.asarray(leaf).shape[0])
+
+        if stream_mode == "auto" and total_len <= stream_threshold:
+            if len(flat_leaves) == 0:
+                return uint32ed_to_hash_pair(jnp.zeros((0,), dtype=jnp.uint32), seed)
+            return uint32ed_to_hash_pair(jnp.concatenate(flat_leaves), seed)
+
+        return _hash_pair_streaming_from_leaves(flat_leaves, seed)
 
     def _h_pair_with_uint32ed(x, seed=0):
         """Hash function that returns two 32-bit hashes and the uint32 lanes."""
@@ -271,8 +366,8 @@ def byterize_hash_func_builder(x: Xtructurable):
         return uint32ed_to_hash(uint32ed, seed), uint32ed
 
     return (
-        jax.jit(_byterize_fn),
-        jax.jit(_to_uint32_fn),
+        _byterize_fn,
+        _to_uint32_fn,
         jax.jit(_h),
         jax.jit(_h_with_uint32ed),
         jax.jit(_h_pair),

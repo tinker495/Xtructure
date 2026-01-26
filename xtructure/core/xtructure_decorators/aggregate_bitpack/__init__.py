@@ -232,9 +232,9 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
             return words
 
         tail = jnp.asarray(packed.tail, dtype=jnp.uint8).reshape((flat_n, tail_bytes))
-        last = jnp.uint32(0)
-        for i in range(tail_bytes):
-            last = last | (tail[:, i].astype(jnp.uint32) << jnp.uint32(8 * i))
+        shifts = jnp.arange(tail_bytes, dtype=jnp.uint32) * jnp.uint32(8)
+        last_parts = tail.astype(jnp.uint32) << shifts[None, :]
+        last = jnp.bitwise_or.reduce(last_parts, axis=1)
         if stored_words_len:
             return jnp.concatenate([words, last[:, None]], axis=1)
         return last[:, None]
@@ -276,6 +276,45 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
             return vals.astype(s.unpack_dtype)
         return vals.astype(s.unpack_dtype)
 
+    def _decode_field_all(words_all: jax.Array, s: _AggLeafSpec, indices: Any) -> jax.Array:
+        """Decode selected flattened indices for one field for all rows.
+
+        Args:
+            words_all: (flat_n, words_all_len) uint32.
+        Returns:
+            (flat_n, nvalues_selected) array with dtype per s.unpack_dtype.
+        """
+        idxs = _normalize_indices(indices, nvalues=s.nvalues)
+        bit_pos = jnp.uint32(s.bit_offset) + idxs.astype(jnp.uint32) * jnp.uint32(s.bits)
+
+        word_idx = jnp.right_shift(bit_pos, jnp.uint32(5)).astype(jnp.int32)
+        shift = (bit_pos & jnp.uint32(31)).astype(jnp.uint32)
+
+        flat_n = int(words_all.shape[0])
+        words_padded = jnp.concatenate(
+            [words_all, jnp.zeros((flat_n, 1), dtype=jnp.uint32)], axis=1
+        )
+
+        w0 = jnp.take(words_padded, word_idx, axis=1)
+        w1 = jnp.take(words_padded, word_idx + 1, axis=1)
+
+        shift2d = shift[None, :]
+        low = jnp.right_shift(w0, shift2d)
+        high = jnp.where(
+            shift2d == 0,
+            jnp.uint32(0),
+            jnp.left_shift(w1, jnp.uint32(32) - shift2d),
+        )
+
+        mask = jnp.uint32(0xFFFFFFFF) if s.bits == 32 else jnp.uint32((1 << s.bits) - 1)
+        vals = jnp.bitwise_and(jnp.bitwise_or(low, high), mask).astype(jnp.uint32)
+
+        if s.bits == 1:
+            if s.unpack_dtype == jnp.bool_:
+                return vals.astype(jnp.bool_)
+            return vals.astype(s.unpack_dtype)
+        return vals.astype(s.unpack_dtype)
+
     # Add unpacking on Packed (full unpack).
     def unpacked_prop(self):
         batch = getattr(self.shape, "batch", ())
@@ -287,9 +326,7 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
         # then reconstruct nested view instances.
         decoded_by_path: dict[tuple[str, ...], jax.Array] = {}
         for s in specs:
-            decoded = jax.vmap(lambda row: _decode_field(row, s, None))(
-                words_all
-            )  # (flat_n, nvalues)
+            decoded = _decode_field_all(words_all, s, None)
             decoded = decoded.reshape(batch + s.unpacked_shape)
             decoded_by_path[s.path] = decoded
 
@@ -353,7 +390,7 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
             raise TypeError(f"{packed_name} is UNSTRUCTURED; cannot unpack_field.")
         words_all = _words_all_from_packed(self)
 
-        decoded = jax.vmap(lambda row: _decode_field(row, spec, indices))(words_all)
+        decoded = _decode_field_all(words_all, spec, indices)
 
         # Shape the output.
         flat_n = decoded.shape[0]

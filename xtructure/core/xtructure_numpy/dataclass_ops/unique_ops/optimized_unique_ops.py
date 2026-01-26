@@ -139,35 +139,46 @@ def unique_mask(
     # 2. Wide Hashing to reduce sort columns (128-bit)
     hashes = _hash_to_wide(keys_flat)
 
-    # 3. Handle filled: invalid items get MAX_KEY so they sort to the end
-    if filled is not None:
-        for i in range(len(hashes)):
-            dtype = hashes[i].dtype
-            max_val = jnp.array(jnp.iinfo(dtype).max, dtype=dtype)
-            hashes[i] = jnp.where(filled, hashes[i], max_val)
-
-    # 4. Prepare columns for lexsort
-    # Lexsort expects [least_significant, ..., most_significant]
-    sort_keys = []
-
-    # Tertiary key: original index (stable tie-breaking if hashes and keys are equal)
-    sort_keys.append(jnp.arange(batch_len_i, dtype=jnp.int32))
+    # 3. Effective mask: filled AND finite(cost) when key is provided.
+    if filled is None:
+        effective_filled = jnp.ones((batch_len_i,), dtype=jnp.bool_)
+    else:
+        effective_filled = jnp.asarray(filled, dtype=jnp.bool_)
 
     if key is not None:
-        # Secondary key: cost (minimize cost within same hash group)
-        if filled is not None:
-            inf_fill = jnp.array(jnp.inf, dtype=key.dtype)
-            valid_key = jnp.where(filled, key, inf_fill)
+        key_arr = jnp.asarray(key)
+        # Docstring semantics: entries with +inf cost are excluded.
+        finite_key = key_arr < jnp.array(jnp.inf, dtype=key_arr.dtype)
+        effective_filled = jnp.logical_and(effective_filled, finite_key)
+
+    # 4. Handle filled: invalid items get MAX_KEY so they sort to the end
+    for i in range(len(hashes)):
+        dtype = hashes[i].dtype
+        if jnp.issubdtype(dtype, jnp.integer) or dtype == jnp.bool_:
+            max_val = jnp.array(jnp.iinfo(dtype).max, dtype=dtype)
+        elif jnp.issubdtype(dtype, jnp.floating):
+            max_val = jnp.array(jnp.finfo(dtype).max, dtype=dtype)
         else:
-            valid_key = key
-        sort_keys.append(valid_key)
+            raise TypeError(f"Unsupported key dtype for unique_mask: {dtype}")
+        hashes[i] = jnp.where(effective_filled, hashes[i], max_val)
 
-    # Primary key: hashes (to group identical states)
-    # Reversed so the first hash is the most significant sorting factor.
-    sort_keys.extend(reversed(hashes))
+    def _stable_sort_perm(perm_in: jax.Array, key_1d: jax.Array) -> jax.Array:
+        order = jnp.argsort(key_1d[perm_in], stable=True)
+        return perm_in[order]
 
-    # 5. Perform Lexsort
-    perm = jnp.lexsort(sort_keys)
+    # 5. Stable multi-pass argsort to avoid lexsort / multi-key lax.sort.
+    # Start perm as arange to get smallest-index tie-breaking for free.
+    perm = jnp.arange(batch_len_i, dtype=jnp.int32)
+
+    if key is not None:
+        key_arr2 = jnp.asarray(key)
+        inf_fill = jnp.array(jnp.inf, dtype=key_arr2.dtype)
+        valid_key = jnp.where(effective_filled, key_arr2, inf_fill)
+        perm = _stable_sort_perm(perm, valid_key)
+
+    # Hash keys: least significant first so the first hash becomes most significant.
+    for h in reversed(hashes):
+        perm = _stable_sort_perm(perm, h)
 
     # 6. Compute unique mask from sorted hashes
     sorted_hashes = [h[perm] for h in hashes]
@@ -180,10 +191,9 @@ def unique_mask(
 
     mask_sorted = jnp.concatenate([jnp.array([True]), is_diff])
 
-    # 7. Filter out the "filled=False" group
-    if filled is not None:
-        is_valid_sorted = filled[perm]
-        mask_sorted = jnp.logical_and(mask_sorted, is_valid_sorted)
+    # 7. Filter out the invalid group
+    is_valid_sorted = effective_filled[perm]
+    mask_sorted = jnp.logical_and(mask_sorted, is_valid_sorted)
 
     # 8. Map back to original order
     final_mask = jnp.zeros(batch_len_i, dtype=jnp.bool_).at[perm].set(mask_sorted)

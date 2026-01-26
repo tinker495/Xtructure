@@ -10,10 +10,15 @@ Design notes:
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 import chex
 import jax
 import jax.numpy as jnp
 import numpy as np
+
+from .kernels import pack_words_all_xla
+from .spec import _AggLeafSpec, _build_word_contrib_tables
 
 
 def packed_num_bytes(num_values: int, active_bits: int) -> int:
@@ -48,7 +53,34 @@ def packed_num_bytes(num_values: int, active_bits: int) -> int:
     return int(num_blocks * num_bytes_per_block)
 
 
-def _mask_u32(bits: int) -> jnp.uint32:
+@lru_cache(maxsize=None)
+def _get_block_pack_tables(active_bits: int):
+    """Cache per-block word contribution tables for bitpacking."""
+    if not isinstance(active_bits, int):
+        raise TypeError(f"active_bits must be int, got {type(active_bits).__name__}")
+    if active_bits < 1 or active_bits > 32:
+        raise ValueError(f"active_bits must be 1-32, got {active_bits}")
+
+    L = int(np.lcm(active_bits, 8))
+    values_per_block = int(L // active_bits)
+    bytes_per_block = int(L // 8)
+    words_all_len = int((L + 31) // 32) if L else 0
+
+    spec = _AggLeafSpec(
+        path=("leaf",),
+        bits=int(active_bits),
+        unpacked_shape=(values_per_block,),
+        nvalues=values_per_block,
+        bit_offset=0,
+        bit_len=int(values_per_block * active_bits),
+        unpack_dtype=jnp.uint32,
+        declared_dtype=jnp.uint32,
+    )
+    tables = _build_word_contrib_tables([spec], words_all_len=words_all_len)
+    return tables, values_per_block, bytes_per_block, words_all_len
+
+
+def _mask_u32(bits: int) -> chex.Array:
     return jnp.uint32(0xFFFFFFFF) if bits == 32 else jnp.uint32((1 << bits) - 1)
 
 
@@ -138,45 +170,30 @@ def to_uint8(values: chex.Array, active_bits: int = 1) -> chex.Array:
             )
         grouped = values_flat.reshape((-1, values_per_byte))
 
-        def pack_group(group):
-            out = jnp.uint8(0)
-            for i in range(values_per_byte):
-                out = out | (group[i].astype(jnp.uint8) << jnp.uint8(i * active_bits))
-            return out
+        mask = jnp.uint8((1 << active_bits) - 1)
+        shifts = (jnp.arange(values_per_byte, dtype=jnp.uint8) * jnp.uint8(active_bits)).astype(
+            jnp.uint8
+        )
 
-        return jax.vmap(pack_group)(grouped)
+        grouped_u8 = (grouped.astype(jnp.uint8) & mask).astype(jnp.uint8)
+        parts = jnp.left_shift(grouped_u8, shifts[None, :])
+        return jnp.bitwise_or.reduce(parts, axis=1).astype(jnp.uint8)
 
     # General path for any other bit-width (3..32 except 4,8). Use L = lcm(active_bits, 8) to align blocks.
-    L = int(np.lcm(active_bits, 8))  # total bits per block
-    num_values_per_block = L // active_bits
-    num_bytes_per_block = L // 8
+    tables, num_values_per_block, num_bytes_per_block, _words_all_len = _get_block_pack_tables(
+        active_bits
+    )
 
     padding = (
         num_values_per_block - (values_flat.size % num_values_per_block)
     ) % num_values_per_block
     if padding:
         values_flat = jnp.concatenate([values_flat, jnp.zeros((padding,), dtype=values_flat.dtype)])
-    grouped = values_flat.reshape((-1, num_values_per_block))
 
-    # General path for any other bit-width: pack into uint32 buffers and bitcast
-    def pack_block(group):
-        bits_needed = num_values_per_block * active_bits
-        words_needed = (bits_needed + 31) // 32
-
-        scratch = jnp.zeros((words_needed,), dtype=jnp.uint32)
-
-        for i in range(num_values_per_block):
-            val = group[i]
-            # Must cast to uint32 for shift operations inside _insert_bits
-            scratch = _insert_bits(
-                scratch, jnp.uint32(i * active_bits), val.astype(jnp.uint32), active_bits
-            )
-
-        out_bytes = jax.lax.bitcast_convert_type(scratch, jnp.uint8)
-        return out_bytes.reshape(-1)[:num_bytes_per_block]
-
-    packed = jax.vmap(pack_block)(grouped)
-    return packed.reshape((-1,))
+    grouped = values_flat.reshape((-1, num_values_per_block)).astype(jnp.uint32)
+    words = pack_words_all_xla(grouped, tables)
+    bytes_all = jax.lax.bitcast_convert_type(words, jnp.uint8).reshape((words.shape[0], -1))
+    return bytes_all[:, :num_bytes_per_block].reshape((-1,)).astype(jnp.uint8)
 
 
 def from_uint8(
@@ -211,19 +228,16 @@ def from_uint8(
         values_per_byte = 8 // active_bits
         mask = jnp.uint8((1 << active_bits) - 1)
 
-        def unpack_byte(b):
-            vals = []
-            for i in range(values_per_byte):
-                vals.append((b >> jnp.uint8(i * active_bits)) & mask)
-            return jnp.array(vals, dtype=jnp.uint8)
-
-        groups = jax.vmap(unpack_byte)(packed_bytes)
-        all_values = groups.reshape((-1,))
+        shifts = (jnp.arange(values_per_byte, dtype=jnp.uint8) * jnp.uint8(active_bits)).astype(
+            jnp.uint8
+        )
+        vals = jnp.right_shift(packed_bytes[:, None], shifts[None, :]) & mask
+        all_values = vals.reshape((-1,))
         return all_values[:num_target_elements].reshape(target_shape)
 
-    L = int(np.lcm(active_bits, 8))
-    num_values_per_block = L // active_bits
-    num_bytes_per_block = L // 8
+    tables, num_values_per_block, num_bytes_per_block, words_all_len = _get_block_pack_tables(
+        active_bits
+    )
     # Avoid Python int overflow and handle active_bits == 32.
     mask = jnp.uint32(0xFFFFFFFF) if active_bits == 32 else jnp.uint32((1 << active_bits) - 1)
 
@@ -231,29 +245,31 @@ def from_uint8(
     total_bytes = total_blocks * num_bytes_per_block
     if total_bytes != packed_bytes.size:
         packed_bytes = jnp.pad(packed_bytes, (0, total_bytes - packed_bytes.size), mode="constant")
+
     grouped = packed_bytes.reshape((-1, num_bytes_per_block))
+    pad = (-num_bytes_per_block) % 4
+    if pad:
+        grouped = jnp.pad(grouped, ((0, 0), (0, pad)), mode="constant", constant_values=0)
 
-    def unpack_block(byte_group):
-        # Cast bytes to uint32 words to use optimized _extract_bits
-        # Pad to multiple of 4 bytes first
-        pad = (-num_bytes_per_block) % 4
-        if pad:
-            byte_group = jnp.pad(byte_group, (0, pad), constant_values=0)
+    words = jax.lax.bitcast_convert_type(
+        grouped.reshape((-1, words_all_len, 4)), jnp.uint32
+    ).reshape((-1, words_all_len))
+    words_padded = jnp.concatenate(
+        [words, jnp.zeros((words.shape[0], 1), dtype=jnp.uint32)], axis=1
+    )
 
-        words = jax.lax.bitcast_convert_type(byte_group.reshape(-1, 4), jnp.uint32).reshape(-1)
+    bit_pos = jnp.arange(num_values_per_block, dtype=jnp.uint32) * jnp.uint32(active_bits)
+    word_idx = jnp.right_shift(bit_pos, jnp.uint32(5)).astype(jnp.int32)
+    shift = (bit_pos & jnp.uint32(31)).astype(jnp.uint32)
 
-        # Extract values
-        # Since we are inside a block, indices are small, no overflow risk
-        idxs = jnp.arange(num_values_per_block, dtype=jnp.uint32)
+    w0 = jnp.take(words_padded, word_idx, axis=1)
+    w1 = jnp.take(words_padded, word_idx + 1, axis=1)
 
-        def extract_one(i):
-            return _extract_bits(words, i * jnp.uint32(active_bits), active_bits)
+    shift2d = shift[None, :]
+    low = jnp.right_shift(w0, shift2d)
+    high = jnp.where(shift2d == 0, jnp.uint32(0), jnp.left_shift(w1, jnp.uint32(32) - shift2d))
+    vals = jnp.bitwise_and(jnp.bitwise_or(low, high), mask)
 
-        vals = jax.vmap(extract_one)(idxs)
-
-        out_dtype = jnp.uint8 if active_bits <= 8 else jnp.uint32
-        return vals.astype(out_dtype)
-
-    blocks = jax.vmap(unpack_block)(grouped)
-    all_values = blocks.reshape((-1,))
+    out_dtype = jnp.uint8 if active_bits <= 8 else jnp.uint32
+    all_values = vals.astype(out_dtype).reshape((-1,))
     return all_values[:num_target_elements].reshape(target_shape)

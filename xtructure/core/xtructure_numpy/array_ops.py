@@ -47,26 +47,41 @@ def _update_array_on_condition(
     indices_array = jnp.reshape(indices_array, (num_updates,))
     index_dtype = indices_array.dtype
     invalid_index = jnp.array(original_array.shape[0], dtype=index_dtype)
-    sentinel_value = jnp.array(num_updates, dtype=index_dtype)
 
-    update_order = jnp.arange(num_updates, dtype=index_dtype)
+    # Enforce drop semantics for out-of-bounds 1D indices.
+    # Avoid int64 casts; many environments run with x64 disabled.
+    if not jnp.issubdtype(index_dtype, jnp.integer):
+        raise TypeError(f"indices must be an integer array, got dtype={index_dtype}")
 
-    # Optimized: Use scalar broadcasting in jnp.where instead of full_like arrays
-    # and bypass Python-side shape checks of _where_no_broadcast for internal logic
-    true_indices = jnp.where(condition, indices_array, invalid_index)
-    true_positions = jnp.where(condition, update_order, sentinel_value)
+    n0 = jnp.array(original_array.shape[0], dtype=index_dtype)
+    if jnp.issubdtype(index_dtype, jnp.unsignedinteger):
+        in_bounds = indices_array < n0
+    else:
+        zero = jnp.array(0, dtype=index_dtype)
+        in_bounds = jnp.logical_and(indices_array >= zero, indices_array < n0)
 
-    first_true_pos = jnp.full((original_array.shape[0] + 1,), sentinel_value, dtype=index_dtype)
-    first_true_pos = first_true_pos.at[true_indices].min(true_positions, mode="drop")
+    cond_flat = jnp.reshape(condition, (num_updates,))
+    cond_valid = jnp.logical_and(cond_flat, in_bounds)
 
-    first_true_for_updates = jnp.take(first_true_pos, indices_array, mode="clip")
-    apply_mask = condition & (first_true_for_updates == update_order)
+    true_indices = jnp.where(cond_valid, indices_array, invalid_index)
 
-    # Optimized: Use jnp.where directly
-    safe_indices = jnp.where(apply_mask, indices_array, invalid_index)
+    # Stable sort by index; within each index group, earlier update_order comes first.
+    perm = jnp.argsort(true_indices, stable=True)
+    sorted_true_indices = true_indices[perm]
 
+    if num_updates == 1:
+        winners_sorted = sorted_true_indices != invalid_index
+    else:
+        is_first = jnp.concatenate(
+            [jnp.array([True]), sorted_true_indices[1:] != sorted_true_indices[:-1]], axis=0
+        )
+        winners_sorted = jnp.logical_and(is_first, sorted_true_indices != invalid_index)
+
+    # Map winner mask back to original update order (perm is a bijection).
+    winners = jnp.zeros((num_updates,), dtype=jnp.bool_).at[perm].set(winners_sorted)
+
+    safe_indices = jnp.where(winners, indices_array, invalid_index)
     value_array = jnp.asarray(values_to_set, dtype=original_array.dtype)
-
     return original_array.at[safe_indices].set(value_array, mode="drop")
 
 
