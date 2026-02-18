@@ -9,7 +9,7 @@ import jax.numpy as jnp
 
 from ..core import Xtructurable
 from .constants import SIZE_DTYPE, SLOT_IDX_DTYPE
-from .hash_utils import get_new_idx_byterized
+from .hash_utils import get_new_idx_hashed
 from .types import BucketIdx, HashIdx
 
 BucketIdxCls = cast(Any, BucketIdx)
@@ -113,9 +113,9 @@ def _hashtable_lookup_internal(
 def _hashtable_lookup_bucket_jit(
     table: Any, input: Xtructurable
 ) -> tuple[Any, chex.Array, chex.Array]:
-    index, step, _uint32ed, fingerprint, _primary_hash, _secondary_hash = cast(
+    index, step, fingerprint, _primary_hash, _secondary_hash = cast(
         Any,
-        get_new_idx_byterized(input, table._capacity, table.seed),
+        get_new_idx_hashed(input, table._capacity, table.seed),
     )
     idx = BucketIdxCls(index=index, slot_index=SLOT_IDX_DTYPE(0))
     idx, found = _hashtable_lookup_internal(table, input, idx, step, fingerprint, jnp.bool_(False))
@@ -288,9 +288,9 @@ def _hashtable_lookup_parallel_jit(
     batch_size = inputs.shape.batch
 
     def _process_batch(filled_mask):
-        initial_idx, steps, _uint32eds, fingerprints, _primary_hashes, _secondary_hashes = cast(
+        initial_idx, steps, fingerprints, _primary_hashes, _secondary_hashes = cast(
             Any,
-            jax.vmap(get_new_idx_byterized, in_axes=(0, None, None))(
+            jax.vmap(get_new_idx_hashed, in_axes=(0, None, None))(
                 inputs, table._capacity, table.seed
             ),
         )

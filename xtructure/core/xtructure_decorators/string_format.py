@@ -22,6 +22,7 @@ def add_string_representation_methods(cls: Type[T]) -> Type[T]:
     a more informative string representation.
 
     It handles instances categorized by `structured_type` differently:
+
     - `SINGLE`: Uses the original `__str__` (or `repr` if basic) of the instance.
     - `BATCHED`: Provides a summarized view if the batch is large, showing
       the first few and last few elements, along with the batch shape.

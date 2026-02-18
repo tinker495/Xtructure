@@ -53,6 +53,14 @@ xtructure.core.structuredtype module
    :show-inheritance:
    :undoc-members:
 
+xtructure.core.type\_utils module
+---------------------------------
+
+.. automodule:: xtructure.core.type_utils
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
 Module contents
 ---------------
 

@@ -11,10 +11,13 @@ def add_comparison_operators(cls: Type[T]) -> Type[T]:
     Adds custom __eq__ and __ne__ methods to the class.
 
     Semantics:
+
     - For two instances of the same xtructure dataclass type, comparisons are performed
       field-wise and then **reduced** to a single boolean:
-        - `__eq__`: True iff *all* fields are equal (via `jnp.all(x == y)` per field).
-        - `__ne__`: True iff *any* field is different (via `jnp.any(x != y)` per field).
+
+      - `__eq__`: True iff *all* fields are equal (via `jnp.all(x == y)` per field).
+      - `__ne__`: True iff *any* field is different (via `jnp.any(x != y)` per field).
+
     - If `other` is not the same type, returns `NotImplemented`.
 
     Note: these operators return a scalar boolean (JAX bool array / Python bool),

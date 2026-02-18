@@ -10,7 +10,12 @@ import jax.numpy as jnp
 from ..core import Xtructurable
 from ..core.xtructure_numpy.array_ops import _where_no_broadcast
 from .constants import SIZE_DTYPE, SLOT_IDX_DTYPE
-from .hash_utils import _compute_unique_mask_from_uint32eds, get_new_idx_byterized
+from .hash_utils import (
+    HASHTABLE_DEDUPE_MODE,
+    _compute_unique_mask_from_hash_pairs,
+    get_new_idx_byterized,
+    get_new_idx_hashed,
+)
 from .insert_pallas import pallas_insert_enabled, reserve_slots_pallas
 from .insert_triton import reserve_slots_triton, triton_insert_enabled
 from .lookup import _hashtable_lookup_bucket_jit, _hashtable_lookup_parallel_internal
@@ -240,13 +245,16 @@ def _hashtable_parallel_insert_internal_triton(
     bucket_size = int(table.bucket_size)
     capacity = int(table._capacity)
 
-    occ, out_bucket, out_slot, inserted = reserve_slots_triton(
-        table.bucket_occupancy,
-        start_bucket_idx,
-        probe_steps,
-        updatable,
-        bucket_size=bucket_size,
-        capacity=capacity,
+    occ, out_bucket, out_slot, inserted = cast(
+        tuple[jax.Array, jax.Array, jax.Array, jax.Array],
+        reserve_slots_triton(
+            table.bucket_occupancy,
+            start_bucket_idx,
+            probe_steps,
+            updatable,
+            bucket_size=bucket_size,
+            capacity=capacity,
+        ),
     )
 
     bucket_size_u32 = SIZE_DTYPE(bucket_size)
@@ -299,15 +307,18 @@ def _hashtable_parallel_insert_internal_pallas(
     bucket_size = int(table.bucket_size)
     capacity = int(table._capacity)
 
-    fill, occ, out_bucket, out_slot, inserted = reserve_slots_pallas(
-        table.bucket_fill_levels,
-        table.bucket_occupancy,
-        start_bucket_idx,
-        probe_steps,
-        updatable,
-        bucket_size=bucket_size,
-        capacity=capacity,
-        backend="mosaic_tpu",
+    fill, occ, out_bucket, out_slot, inserted = cast(
+        tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array],
+        reserve_slots_pallas(
+            table.bucket_fill_levels,
+            table.bucket_occupancy,
+            start_bucket_idx,
+            probe_steps,
+            updatable,
+            bucket_size=bucket_size,
+            capacity=capacity,
+            backend="mosaic_tpu",
+        ),
     )
 
     bucket_size_u32 = SIZE_DTYPE(bucket_size)
@@ -354,18 +365,36 @@ def _hashtable_parallel_insert_jit(
     bucket_size_u32 = SIZE_DTYPE(table.bucket_size)
 
     def _process_insert(filled_mask):
-        initial_idx, steps, uint32eds, fingerprints, _primary_hashes, _secondary_hashes = cast(
-            tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array, jax.Array],
-            jax.vmap(get_new_idx_byterized, in_axes=(0, None, None))(
-                inputs, table._capacity, table.seed
-            ),
-        )
-
-        unique_filled, representative_indices = _compute_unique_mask_from_uint32eds(
-            uint32eds=uint32eds,
-            filled=filled_mask,
-            unique_key=unique_key,
-        )
+        if HASHTABLE_DEDUPE_MODE == "approx":
+            # Approx mode: dedupe on hash pairs only (no collision detection).
+            initial_idx, steps, fingerprints, primary_hashes, secondary_hashes = cast(
+                tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array],
+                jax.vmap(get_new_idx_hashed, in_axes=(0, None, None))(
+                    inputs, table._capacity, table.seed
+                ),
+            )
+            unique_filled, representative_indices = _compute_unique_mask_from_hash_pairs(
+                primary_hashes,
+                secondary_hashes,
+                filled_mask,
+                unique_key,
+                uint32eds=None,
+            )
+        else:
+            # Safe/exact: compute uint32ed for collision detection / full-row dedupe fallback.
+            initial_idx, steps, uint32eds, fingerprints, primary_hashes, secondary_hashes = cast(
+                tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array, jax.Array],
+                jax.vmap(get_new_idx_byterized, in_axes=(0, None, None))(
+                    inputs, table._capacity, table.seed
+                ),
+            )
+            unique_filled, representative_indices = _compute_unique_mask_from_hash_pairs(
+                primary_hashes,
+                secondary_hashes,
+                filled_mask,
+                unique_key,
+                uint32eds=uint32eds,
+            )
 
         idx = BucketIdxCls(index=initial_idx, slot_index=jnp.zeros(batch_len, dtype=SLOT_IDX_DTYPE))
 
