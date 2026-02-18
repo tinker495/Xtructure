@@ -1,6 +1,14 @@
 xtructure.core.xtructure\_decorators package
 ============================================
 
+Subpackages
+-----------
+
+.. toctree::
+   :maxdepth: 4
+
+   xtructure.core.xtructure_decorators.aggregate_bitpack
+
 Submodules
 ----------
 
@@ -8,6 +16,14 @@ xtructure.core.xtructure\_decorators.annotate module
 ----------------------------------------------------
 
 .. automodule:: xtructure.core.xtructure_decorators.annotate
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+xtructure.core.xtructure\_decorators.bitpack\_accessors module
+--------------------------------------------------------------
+
+.. automodule:: xtructure.core.xtructure_decorators.bitpack_accessors
    :members:
    :show-inheritance:
    :undoc-members:
@@ -36,26 +52,18 @@ xtructure.core.xtructure\_decorators.indexing module
    :show-inheritance:
    :undoc-members:
 
-xtructure.core.xtructure\_decorators.bitpack\_accessors module
--------------------------------------------------------------
-
-.. automodule:: xtructure.core.xtructure_decorators.bitpack_accessors
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
-xtructure.core.xtructure\_decorators.aggregate\_bitpack module
--------------------------------------------------------------
-
-.. automodule:: xtructure.core.xtructure_decorators.aggregate_bitpack
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
 xtructure.core.xtructure\_decorators.io module
 ----------------------------------------------
 
 .. automodule:: xtructure.core.xtructure_decorators.io
+   :members:
+   :show-inheritance:
+   :undoc-members:
+
+xtructure.core.xtructure\_decorators.method\_factory module
+-----------------------------------------------------------
+
+.. automodule:: xtructure.core.xtructure_decorators.method_factory
    :members:
    :show-inheritance:
    :undoc-members:

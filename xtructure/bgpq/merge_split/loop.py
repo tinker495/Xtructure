@@ -225,9 +225,10 @@ def merge_arrays_indices_loop(ak: jax.Array, bk: jax.Array) -> Tuple[jax.Array, 
     """
     Merges two sorted JAX arrays ak and bk using a loop-based Pallas kernel
     and returns a tuple containing:
+
     - merged_keys: The sorted merged array of keys.
     - merged_indices: An array of indices representing the merged order.
-                      The indices refer to the positions in a conceptual concatenation [ak, bk].
+      The indices refer to the positions in a conceptual concatenation [ak, bk].
     """
     if ak.ndim != 1 or bk.ndim != 1:
         raise ValueError("Input arrays ak and bk must be 1D.")

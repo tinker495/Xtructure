@@ -39,7 +39,9 @@ class FieldDescriptor:
     for each field.
 
     Example usage:
-        ```python
+
+    .. code-block:: python
+
         @xtructure_dataclass
         class MyData:
             # A scalar uint8 field
@@ -53,7 +55,6 @@ class FieldDescriptor:
 
             # A nested xtructure_dataclass field
             d: FieldDescriptor.scalar(dtype=AnotherDataClass)
-        ```
 
     The FieldDescriptor can be used with type annotation syntax using square brackets
     or instantiated directly with the constructor for more explicit parameter naming.

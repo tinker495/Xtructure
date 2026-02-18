@@ -202,6 +202,7 @@ def from_uint8(
     """Unpack a uint8 stream back into an array of shape `target_shape`.
 
     Notes:
+
     - For active_bits==1, returns bool.
     - For active_bits>1, returns uint8 values in [0, 2**active_bits - 1].
       Caller can cast to a desired integer dtype.
