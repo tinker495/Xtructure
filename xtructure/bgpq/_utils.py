@@ -1,11 +1,33 @@
 """Small helpers for BGPQ operations."""
 
+import os
+
 import chex
 import jax
 import jax.numpy as jnp
 
 from ..core import Xtructurable
 from ._constants import SIZE_DTYPE, SORT_STABLE
+
+
+def _use_kv_backend(backend: str, batch_size: int, context: str = "BACKEND") -> bool:
+    backend = backend.strip().lower()
+    if backend in {"", "off", "0", "false", "none"}:
+        return False
+    if backend in {"on", "true", "parallel", "pallas", "kv", "kv_parallel"}:
+        return True
+    if backend in {"auto", "kv_auto"}:
+        threshold = os.environ.get("XTRUCTURE_BGPQ_MERGE_VALUE_AUTO_MIN_BATCH", "0")
+        try:
+            threshold_value = int(threshold)
+        except ValueError as exc:
+            raise ValueError(
+                "XTRUCTURE_BGPQ_MERGE_VALUE_AUTO_MIN_BATCH must be an integer."
+            ) from exc
+        return threshold_value > 0 and batch_size >= threshold_value
+    raise ValueError(
+        f"Invalid XTRUCTURE_BGPQ_MERGE_VALUE_{context}. " "Expected off/auto/parallel/kv_parallel."
+    )
 
 
 def sort_arrays(k: chex.Array, v: Xtructurable):

@@ -10,6 +10,7 @@ import jax.numpy as jnp
 from ..core import Xtructurable
 from ..core import xtructure_numpy as xnp
 from ._constants import merge_array_backend
+from ._utils import _use_kv_backend
 from .merge_split.parallel import merge_arrays_parallel_kv
 
 
@@ -49,27 +50,6 @@ def _gather_sorted_values(av: Xtructurable, bv: Xtructurable, sorted_idx: chex.A
     return jax.tree_util.tree_map(_select_leaf, val_a, val_b)
 
 
-def _use_kv_backend(backend: str, batch_size: int) -> bool:
-    backend = backend.strip().lower()
-    if backend in {"", "off", "0", "false", "none"}:
-        return False
-    if backend in {"on", "true", "parallel", "pallas", "kv", "kv_parallel"}:
-        return True
-    if backend in {"auto", "kv_auto"}:
-        threshold = os.environ.get("XTRUCTURE_BGPQ_MERGE_VALUE_AUTO_MIN_BATCH", "0")
-        try:
-            threshold_value = int(threshold)
-        except ValueError as exc:
-            raise ValueError(
-                "XTRUCTURE_BGPQ_MERGE_VALUE_AUTO_MIN_BATCH must be an integer."
-            ) from exc
-        return threshold_value > 0 and batch_size >= threshold_value
-    raise ValueError(
-        "Invalid XTRUCTURE_BGPQ_MERGE_VALUE_BACKEND_SORTSPLIT. "
-        "Expected off/auto/parallel/kv_parallel."
-    )
-
-
 @jax.jit
 def merge_sort_split(
     ak: chex.Array, av: Xtructurable, bk: chex.Array, bv: Xtructurable
@@ -95,7 +75,7 @@ def merge_sort_split(
     merge_backend = os.environ.get("XTRUCTURE_BGPQ_MERGE_VALUE_BACKEND_SORTSPLIT")
     if merge_backend is None:
         merge_backend = os.environ.get("XTRUCTURE_BGPQ_MERGE_VALUE_BACKEND", "")
-    use_parallel_values = _use_kv_backend(merge_backend, int(n))
+    use_parallel_values = _use_kv_backend(merge_backend, int(n), context="BACKEND_SORTSPLIT")
 
     if use_parallel_values and jax.default_backend() == "gpu":
         sorted_key, sorted_val = merge_arrays_parallel_kv(ak, av, bk, bv)

@@ -13,6 +13,35 @@ from ..core import Xtructurable
 from ..core.xtructure_decorators.hash import _mix_fingerprint, uint32ed_to_hash
 from .constants import DOUBLE_HASH_SECONDARY_DELTA, SIZE_DTYPE
 
+
+def _parse_bool_env(name: str, default: bool) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    value = value.strip().lower()
+    if value in {"1", "true", "yes", "y", "on"}:
+        return True
+    if value in {"0", "false", "no", "n", "off"}:
+        return False
+    raise ValueError(f"{name} must be a boolean-like value.")
+
+
+def _parse_int_env(name: str, default: int) -> int:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    value = value.strip().lower()
+    if value in {"", "none", "auto"}:
+        return default
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be an integer.") from exc
+    if parsed <= 0:
+        raise ValueError(f"{name} must be positive.")
+    return parsed
+
+
 _DEDUPE_MODE_RAW = os.environ.get("XTRUCTURE_HASHTABLE_DEDUPE_MODE", "safe").strip().lower()
 
 _SORT_BACKEND = os.environ.get("XTRUCTURE_HASHTABLE_SORT_BACKEND", "stable_argsort").strip().lower()

@@ -168,8 +168,6 @@ def _create_default_method(
                 default_values[field_info.name] = field_info.nested_class_type.default(
                     shape=field_shape
                 )
-            elif field_info.field_type == "nested_class_direct":
-                default_values[field_info.name] = field_info.nested_class_type.default(shape=shape)
         return cls(**default_values)
 
     return default

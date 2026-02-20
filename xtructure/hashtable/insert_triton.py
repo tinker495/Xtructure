@@ -10,33 +10,7 @@ import jax.numpy as jnp
 from jax.experimental import pallas as pl
 from jax.experimental.pallas import triton as pl_triton
 
-
-def _parse_bool_env(name: str, default: bool) -> bool:
-    value = os.environ.get(name)
-    if value is None:
-        return default
-    value = value.strip().lower()
-    if value in {"1", "true", "yes", "y", "on"}:
-        return True
-    if value in {"0", "false", "no", "n", "off"}:
-        return False
-    raise ValueError(f"{name} must be a boolean-like value.")
-
-
-def _parse_int_env(name: str, default: int) -> int:
-    value = os.environ.get(name)
-    if value is None:
-        return default
-    value = value.strip().lower()
-    if value in {"", "none", "auto"}:
-        return default
-    try:
-        parsed = int(value)
-    except ValueError as exc:
-        raise ValueError(f"{name} must be an integer.") from exc
-    if parsed <= 0:
-        raise ValueError(f"{name} must be positive.")
-    return parsed
+from .hash_utils import _parse_bool_env, _parse_int_env
 
 
 def triton_insert_enabled() -> bool:

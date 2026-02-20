@@ -145,8 +145,6 @@ def swapaxes(dataclass_instance: T, axis1: int, axis2: int) -> T:
         field_ndim = jnp.ndim(field)
         if field_ndim < batch_ndim:
             return field
-        if field_ndim == batch_ndim:
-            return jnp.swapaxes(field, axis1_norm, axis2_norm)
         return jnp.swapaxes(field, axis1_norm, axis2_norm)
 
     return jax.tree_util.tree_map(swap_batch_axes_only, dataclass_instance)

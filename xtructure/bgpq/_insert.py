@@ -13,30 +13,8 @@ from ..core import Xtructurable
 from ..core import xtructure_numpy as xnp
 from ._constants import SIZE_DTYPE, merge_array_backend
 from ._merge import _gather_sorted_values, merge_sort_split
-from ._utils import _scatter_update_rows, sort_arrays
+from ._utils import _scatter_update_rows, _use_kv_backend, sort_arrays
 from .merge_split.parallel import merge_arrays_parallel_kv
-
-
-def _use_kv_backend(backend: str, batch_size: int) -> bool:
-    backend = backend.strip().lower()
-    if backend in {"", "off", "0", "false", "none"}:
-        return False
-    if backend in {"on", "true", "parallel", "pallas", "kv", "kv_parallel"}:
-        return True
-    if backend in {"auto", "kv_auto"}:
-        threshold = os.environ.get("XTRUCTURE_BGPQ_MERGE_VALUE_AUTO_MIN_BATCH", "0")
-        try:
-            threshold_value = int(threshold)
-        except ValueError as exc:
-            raise ValueError(
-                "XTRUCTURE_BGPQ_MERGE_VALUE_AUTO_MIN_BATCH must be an integer."
-            ) from exc
-        return threshold_value > 0 and batch_size >= threshold_value
-    raise ValueError(
-        "Invalid XTRUCTURE_BGPQ_MERGE_VALUE_BACKEND_BUFFER. "
-        "Expected off/auto/parallel/kv_parallel."
-    )
-
 
 if TYPE_CHECKING:
     from .bgpq import BGPQ
@@ -49,7 +27,7 @@ def _bgpq_merge_buffer_jit(heap: "BGPQ", blockk: chex.Array, blockv: Xtructurabl
     if buffer_backend is None:
         buffer_backend = os.environ.get("XTRUCTURE_BGPQ_MERGE_VALUE_BACKEND", "")
 
-    use_parallel_values = _use_kv_backend(buffer_backend, n)
+    use_parallel_values = _use_kv_backend(buffer_backend, n, context="BACKEND_BUFFER")
 
     if use_parallel_values and jax.default_backend() == "gpu":
         sorted_key, val = merge_arrays_parallel_kv(

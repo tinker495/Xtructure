@@ -382,7 +382,7 @@ def column_stack(tup: Sequence[Any]) -> Any:
 
 def block(arrays: Any) -> Any:
     # block takes a nested list.
-    
+
     def _contains_xtructure(x: Any) -> bool:
         if _is_xtructurable(x):
             return True
@@ -393,7 +393,7 @@ def block(arrays: Any) -> Any:
         return False
 
     if _contains_xtructure(arrays):
-         return _dc.block(arrays)
+        return _dc.block(arrays)
     return jnp.block(arrays)
 
 
@@ -433,7 +433,7 @@ def astype(x, dtype, /, *, copy: bool = False, device=None):
     # If not, x.astype fallback?
     if hasattr(jnp, "astype"):
         return jnp.astype(x, dtype, copy=copy, device=device)
-    return x.astype(dtype, copy=copy, device=device) # Falback to method
+    return x.astype(dtype, copy=copy, device=device)  # Fallback to method
 
 
 def result_type(*args: Any) -> Any:
@@ -444,10 +444,8 @@ def result_type(*args: Any) -> Any:
 
 def can_cast(from_: Any, to: Any, casting: str = "safe") -> bool:
     if _is_xtructurable(from_):
-         return _dc.can_cast(from_, to, casting=casting)
+        return _dc.can_cast(from_, to, casting=casting)
     return jnp.can_cast(from_, to, casting=casting)
-
-
 
 
 __all__ = [

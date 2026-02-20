@@ -141,10 +141,6 @@ class _Updater:
 
         return self.cls(**new_field_data)
 
-    def _legacy_set_as_condition(self, condition, value_to_conditionally_set):
-        # Kept for compatibility if needed, but redundant with the above revert
-        return self.set_as_condition(condition, value_to_conditionally_set)
-
 
 class AtIndexer:
     def __init__(self, obj_instance):

@@ -28,7 +28,6 @@ from ._insert import (
 
 @partial(jax.jit, static_argnums=(0, 1, 2, 3))
 def _bgpq_build_jit(total_size, batch_size, value_class=Xtructurable, key_dtype=jnp.float16):
-    total_size = total_size
     # Calculate branch size, rounding up if total_size not divisible by batch_size
     branch_size = (
         total_size // batch_size if total_size % batch_size == 0 else total_size // batch_size + 1
@@ -37,7 +36,6 @@ def _bgpq_build_jit(total_size, batch_size, value_class=Xtructurable, key_dtype=
     heap_size = SIZE_DTYPE(0)
     buffer_size = SIZE_DTYPE(0)
 
-    # Initialize storage arrays with infinity for unused slots
     key_store = jnp.full((branch_size, batch_size), jnp.inf, dtype=key_dtype)
     val_store = value_class.default((branch_size, batch_size))
     key_buffer = jnp.full((batch_size - 1,), jnp.inf, dtype=key_dtype)
@@ -120,8 +118,6 @@ class BGPQ:
         Args:
             blockk: Block keys array
             blockv: Block values
-            bufferk: Buffer keys array
-            bufferv: Buffer values
 
         Returns:
             tuple containing:
