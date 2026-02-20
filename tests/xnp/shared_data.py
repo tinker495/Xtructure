@@ -2,6 +2,7 @@
 
 import jax.numpy as jnp
 
+from tests.testdata.core import NestedData, SimpleData, VectorData
 from xtructure import FieldDescriptor, xtructure_dataclass
 
 
@@ -11,3 +12,6 @@ class HashableData:
 
     id: FieldDescriptor.scalar(dtype=jnp.uint32)
     value: FieldDescriptor.scalar(dtype=jnp.float32)
+
+
+__all__ = ["SimpleData", "VectorData", "NestedData", "HashableData"]
