@@ -1,37 +1,27 @@
 import argparse
-import json
-import os
 from collections import deque
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 import jax
 
 from xtructure import Queue
 from xtructure_benchmarks.common import (
     BenchmarkValue,
-    check_system_load,
-    get_system_info,
-    print_results_table,
+    add_common_benchmark_args,
+    init_benchmark_results,
+    parse_batch_sizes,
     run_jax_trials,
     run_python_trials,
+    save_and_print_results,
     throughput_stats,
     to_python_values,
-    validate_results_schema,
 )
 
 
 def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional[List[int]] = None):
     """Runs the full suite of Queue benchmarks and saves the results."""
     batch_sizes = batch_sizes or [2**10, 2**12, 2**14]
-
-    check_system_load()
-
-    results: Dict[str, Any] = {
-        "batch_sizes": batch_sizes,
-        "xtructure": {},
-        "python": {},
-        "environment": get_system_info(),
-    }
+    results = init_benchmark_results(batch_sizes)
     max_size = int(max(batch_sizes) * 2)
 
     print("Running Queue Benchmarks...")
@@ -101,31 +91,20 @@ def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional
         results["python"].setdefault("enqueue_ops_per_sec", []).append(python_enqueue_stats)
         results["python"].setdefault("dequeue_ops_per_sec", []).append(python_dequeue_stats)
 
-    # Validate and save results
-    validate_results_schema(results)
-    output_path = "xtructure_benchmarks/results/queue_results.json"
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    with open(output_path, "w") as f:
-        json.dump(results, f, indent=4)
-
-    print(f"Queue benchmark results saved to {output_path}")
-    print_results_table(results, "Queue Performance Results")
+    save_and_print_results(
+        results,
+        "xtructure_benchmarks/results/queue_results.json",
+        "Queue Performance Results",
+    )
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Queue benchmarks")
-    parser.add_argument("--mode", choices=["kernel", "e2e"], default="kernel")
-    parser.add_argument("--trials", type=int, default=10)
-    parser.add_argument(
-        "--batch-sizes",
-        type=str,
-        default="",
-        help="Comma-separated batch sizes (e.g. 1024,4096,16384)",
-    )
+    add_common_benchmark_args(parser)
     args = parser.parse_args()
 
-    batch_sizes_arg: Optional[List[int]] = None
-    if args.batch_sizes:
-        batch_sizes_arg = [int(x.strip()) for x in args.batch_sizes.split(",") if x.strip()]
-
-    run_benchmarks(mode=args.mode, trials=args.trials, batch_sizes=batch_sizes_arg)
+    run_benchmarks(
+        mode=args.mode,
+        trials=args.trials,
+        batch_sizes=parse_batch_sizes(args.batch_sizes),
+    )

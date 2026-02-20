@@ -1,21 +1,19 @@
 import argparse
-import json
-import os
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 import jax
 
 from xtructure import HashTable
 from xtructure_benchmarks.common import (
     BenchmarkValue,
-    check_system_load,
-    get_system_info,
-    print_results_table,
+    add_common_benchmark_args,
+    init_benchmark_results,
+    parse_batch_sizes,
     run_jax_trials,
     run_python_trials,
+    save_and_print_results,
     throughput_stats,
     to_python_values,
-    validate_results_schema,
 )
 
 
@@ -45,17 +43,9 @@ def benchmark_dict_lookup(
 def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional[List[int]] = None):
     """Runs the full suite of HashTable benchmarks and saves the results."""
     # Using smaller batch sizes to ensure completion within a reasonable time
-    if batch_sizes is None:
-        batch_sizes = [2**10, 2**12, 2**14]
-
-    check_system_load()
-
-    results: Dict[str, Any] = {
-        "batch_sizes": batch_sizes,
-        "xtructure": {},
-        "python": {},
-        "environment": get_system_info(),
-    }
+    # Using smaller batch sizes to ensure completion within a reasonable time
+    batch_sizes = batch_sizes or [2**10, 2**12, 2**14]
+    results = init_benchmark_results(batch_sizes)
     load_factor_inverse = 1.5  # Keep load factor constant across batch sizes
 
     print("Running HashTable Benchmarks...")
@@ -159,30 +149,20 @@ def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional
         results["python"].setdefault("lookup_ops_per_sec", []).append(python_lookup_stats)
 
     # Validate and save results to the correct directory
-    validate_results_schema(results)
-    output_path = "xtructure_benchmarks/results/hashtable_results.json"
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    with open(output_path, "w") as f:
-        json.dump(results, f, indent=4)
-
-    print(f"HashTable benchmark results saved to {output_path}")
-    print_results_table(results, "HashTable Performance Results")
+    save_and_print_results(
+        results,
+        "xtructure_benchmarks/results/hashtable_results.json",
+        "HashTable Performance Results",
+    )
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="HashTable benchmarks")
-    parser.add_argument("--mode", choices=["kernel", "e2e"], default="kernel")
-    parser.add_argument("--trials", type=int, default=10)
-    parser.add_argument(
-        "--batch-sizes",
-        type=str,
-        default="",
-        help="Comma-separated batch sizes (e.g. 1024,4096,16384)",
-    )
+    add_common_benchmark_args(parser)
     args = parser.parse_args()
 
-    batch_sizes_arg: Optional[List[int]] = None
-    if args.batch_sizes:
-        batch_sizes_arg = [int(x.strip()) for x in args.batch_sizes.split(",") if x.strip()]
-
-    run_benchmarks(mode=args.mode, trials=args.trials, batch_sizes=batch_sizes_arg)
+    run_benchmarks(
+        mode=args.mode,
+        trials=args.trials,
+        batch_sizes=parse_batch_sizes(args.batch_sizes),
+    )

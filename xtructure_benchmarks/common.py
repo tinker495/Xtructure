@@ -1,4 +1,6 @@
+import argparse
 import gc
+import json
 import os
 import platform
 import time
@@ -415,3 +417,39 @@ def print_results_table(results: Dict[str, Any], title: str):
             table.add_row("", "", "", "", "", "", end_section=True)
 
     console.print(table)
+
+
+def init_benchmark_results(batch_sizes: List[int]) -> Dict[str, Any]:
+    check_system_load()
+    return {
+        "batch_sizes": batch_sizes,
+        "xtructure": {},
+        "python": {},
+        "environment": get_system_info(),
+    }
+
+
+def save_and_print_results(results: Dict[str, Any], output_path: str, title: str) -> None:
+    validate_results_schema(results)
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    with open(output_path, "w") as f:
+        json.dump(results, f, indent=4)
+    print(f"{title} saved to {output_path}")
+    print_results_table(results, title)
+
+
+def add_common_benchmark_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--mode", choices=["kernel", "e2e"], default="kernel")
+    parser.add_argument("--trials", type=int, default=10)
+    parser.add_argument(
+        "--batch-sizes",
+        type=str,
+        default="",
+        help="Comma-separated batch sizes (e.g. 1024,4096,16384)",
+    )
+
+
+def parse_batch_sizes(batch_sizes_str: str) -> Optional[List[int]]:
+    if not batch_sizes_str:
+        return None
+    return [int(x.strip()) for x in batch_sizes_str.split(",") if x.strip()]

@@ -1,8 +1,6 @@
 import argparse
 import heapq
-import json
-import os
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 import jax
 import jax.numpy as jnp
@@ -10,14 +8,14 @@ import jax.numpy as jnp
 from xtructure import BGPQ
 from xtructure_benchmarks.common import (
     BenchmarkValue,
-    check_system_load,
-    get_system_info,
-    print_results_table,
+    add_common_benchmark_args,
+    init_benchmark_results,
+    parse_batch_sizes,
     run_jax_trials,
     run_python_trials,
+    save_and_print_results,
     throughput_stats,
     to_python_values,
-    validate_results_schema,
 )
 
 
@@ -124,17 +122,9 @@ def run_benchmarks(
 ):
     """Runs the full suite of Heap benchmarks and saves the results."""
     # Using smaller batch sizes to ensure completion within a reasonable time
-    if batch_sizes is None:
-        batch_sizes = [2**10, 2**12, 2**14]
-
-    check_system_load()
-
-    results: Dict[str, Any] = {
-        "batch_sizes": batch_sizes,
-        "xtructure": {},
-        "python": {},
-        "environment": get_system_info(),
-    }
+    # Using smaller batch sizes to ensure completion within a reasonable time
+    batch_sizes = batch_sizes or [2**10, 2**12, 2**14]
+    results = init_benchmark_results(batch_sizes)
     max_size = int(max(batch_sizes) * 1.5)
 
     print("Running Heap (BGPQ) Benchmarks...")
@@ -215,26 +205,16 @@ def run_benchmarks(
         results["python"].setdefault("delete_ops_per_sec", []).append(python_delete_stats)
 
     # Validate and save results
-    validate_results_schema(results)
-    output_path = "xtructure_benchmarks/results/heap_results.json"
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    with open(output_path, "w") as f:
-        json.dump(results, f, indent=4)
-
-    print(f"Heap benchmark results saved to {output_path}")
-    print_results_table(results, "Heap (BGPQ) Performance Results")
+    save_and_print_results(
+        results,
+        "xtructure_benchmarks/results/heap_results.json",
+        "Heap (BGPQ) Performance Results",
+    )
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Heap (BGPQ) benchmarks")
-    parser.add_argument("--mode", choices=["kernel", "e2e"], default="kernel")
-    parser.add_argument("--trials", type=int, default=10)
-    parser.add_argument(
-        "--batch-sizes",
-        type=str,
-        default="",
-        help="Comma-separated batch sizes (e.g. 1024,4096,16384)",
-    )
+    add_common_benchmark_args(parser)
     parser.add_argument(
         "--python-heap-insert-mode",
         choices=["auto", "bulk", "incremental"],
@@ -243,13 +223,9 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    batch_sizes_arg: Optional[List[int]] = None
-    if args.batch_sizes:
-        batch_sizes_arg = [int(x.strip()) for x in args.batch_sizes.split(",") if x.strip()]
-
     run_benchmarks(
         mode=args.mode,
         trials=args.trials,
-        batch_sizes=batch_sizes_arg,
+        batch_sizes=parse_batch_sizes(args.batch_sizes),
         python_heap_insert_mode=args.python_heap_insert_mode,
     )
