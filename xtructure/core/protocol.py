@@ -62,7 +62,9 @@ class Xtructurable(Protocol[T], metaclass=_XtructurableMeta):
         ...
 
     @property
-    def structured_type(self) -> "StructuredType":  # Forward reference for StructuredType
+    def structured_type(
+        self,
+    ) -> "StructuredType":  # Forward reference for StructuredType
         ...
 
     @property

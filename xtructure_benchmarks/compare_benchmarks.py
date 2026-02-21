@@ -78,7 +78,9 @@ def main(base_branch, target_branch):
         )
         return
 
-    CONSOLE.print(f"[bold cyan]Comparing {base_branch} (Base) vs {target_branch} (Target)[/]")
+    CONSOLE.print(
+        f"[bold cyan]Comparing {base_branch} (Base) vs {target_branch} (Target)[/]"
+    )
 
     files = sorted([f.name for f in base_dir.glob("*_results.json")])
 
@@ -94,7 +96,9 @@ def main(base_branch, target_branch):
             continue
 
         title = filename.replace("_results.json", "").capitalize()
-        table = Table(title=f"Benchmark Comparison: {title} ({base_branch} vs {target_branch})")
+        table = Table(
+            title=f"Benchmark Comparison: {title} ({base_branch} vs {target_branch})"
+        )
         table.add_column("Operation", style="cyan")
         table.add_column("Batch Size", justify="right")
         table.add_column(f"{base_branch} Ops/s", justify="right", style="red")
@@ -131,7 +135,13 @@ def main(base_branch, target_branch):
                     speedup = "Inf"
                 else:
                     ratio = t_median / b_median
-                    color = "green" if ratio >= 1.05 else "red" if ratio <= 0.95 else "white"
+                    color = (
+                        "green"
+                        if ratio >= 1.05
+                        else "red"
+                        if ratio <= 0.95
+                        else "white"
+                    )
                     speedup = f"[{color}]{ratio:.2f}x[/{color}]"
 
                 table.add_row(

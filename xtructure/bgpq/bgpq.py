@@ -27,10 +27,14 @@ from ._insert import (
 
 
 @partial(jax.jit, static_argnums=(0, 1, 2, 3))
-def _bgpq_build_jit(total_size, batch_size, value_class=Xtructurable, key_dtype=jnp.float16):
+def _bgpq_build_jit(
+    total_size, batch_size, value_class=Xtructurable, key_dtype=jnp.float16
+):
     # Calculate branch size, rounding up if total_size not divisible by batch_size
     branch_size = (
-        total_size // batch_size if total_size % batch_size == 0 else total_size // batch_size + 1
+        total_size // batch_size
+        if total_size % batch_size == 0
+        else total_size // batch_size + 1
     )
     max_size = branch_size * batch_size
     heap_size = SIZE_DTYPE(0)
@@ -82,7 +86,9 @@ class BGPQ:
     val_buffer: Xtructurable  # shape = (batch_size - 1, ...)
 
     @staticmethod
-    def build(total_size, batch_size, value_class=Xtructurable, key_dtype=jnp.float16) -> "BGPQ":
+    def build(
+        total_size, batch_size, value_class=Xtructurable, key_dtype=jnp.float16
+    ) -> "BGPQ":
         """
         Create a new BGPQ instance with specified capacity.
 
@@ -99,8 +105,12 @@ class BGPQ:
     @property
     def size(self):
         cond = jnp.asarray(self.heap_size == 0, dtype=jnp.bool_)
-        empty_branch = jnp.asarray(jnp.sum(jnp.isfinite(self.key_store[0])) + self.buffer_size)
-        non_empty_branch = jnp.asarray((self.heap_size + 1) * self.batch_size + self.buffer_size)
+        empty_branch = jnp.asarray(
+            jnp.sum(jnp.isfinite(self.key_store[0])) + self.buffer_size
+        )
+        non_empty_branch = jnp.asarray(
+            (self.heap_size + 1) * self.batch_size + self.buffer_size
+        )
         target_dtype = jnp.result_type(empty_branch.dtype, non_empty_branch.dtype)
         return _where_no_broadcast(
             cond,

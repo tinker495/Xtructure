@@ -28,12 +28,16 @@ def test_reshape_with_minus_one():
     result1 = xnp.reshape(data, (2, -1))
     assert result1.shape.batch == (2, 6)
     assert jnp.array_equal(result1.id, jnp.arange(12).reshape(2, 6))
-    assert jnp.array_equal(result1.value, jnp.arange(12, dtype=jnp.float32).reshape(2, 6))
+    assert jnp.array_equal(
+        result1.value, jnp.arange(12, dtype=jnp.float32).reshape(2, 6)
+    )
 
     result2 = xnp.reshape(data, (-1, 3))
     assert result2.shape.batch == (4, 3)
     assert jnp.array_equal(result2.id, jnp.arange(12).reshape(4, 3))
-    assert jnp.array_equal(result2.value, jnp.arange(12, dtype=jnp.float32).reshape(4, 3))
+    assert jnp.array_equal(
+        result2.value, jnp.arange(12, dtype=jnp.float32).reshape(4, 3)
+    )
 
     result3 = xnp.reshape(data, (-1,))
     assert result3.shape.batch == (12,)
@@ -73,11 +77,14 @@ def test_reshape_with_minus_one_errors():
         xnp.reshape(data, (-1, -1))
 
     with pytest.raises(
-        ValueError, match="Total length 10 is not divisible by the product of other dimensions 3"
+        ValueError,
+        match="Total length 10 is not divisible by the product of other dimensions 3",
     ):
         xnp.reshape(data, (3, -1))
 
-    with pytest.raises(ValueError, match="Cannot infer -1 dimension when other dimensions are 0"):
+    with pytest.raises(
+        ValueError, match="Cannot infer -1 dimension when other dimensions are 0"
+    ):
         xnp.reshape(data, (0, -1))
 
 
@@ -104,7 +111,8 @@ def test_flatten_wrapper():
     """Test that xnp.flatten calls the existing dataclass flatten method."""
     dc = SimpleData.default(shape=(2, 3))
     dc = dc.replace(
-        id=jnp.arange(6).reshape(2, 3), value=jnp.arange(6, dtype=jnp.float32).reshape(2, 3)
+        id=jnp.arange(6).reshape(2, 3),
+        value=jnp.arange(6, dtype=jnp.float32).reshape(2, 3),
     )
 
     result = xnp.flatten(dc)

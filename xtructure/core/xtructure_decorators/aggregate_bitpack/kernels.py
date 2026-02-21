@@ -23,7 +23,9 @@ def _as_u32(x: Any) -> jax.Array:
     return jnp.asarray(x, dtype=jnp.uint32)
 
 
-def pack_words_all_xla(values_stream_u32: jax.Array, tables: _AggWordContribTables) -> jax.Array:
+def pack_words_all_xla(
+    values_stream_u32: jax.Array, tables: _AggWordContribTables
+) -> jax.Array:
     """Pack (flat_n, total_values) uint32 stream -> (flat_n, words_all_len) uint32 words."""
     values_stream_u32 = _as_u32(values_stream_u32)
     flat_n = int(values_stream_u32.shape[0])
@@ -89,15 +91,25 @@ def _get_pack_words_all_pallas(
     # Keep these as NumPy arrays to avoid tracer leakage through the lru_cache.
     # We convert to JAX arrays inside the jitted wrapper.
     value_idx_np = (
-        np.frombuffer(value_idx, dtype=np.int32).reshape((words_all_len, max_contrib)).copy()
+        np.frombuffer(value_idx, dtype=np.int32)
+        .reshape((words_all_len, max_contrib))
+        .copy()
     )
     vb_np = (
-        np.frombuffer(value_bit_start, dtype=np.uint8).reshape((words_all_len, max_contrib)).copy()
+        np.frombuffer(value_bit_start, dtype=np.uint8)
+        .reshape((words_all_len, max_contrib))
+        .copy()
     )
     wb_np = (
-        np.frombuffer(word_bit_start, dtype=np.uint8).reshape((words_all_len, max_contrib)).copy()
+        np.frombuffer(word_bit_start, dtype=np.uint8)
+        .reshape((words_all_len, max_contrib))
+        .copy()
     )
-    mask_np = np.frombuffer(mask_u32, dtype=np.uint32).reshape((words_all_len, max_contrib)).copy()
+    mask_np = (
+        np.frombuffer(mask_u32, dtype=np.uint32)
+        .reshape((words_all_len, max_contrib))
+        .copy()
+    )
 
     words_all_len_py = int(words_all_len)
     word_tile_py = int(word_tile)

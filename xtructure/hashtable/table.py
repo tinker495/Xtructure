@@ -96,7 +96,9 @@ class HashTable:
             dataclass, seed, capacity, bucket_size, hash_size_multiplier, max_probes
         )
 
-    def lookup_bucket(self, input: Xtructurable) -> tuple[Xtructurable, chex.Array, chex.Array]:
+    def lookup_bucket(
+        self, input: Xtructurable
+    ) -> tuple[Xtructurable, chex.Array, chex.Array]:
         return _hashtable_lookup_bucket_jit(self, input)
 
     def lookup(self, input: Xtructurable) -> tuple[Xtructurable, bool]:

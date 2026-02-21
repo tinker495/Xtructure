@@ -98,7 +98,9 @@ def validate_results_schema(results: Dict[str, Any]) -> None:
 
 
 def _ops_stats(
-    num_ops: int, durations: Iterable[float], peak_memories: Optional[Iterable[float]] = None
+    num_ops: int,
+    durations: Iterable[float],
+    peak_memories: Optional[Iterable[float]] = None,
 ) -> Dict[str, float]:
     """Compute median/IQR/P99 of per-trial throughput and peak memory."""
     durations_arr = np.asarray(list(durations), dtype=np.float64)
@@ -330,7 +332,9 @@ def run_python_trials(
     return durations, peak_memories
 
 
-def throughput_stats(num_ops: int, results: Tuple[List[float], List[float]]) -> Dict[str, float]:
+def throughput_stats(
+    num_ops: int, results: Tuple[List[float], List[float]]
+) -> Dict[str, float]:
     """Public helper to compute ops/sec and memory statistics."""
     durations, peak_memories = results
     return _ops_stats(num_ops, durations, peak_memories)
@@ -429,7 +433,9 @@ def init_benchmark_results(batch_sizes: List[int]) -> Dict[str, Any]:
     }
 
 
-def save_and_print_results(results: Dict[str, Any], output_path: str, title: str) -> None:
+def save_and_print_results(
+    results: Dict[str, Any], output_path: str, title: str
+) -> None:
     validate_results_schema(results)
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, "w") as f:

@@ -17,7 +17,9 @@ from xtructure_benchmarks.common import (
 )
 
 
-def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional[List[int]] = None):
+def run_benchmarks(
+    mode: str = "kernel", trials: int = 10, batch_sizes: Optional[List[int]] = None
+):
     """Runs the full suite of Stack benchmarks and saves the results."""
     batch_sizes = batch_sizes or [2**10, 2**12, 2**14]
     results = init_benchmark_results(batch_sizes)
@@ -26,7 +28,10 @@ def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional
     print("Running Stack Benchmarks...")
     try:
         print(f"JAX backend: {jax.default_backend()}")
-        print("JAX devices:", ", ".join([d.platform + ":" + d.device_kind for d in jax.devices()]))
+        print(
+            "JAX devices:",
+            ", ".join([d.platform + ":" + d.device_kind for d in jax.devices()]),
+        )
     except Exception:
         pass
     for batch_size in batch_sizes:
@@ -38,7 +43,11 @@ def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional
         precomputed_items = to_python_values(values_device)
 
         def materialize_items(include_preprocessing: bool):
-            return to_python_values(values_device) if include_preprocessing else precomputed_items
+            return (
+                to_python_values(values_device)
+                if include_preprocessing
+                else precomputed_items
+            )
 
         # --- xtructure.Stack Benchmark ---
         xtructure_stack = Stack.build(max_size=max_size, value_class=BenchmarkValue)
@@ -65,8 +74,12 @@ def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional
         )
         xtructure_pop_stats = throughput_stats(batch_size, pop_durations)
 
-        results["xtructure"].setdefault("push_ops_per_sec", []).append(xtructure_push_stats)
-        results["xtructure"].setdefault("pop_ops_per_sec", []).append(xtructure_pop_stats)
+        results["xtructure"].setdefault("push_ops_per_sec", []).append(
+            xtructure_push_stats
+        )
+        results["xtructure"].setdefault("pop_ops_per_sec", []).append(
+            xtructure_pop_stats
+        )
 
         # --- Python list as Stack Benchmark ---
         def python_push_op():

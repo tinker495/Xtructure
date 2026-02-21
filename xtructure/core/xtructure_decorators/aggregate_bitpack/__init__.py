@@ -54,8 +54,12 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
 
     # Attach xtructure annotations: words + tail.
     Packed.__annotations__ = {
-        "words": FieldDescriptor.tensor(dtype=jnp.uint32, shape=(stored_words_len,), fill_value=0),
-        "tail": FieldDescriptor.tensor(dtype=jnp.uint8, shape=(tail_bytes,), fill_value=0),
+        "words": FieldDescriptor.tensor(
+            dtype=jnp.uint32, shape=(stored_words_len,), fill_value=0
+        ),
+        "tail": FieldDescriptor.tensor(
+            dtype=jnp.uint8, shape=(tail_bytes,), fill_value=0
+        ),
     }
 
     # Delay import to avoid circular dependency during decorator import graph.
@@ -148,14 +152,20 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
             words_all_2d = jnp.zeros((flat_n, words_all_len), dtype=jnp.uint32)
         else:
             values_stream = (
-                jnp.concatenate(fields_u32, axis=1) if len(fields_u32) > 1 else fields_u32[0]
+                jnp.concatenate(fields_u32, axis=1)
+                if len(fields_u32) > 1
+                else fields_u32[0]
             )
             if values_stream.shape[1] != total_values:
-                raise ValueError("aggregate_bitpack internal error: total_values mismatch")
+                raise ValueError(
+                    "aggregate_bitpack internal error: total_values mismatch"
+                )
 
             backend_choice = _pack_backend()
             if backend_choice == "pallas":
-                pallas_backend = "triton" if jax.default_backend() == "gpu" else "mosaic_tpu"
+                pallas_backend = (
+                    "triton" if jax.default_backend() == "gpu" else "mosaic_tpu"
+                )
                 words_all_2d = pack_words_all_pallas(
                     values_stream,
                     tables,
@@ -171,10 +181,14 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
         else:
             last = words_all_2d[:, -1]
             stored_words_2d = (
-                words_all_2d[:, :-1] if words_all_len > 1 else jnp.zeros((flat_n, 0), jnp.uint32)
+                words_all_2d[:, :-1]
+                if words_all_len > 1
+                else jnp.zeros((flat_n, 0), jnp.uint32)
             )
             shifts = jnp.arange(tail_bytes, dtype=jnp.uint32) * jnp.uint32(8)
-            tail_2d = ((last[:, None] >> shifts[None, :]) & jnp.uint32(0xFF)).astype(jnp.uint8)
+            tail_2d = ((last[:, None] >> shifts[None, :]) & jnp.uint32(0xFF)).astype(
+                jnp.uint8
+            )
 
         packed_words = stored_words_2d.reshape(batch + (stored_words_len,))
         packed_tail = (
@@ -227,7 +241,9 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
         if batch == -1:
             raise TypeError(f"{packed_name} is UNSTRUCTURED; cannot unpack.")
         flat_n = int(np.prod(np.array(batch, dtype=np.int64))) if batch else 1
-        words = jnp.asarray(packed.words, dtype=jnp.uint32).reshape((flat_n, stored_words_len))
+        words = jnp.asarray(packed.words, dtype=jnp.uint32).reshape(
+            (flat_n, stored_words_len)
+        )
         if tail_bytes == 0:
             return words
 
@@ -256,7 +272,9 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
         """Decode selected flattened indices for one field from a single row of words."""
         idxs = _normalize_indices(indices, nvalues=s.nvalues)
         # Convert to bit positions and extract bits per index.
-        bit_pos = jnp.uint32(s.bit_offset) + idxs.astype(jnp.uint32) * jnp.uint32(s.bits)
+        bit_pos = jnp.uint32(s.bit_offset) + idxs.astype(jnp.uint32) * jnp.uint32(
+            s.bits
+        )
 
         # Vectorized extraction (avoids per-element vmap).
         word_idx = jnp.right_shift(bit_pos, jnp.uint32(5)).astype(jnp.int32)
@@ -266,7 +284,9 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
         w1 = jnp.take(row_words, word_idx + 1, mode="fill")
 
         low = jnp.right_shift(w0, shift)
-        high = jnp.where(shift == 0, jnp.uint32(0), jnp.left_shift(w1, jnp.uint32(32) - shift))
+        high = jnp.where(
+            shift == 0, jnp.uint32(0), jnp.left_shift(w1, jnp.uint32(32) - shift)
+        )
 
         mask = jnp.uint32(0xFFFFFFFF) if s.bits == 32 else jnp.uint32((1 << s.bits) - 1)
         vals = jnp.bitwise_and(jnp.bitwise_or(low, high), mask).astype(jnp.uint32)
@@ -276,7 +296,9 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
             return vals.astype(s.unpack_dtype)
         return vals.astype(s.unpack_dtype)
 
-    def _decode_field_all(words_all: jax.Array, s: _AggLeafSpec, indices: Any) -> jax.Array:
+    def _decode_field_all(
+        words_all: jax.Array, s: _AggLeafSpec, indices: Any
+    ) -> jax.Array:
         """Decode selected flattened indices for one field for all rows.
 
         Args:
@@ -285,7 +307,9 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
             (flat_n, nvalues_selected) array with dtype per s.unpack_dtype.
         """
         idxs = _normalize_indices(indices, nvalues=s.nvalues)
-        bit_pos = jnp.uint32(s.bit_offset) + idxs.astype(jnp.uint32) * jnp.uint32(s.bits)
+        bit_pos = jnp.uint32(s.bit_offset) + idxs.astype(jnp.uint32) * jnp.uint32(
+            s.bits
+        )
 
         word_idx = jnp.right_shift(bit_pos, jnp.uint32(5)).astype(jnp.int32)
         shift = (bit_pos & jnp.uint32(31)).astype(jnp.uint32)
@@ -330,7 +354,9 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
             decoded = decoded.reshape(batch + s.unpacked_shape)
             decoded_by_path[s.path] = decoded
 
-        def _build_view_instance(orig: type, view: type, prefix: tuple[str, ...]) -> Any:
+        def _build_view_instance(
+            orig: type, view: type, prefix: tuple[str, ...]
+        ) -> Any:
             descs = get_field_descriptors(orig)
             kwargs = {}
             for field in dataclasses.fields(orig):
@@ -340,7 +366,9 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
                     continue
                 if is_xtructure_dataclass_type(fd.dtype):
                     nested_view = _view_cache[fd.dtype]
-                    kwargs[name] = _build_view_instance(fd.dtype, nested_view, prefix + (name,))
+                    kwargs[name] = _build_view_instance(
+                        fd.dtype, nested_view, prefix + (name,)
+                    )
                 else:
                     kwargs[name] = decoded_by_path[prefix + (name,)]
             return view(**kwargs)
@@ -373,7 +401,9 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
                 - "declared": decode then cast to the field's declared dtype
         """
         if dtype_policy not in ("default", "declared"):
-            raise ValueError(f"dtype_policy must be 'default' or 'declared', got {dtype_policy!r}")
+            raise ValueError(
+                f"dtype_policy must be 'default' or 'declared', got {dtype_policy!r}"
+            )
 
         # Support dotted paths for nested leaves: "inner.codes"
         path = tuple(name.split(".")) if isinstance(name, str) else tuple(name)
@@ -422,7 +452,9 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
                   back to their declared dtypes (validation-friendly).
         """
         if dtype_policy not in ("default", "declared"):
-            raise ValueError(f"dtype_policy must be 'default' or 'declared', got {dtype_policy!r}")
+            raise ValueError(
+                f"dtype_policy must be 'default' or 'declared', got {dtype_policy!r}"
+            )
         if dtype_policy == "default":
             return self.unpacked
 

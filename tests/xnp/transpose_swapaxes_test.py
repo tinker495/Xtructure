@@ -53,7 +53,9 @@ def test_transpose_with_custom_axes():
 
     assert result.shape.batch == (4, 2, 3)
 
-    expected_id = jnp.transpose(jnp.arange(24, dtype=jnp.uint32).reshape(2, 3, 4), axes=(2, 0, 1))
+    expected_id = jnp.transpose(
+        jnp.arange(24, dtype=jnp.uint32).reshape(2, 3, 4), axes=(2, 0, 1)
+    )
     expected_value = jnp.transpose(
         jnp.arange(24, dtype=jnp.float32).reshape(2, 3, 4), axes=(2, 0, 1)
     )
@@ -113,7 +115,9 @@ def test_transpose_equivalent_to_jnp_transpose():
     )
 
     result_xnp = xnp.transpose(data)
-    result_manual = SimpleData(id=jnp.transpose(data.id), value=jnp.transpose(data.value))
+    result_manual = SimpleData(
+        id=jnp.transpose(data.id), value=jnp.transpose(data.value)
+    )
 
     assert jnp.array_equal(result_xnp.id, result_manual.id)
     assert jnp.array_equal(result_xnp.value, result_manual.value)
@@ -208,7 +212,9 @@ def test_swap_axes_3d_basic():
     assert result.shape.batch == (4, 3, 2)
 
     expected_id = jnp.swapaxes(jnp.arange(24, dtype=jnp.uint32).reshape(2, 3, 4), 0, 2)
-    expected_value = jnp.swapaxes(jnp.arange(24, dtype=jnp.float32).reshape(2, 3, 4), 0, 2)
+    expected_value = jnp.swapaxes(
+        jnp.arange(24, dtype=jnp.float32).reshape(2, 3, 4), 0, 2
+    )
     assert jnp.array_equal(result.id, expected_id)
     assert jnp.array_equal(result.value, expected_value)
 
@@ -225,8 +231,12 @@ def test_swap_axes_with_negative_indices():
 
     assert result.shape.batch == (2, 4, 3)
 
-    expected_id = jnp.swapaxes(jnp.arange(24, dtype=jnp.uint32).reshape(2, 3, 4), -1, -2)
-    expected_value = jnp.swapaxes(jnp.arange(24, dtype=jnp.float32).reshape(2, 3, 4), -1, -2)
+    expected_id = jnp.swapaxes(
+        jnp.arange(24, dtype=jnp.uint32).reshape(2, 3, 4), -1, -2
+    )
+    expected_value = jnp.swapaxes(
+        jnp.arange(24, dtype=jnp.float32).reshape(2, 3, 4), -1, -2
+    )
     assert jnp.array_equal(result.id, expected_id)
     assert jnp.array_equal(result.value, expected_value)
 
@@ -244,7 +254,9 @@ def test_swap_axes_mixed_positive_negative():
     assert result.shape.batch == (2, 4, 3)
 
     expected_id = jnp.swapaxes(jnp.arange(24, dtype=jnp.uint32).reshape(2, 3, 4), 1, -1)
-    expected_value = jnp.swapaxes(jnp.arange(24, dtype=jnp.float32).reshape(2, 3, 4), 1, -1)
+    expected_value = jnp.swapaxes(
+        jnp.arange(24, dtype=jnp.float32).reshape(2, 3, 4), 1, -1
+    )
     assert jnp.array_equal(result.id, expected_id)
     assert jnp.array_equal(result.value, expected_value)
 
@@ -316,7 +328,9 @@ def test_swap_axes_equivalent_to_jnp_swapaxes():
     )
 
     result_xnp = xnp.swapaxes(data, 0, 1)
-    result_manual = SimpleData(id=jnp.swapaxes(data.id, 0, 1), value=jnp.swapaxes(data.value, 0, 1))
+    result_manual = SimpleData(
+        id=jnp.swapaxes(data.id, 0, 1), value=jnp.swapaxes(data.value, 0, 1)
+    )
 
     assert jnp.array_equal(result_xnp.id, result_manual.id)
     assert jnp.array_equal(result_xnp.value, result_manual.value)

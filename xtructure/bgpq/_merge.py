@@ -20,12 +20,16 @@ def _batch_size(values: Xtructurable) -> int:
 
 
 def _gather_sorted_values(av: Xtructurable, bv: Xtructurable, sorted_idx: chex.Array):
-    reorder_mode = os.environ.get("XTRUCTURE_BGPQ_VALUE_REORDER", "gather").strip().lower()
+    reorder_mode = (
+        os.environ.get("XTRUCTURE_BGPQ_VALUE_REORDER", "gather").strip().lower()
+    )
     if reorder_mode in {"concat", "concat_gather"}:
         val = xnp.concatenate([av, bv], axis=0)
         return val[sorted_idx]
     if reorder_mode not in {"gather", "direct"}:
-        raise ValueError("Invalid XTRUCTURE_BGPQ_VALUE_REORDER. Expected gather or concat.")
+        raise ValueError(
+            "Invalid XTRUCTURE_BGPQ_VALUE_REORDER. Expected gather or concat."
+        )
 
     n = _batch_size(av)
     m = _batch_size(bv)
@@ -75,7 +79,9 @@ def merge_sort_split(
     merge_backend = os.environ.get("XTRUCTURE_BGPQ_MERGE_VALUE_BACKEND_SORTSPLIT")
     if merge_backend is None:
         merge_backend = os.environ.get("XTRUCTURE_BGPQ_MERGE_VALUE_BACKEND", "")
-    use_parallel_values = _use_kv_backend(merge_backend, int(n), context="BACKEND_SORTSPLIT")
+    use_parallel_values = _use_kv_backend(
+        merge_backend, int(n), context="BACKEND_SORTSPLIT"
+    )
 
     if use_parallel_values and jax.default_backend() == "gpu":
         sorted_key, sorted_val = merge_arrays_parallel_kv(ak, av, bk, bv)

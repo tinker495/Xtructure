@@ -100,7 +100,9 @@ class FieldDescriptor:
         # This is intentionally limited to 1..32 for now.
         if bits is not None:
             if not isinstance(bits, int):
-                raise TypeError(f"bits must be an int or None, got {type(bits).__name__}")
+                raise TypeError(
+                    f"bits must be an int or None, got {type(bits).__name__}"
+                )
             if bits < 1 or bits > 32:
                 raise ValueError(f"bits must be in [1, 32], got {bits}")
         self.bits: int | None = bits
@@ -222,7 +224,9 @@ class FieldDescriptor:
         # - Prefer `shape=...` (consistent with FieldDescriptor.tensor).
         # - `unpacked_shape` is accepted for backward compatibility.
         if shape is None and unpacked_shape is None:
-            raise TypeError("packed_tensor requires `shape` (preferred) or `unpacked_shape`.")
+            raise TypeError(
+                "packed_tensor requires `shape` (preferred) or `unpacked_shape`."
+            )
         if shape is None:
             shape = unpacked_shape
         if unpacked_shape is not None and tuple(unpacked_shape) != tuple(shape):  # type: ignore[arg-type]
@@ -338,7 +342,9 @@ def extract_field_descriptors_from_annotations(
 
 
 def cache_field_descriptors(cls: Type[Any]) -> Dict[str, FieldDescriptor]:
-    descriptors = extract_field_descriptors_from_annotations(getattr(cls, "__annotations__", {}))
+    descriptors = extract_field_descriptors_from_annotations(
+        getattr(cls, "__annotations__", {})
+    )
     setattr(cls, _FIELD_DESCRIPTOR_ATTR, descriptors)
     return descriptors
 

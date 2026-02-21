@@ -194,8 +194,12 @@ def test_update_on_condition_nested_dataclass_first_true_wins_everywhere():
     )
     updates_vector = VectorData.default((3,))
     updates_vector = updates_vector.replace(
-        position=jnp.array([[1.0, 1.0, 1.0], [2.0, 2.0, 2.0], [3.0, 3.0, 3.0]], dtype=jnp.float32),
-        velocity=jnp.array([[4.0, 4.0, 4.0], [5.0, 5.0, 5.0], [6.0, 6.0, 6.0]], dtype=jnp.float32),
+        position=jnp.array(
+            [[1.0, 1.0, 1.0], [2.0, 2.0, 2.0], [3.0, 3.0, 3.0]], dtype=jnp.float32
+        ),
+        velocity=jnp.array(
+            [[4.0, 4.0, 4.0], [5.0, 5.0, 5.0], [6.0, 6.0, 6.0]], dtype=jnp.float32
+        ),
     )
     updates = NestedData.default((3,))
     updates = updates.replace(simple=updates_simple, vector=updates_vector)
@@ -203,7 +207,9 @@ def test_update_on_condition_nested_dataclass_first_true_wins_everywhere():
     result = xnp.update_on_condition(original, indices, condition, updates)
 
     assert jnp.array_equal(result.simple.id, jnp.array([22, 0, 11], dtype=jnp.uint32))
-    assert jnp.allclose(result.simple.value, jnp.array([2.2, 0.0, 1.1], dtype=jnp.float32))
+    assert jnp.allclose(
+        result.simple.value, jnp.array([2.2, 0.0, 1.1], dtype=jnp.float32)
+    )
 
     expected_position = jnp.zeros((3, 3), dtype=jnp.float32)
     expected_position = expected_position.at[0].set(updates_vector.position[1])
@@ -277,7 +283,9 @@ def test_update_on_condition_condition_shape_mismatch_raises():
     indices = jnp.array([0, 1, 2], dtype=jnp.int32)
     condition = jnp.array([[True, False, True]], dtype=jnp.bool_)
 
-    with pytest.raises(ValueError, match="`condition` shape .* must match `indices` shape"):
+    with pytest.raises(
+        ValueError, match="`condition` shape .* must match `indices` shape"
+    ):
         xnp.update_on_condition(original, indices, condition, 5.0)
 
 
@@ -296,7 +304,8 @@ def test_update_on_condition_empty_condition_noop():
     """Empty update requests should leave the dataclass untouched."""
     original = SimpleData.default((2,))
     original = original.replace(
-        id=jnp.array([5, 6], dtype=jnp.uint32), value=jnp.array([1.5, 2.5], dtype=jnp.float32)
+        id=jnp.array([5, 6], dtype=jnp.uint32),
+        value=jnp.array([1.5, 2.5], dtype=jnp.float32),
     )
     indices = jnp.array([], dtype=jnp.int32)
     condition = jnp.array([], dtype=jnp.bool_)

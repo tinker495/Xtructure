@@ -83,7 +83,9 @@ def test_where_equivalent_to_tree_map():
     condition = jnp.array([True, False, True])
 
     result_xnp = xnp.where(condition, dc1, dc2)
-    result_manual = jax.tree_util.tree_map(lambda x, y: jnp.where(condition, x, y), dc1, dc2)
+    result_manual = jax.tree_util.tree_map(
+        lambda x, y: jnp.where(condition, x, y), dc1, dc2
+    )
 
     assert jnp.array_equal(result_xnp.id, result_manual.id)
     assert jnp.array_equal(result_xnp.value, result_manual.value)
@@ -97,7 +99,9 @@ def test_where_scalar_equivalent_to_tree_map():
     fallback = -1
 
     result_xnp = xnp.where(condition, dc, fallback)
-    result_manual = jax.tree_util.tree_map(lambda x: jnp.where(condition, x, fallback), dc)
+    result_manual = jax.tree_util.tree_map(
+        lambda x: jnp.where(condition, x, fallback), dc
+    )
 
     assert jnp.array_equal(result_xnp.id, result_manual.id)
     assert jnp.array_equal(result_xnp.value, result_manual.value)
@@ -106,10 +110,13 @@ def test_where_scalar_equivalent_to_tree_map():
 def test_where_no_broadcast_basic():
     """where_no_broadcast succeeds when shapes and dtypes match exactly."""
     dc1 = SimpleData.default(shape=(3,))
-    dc1 = dc1.replace(id=jnp.array([1, 2, 3], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 3.0]))
+    dc1 = dc1.replace(
+        id=jnp.array([1, 2, 3], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 3.0])
+    )
     dc2 = SimpleData.default(shape=(3,))
     dc2 = dc2.replace(
-        id=jnp.array([10, 20, 30], dtype=jnp.uint32), value=jnp.array([10.0, 20.0, 30.0])
+        id=jnp.array([10, 20, 30], dtype=jnp.uint32),
+        value=jnp.array([10.0, 20.0, 30.0]),
     )
     condition = jnp.array([True, False, True])
 
@@ -135,10 +142,13 @@ def test_where_no_broadcast_rejects_type_mismatch():
 def test_where_no_broadcast_rejects_shape_mismatch():
     """where_no_broadcast raises when mask shape differs from field shape."""
     dc1 = SimpleData.default(shape=(3,))
-    dc1 = dc1.replace(id=jnp.array([1, 2, 3], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 3.0]))
+    dc1 = dc1.replace(
+        id=jnp.array([1, 2, 3], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 3.0])
+    )
     dc2 = SimpleData.default(shape=(3,))
     dc2 = dc2.replace(
-        id=jnp.array([10, 20, 30], dtype=jnp.uint32), value=jnp.array([10.0, 20.0, 30.0])
+        id=jnp.array([10, 20, 30], dtype=jnp.uint32),
+        value=jnp.array([10.0, 20.0, 30.0]),
     )
     condition = jnp.array([True, False])
 

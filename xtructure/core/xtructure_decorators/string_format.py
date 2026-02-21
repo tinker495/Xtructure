@@ -55,7 +55,9 @@ def add_string_representation_methods(cls: Type[T]) -> Type[T]:
 
             def get_slice_str(current_state_slice):
                 if use_kwargs:
-                    return Text.from_ansi(_single_item_formatter(current_state_slice, **kwargs))
+                    return Text.from_ansi(
+                        _single_item_formatter(current_state_slice, **kwargs)
+                    )
                 else:
                     return Text.from_ansi(_single_item_formatter(current_state_slice))
 
@@ -87,14 +89,19 @@ def add_string_representation_methods(cls: Type[T]) -> Type[T]:
                     if r is None:
                         # Add a row of '...' for truncated rows
                         table.add_row(
-                            *[Align.center(Text("..."), vertical="middle") for _ in col_indices]
+                            *[
+                                Align.center(Text("..."), vertical="middle")
+                                for _ in col_indices
+                            ]
                         )
                         continue
 
                     row_cells = []
                     for c in col_indices:
                         if c is None:
-                            row_cells.append(Align.center(Text("..."), vertical="middle"))
+                            row_cells.append(
+                                Align.center(Text("..."), vertical="middle")
+                            )
                         else:
                             item_str = get_slice_str(self[(r, c)])
                             row_cells.append(item_str)
@@ -132,7 +139,9 @@ def add_string_representation_methods(cls: Type[T]) -> Type[T]:
         else:  # UNSTRUCTURED or any other case
             return f"<Unstructured {cls.__name__} data, shape: {self.shape}, default_shape: {self.default_shape}>"
 
-    setattr(cls, "__str__", lambda self, **kwargs: get_str(self, use_kwargs=False, **kwargs))
+    setattr(
+        cls, "__str__", lambda self, **kwargs: get_str(self, use_kwargs=False, **kwargs)
+    )
     setattr(cls, "str", lambda self, **kwargs: get_str(self, use_kwargs=True, **kwargs))
     return cls
 
@@ -163,7 +172,9 @@ def _custom_pretty_formatter(item, **_kwargs):
             value_str = "<error converting value to string>"
 
         if "\n" in value_str:
-            indented_value = "\n".join(["    " + line for line in value_str.split("\n")])
+            indented_value = "\n".join(
+                ["    " + line for line in value_str.split("\n")]
+            )
             parts.append(f"  {name}: \n{indented_value}")
         else:
             parts.append(f"  {name}: {value_str}")

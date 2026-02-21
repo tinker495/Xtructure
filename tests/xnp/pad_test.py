@@ -16,8 +16,12 @@ def test_pad_single_to_batched():
 
     assert result.structured_type.name == "BATCHED"
     assert result.shape.batch == (5,)
-    expected_id = jnp.array([42, 4294967295, 4294967295, 4294967295, 4294967295], dtype=jnp.uint32)
-    expected_value = jnp.array([3.14, jnp.inf, jnp.inf, jnp.inf, jnp.inf], dtype=jnp.float32)
+    expected_id = jnp.array(
+        [42, 4294967295, 4294967295, 4294967295, 4294967295], dtype=jnp.uint32
+    )
+    expected_value = jnp.array(
+        [3.14, jnp.inf, jnp.inf, jnp.inf, jnp.inf], dtype=jnp.float32
+    )
     assert jnp.array_equal(result.id, expected_id)
     assert jnp.allclose(result.value, expected_value)
 
@@ -25,7 +29,9 @@ def test_pad_single_to_batched():
 def test_pad_batched_axis_0():
     """Test padding a BATCHED dataclass along axis 0."""
     data = SimpleData.default((3,))
-    data = data.replace(id=jnp.array([1, 2, 3], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 3.0]))
+    data = data.replace(
+        id=jnp.array([1, 2, 3], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 3.0])
+    )
 
     result = xnp.pad(data, (0, 2))
 
@@ -57,14 +63,20 @@ def test_pad_single_before_after_inserts_correctly():
 def test_pad_batched_before_after_inserts_correctly():
     """BATCHED padding with (before, after) inserts at the correct offset."""
     data = SimpleData.default((3,))
-    data = data.replace(id=jnp.array([1, 2, 3], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 3.0]))
+    data = data.replace(
+        id=jnp.array([1, 2, 3], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 3.0])
+    )
 
     result = xnp.pad(data, (2, 1))
 
     assert result.structured_type.name == "BATCHED"
     assert result.shape.batch == (6,)
-    expected_id = jnp.array([4294967295, 4294967295, 1, 2, 3, 4294967295], dtype=jnp.uint32)
-    expected_value = jnp.array([jnp.inf, jnp.inf, 1.0, 2.0, 3.0, jnp.inf], dtype=jnp.float32)
+    expected_id = jnp.array(
+        [4294967295, 4294967295, 1, 2, 3, 4294967295], dtype=jnp.uint32
+    )
+    expected_value = jnp.array(
+        [jnp.inf, jnp.inf, 1.0, 2.0, 3.0, jnp.inf], dtype=jnp.float32
+    )
     assert jnp.array_equal(result.id, expected_id)
     assert jnp.allclose(result.value, expected_value)
 
@@ -72,7 +84,9 @@ def test_pad_batched_before_after_inserts_correctly():
 def test_pad_method_alias():
     """Test that .pad() instance method works as alias to xnp.pad."""
     data = SimpleData.default((2,))
-    data = data.replace(id=jnp.array([1, 2], dtype=jnp.uint32), value=jnp.array([1.0, 2.0]))
+    data = data.replace(
+        id=jnp.array([1, 2], dtype=jnp.uint32), value=jnp.array([1.0, 2.0])
+    )
 
     result_xnp = xnp.pad(data, (0, 2))
     result_method = data.pad((0, 2))
@@ -91,7 +105,9 @@ def test_pad_batched_with_constant_values():
 
     assert result.shape.batch == (4,)
     assert jnp.array_equal(result.id, jnp.array([1, 2, 99, 99], dtype=jnp.uint32))
-    assert jnp.array_equal(result.value, jnp.array([1.0, 2.0, 99.0, 99.0], dtype=jnp.float32))
+    assert jnp.array_equal(
+        result.value, jnp.array([1.0, 2.0, 99.0, 99.0], dtype=jnp.float32)
+    )
 
 
 def test_pad_batched_target_shape():

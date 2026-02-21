@@ -159,7 +159,9 @@ def test_take_equivalent_to_jnp_take():
     indices = jnp.array([0, 2, 3])
 
     result_xnp = xnp.take(data, indices)
-    result_manual = SimpleData(id=jnp.take(data.id, indices), value=jnp.take(data.value, indices))
+    result_manual = SimpleData(
+        id=jnp.take(data.id, indices), value=jnp.take(data.value, indices)
+    )
 
     assert jnp.array_equal(result_xnp.id, result_manual.id)
     assert jnp.array_equal(result_xnp.value, result_manual.value)

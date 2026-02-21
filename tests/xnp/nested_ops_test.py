@@ -30,7 +30,8 @@ def test_nested_reshape():
     # Inner val intrinsic: ()
     # Extra intrinsic: ()
     outer = Outer(
-        inner=Inner(val=jnp.arange(6).reshape(2, 3)), extra=jnp.arange(6).reshape(2, 3) + 10
+        inner=Inner(val=jnp.arange(6).reshape(2, 3)),
+        extra=jnp.arange(6).reshape(2, 3) + 10,
     )
 
     # Verify initial shape
@@ -84,7 +85,8 @@ def test_nested_swapaxes():
 def test_nested_flatten():
     # Batch shape: (2, 3)
     outer = Outer(
-        inner=Inner(val=jnp.arange(6).reshape(2, 3)), extra=jnp.arange(6).reshape(2, 3) + 10
+        inner=Inner(val=jnp.arange(6).reshape(2, 3)),
+        extra=jnp.arange(6).reshape(2, 3) + 10,
     )
 
     flattened = outer.flatten()
@@ -95,7 +97,9 @@ def test_nested_flatten():
 def test_nested_with_different_intrinsic_shapes():
     @xtructure_dataclass
     class DeepInner:
-        feat: Annotated[jnp.ndarray, FieldDescriptor.tensor(dtype=jnp.float32, shape=(10,))]
+        feat: Annotated[
+            jnp.ndarray, FieldDescriptor.tensor(dtype=jnp.float32, shape=(10,))
+        ]
 
         @classmethod
         def default(cls, shape=()):

@@ -46,7 +46,9 @@ def _bgpq_delete_heapify_internal(heap: "BGPQ"):
 
     def _init_buffers():
         update_idx = jnp.zeros((max_updates,), dtype=jnp.int32)
-        update_keys = jnp.zeros((max_updates,) + heap.key_store.shape[1:], heap.key_store.dtype)
+        update_keys = jnp.zeros(
+            (max_updates,) + heap.key_store.shape[1:], heap.key_store.dtype
+        )
 
         def _make_val_buf(leaf):
             return jnp.zeros((max_updates,) + leaf.shape[1:], leaf.dtype)
@@ -217,5 +219,7 @@ def _bgpq_delete_mins_jit(heap: "BGPQ"):
         )
         return heap
 
-    heap = jax.lax.cond(heap.heap_size == 0, make_empty, _bgpq_delete_heapify_internal, heap)
+    heap = jax.lax.cond(
+        heap.heap_size == 0, make_empty, _bgpq_delete_heapify_internal, heap
+    )
     return heap, min_keys, min_values

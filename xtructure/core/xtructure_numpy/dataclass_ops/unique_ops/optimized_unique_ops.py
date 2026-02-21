@@ -33,7 +33,9 @@ def _hash_to_wide(keys: Any) -> list[jax.Array]:
 
         def _hash_to_wide_step_u64(i, carry):
             hh1, hh2 = carry
-            col = lax.dynamic_index_in_dim(keys, i, axis=1, keepdims=False).astype(jnp.uint64)
+            col = lax.dynamic_index_in_dim(keys, i, axis=1, keepdims=False).astype(
+                jnp.uint64
+            )
             hh1 = hh1 * c1 + col
             hh2 = hh2 * c2 + col
             return hh1, hh2
@@ -53,7 +55,9 @@ def _hash_to_wide(keys: Any) -> list[jax.Array]:
 
         def _hash_to_wide_step_u32(i, carry):
             hh1, hh2, hh3, hh4 = carry
-            col = lax.dynamic_index_in_dim(keys, i, axis=1, keepdims=False).astype(jnp.uint32)
+            col = lax.dynamic_index_in_dim(keys, i, axis=1, keepdims=False).astype(
+                jnp.uint32
+            )
             hh1 = hh1 * c1 + col
             hh2 = hh2 * c2 + col
             hh3 = jnp.bitwise_xor(hh3, col) * c3
@@ -210,7 +214,10 @@ def unique_mask(
         if not use_static:
             try:
                 unique_indices = perm[mask_sorted]
-            except (jax.errors.NonConcreteBooleanIndexError, jax.errors.ConcretizationTypeError):
+            except (
+                jax.errors.NonConcreteBooleanIndexError,
+                jax.errors.ConcretizationTypeError,
+            ):
                 # Fallback to batch_len if concrete
                 if isinstance(batch_len_i, (int, jnp.integer)):
                     use_static = True
@@ -226,10 +233,14 @@ def unique_mask(
 
             # JIT-safe path: use nonzero with fixed size
             sentinel = batch_len_i
-            valid_positions = jnp.nonzero(mask_sorted, size=size, fill_value=sentinel)[0]
+            valid_positions = jnp.nonzero(mask_sorted, size=size, fill_value=sentinel)[
+                0
+            ]
 
             # Pad perm with fill_value at the sentinel position so invalid lookups get fill_value
-            perm_padded = jnp.concatenate([perm, jnp.array([fill_value], dtype=jnp.int32)])
+            perm_padded = jnp.concatenate(
+                [perm, jnp.array([fill_value], dtype=jnp.int32)]
+            )
             unique_indices = perm_padded[valid_positions]
 
         returns += (unique_indices,)

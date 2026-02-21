@@ -18,7 +18,9 @@ from xtructure_benchmarks.common import (
 )
 
 
-def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional[List[int]] = None):
+def run_benchmarks(
+    mode: str = "kernel", trials: int = 10, batch_sizes: Optional[List[int]] = None
+):
     """Runs the full suite of Queue benchmarks and saves the results."""
     batch_sizes = batch_sizes or [2**10, 2**12, 2**14]
     results = init_benchmark_results(batch_sizes)
@@ -27,7 +29,10 @@ def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional
     print("Running Queue Benchmarks...")
     try:
         print(f"JAX backend: {jax.default_backend()}")
-        print("JAX devices:", ", ".join([d.platform + ":" + d.device_kind for d in jax.devices()]))
+        print(
+            "JAX devices:",
+            ", ".join([d.platform + ":" + d.device_kind for d in jax.devices()]),
+        )
     except Exception:
         pass
     for batch_size in batch_sizes:
@@ -39,7 +44,11 @@ def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional
         precomputed_items = to_python_values(values_device)
 
         def materialize_items(include_preprocessing: bool):
-            return to_python_values(values_device) if include_preprocessing else precomputed_items
+            return (
+                to_python_values(values_device)
+                if include_preprocessing
+                else precomputed_items
+            )
 
         # --- xtructure.Queue Benchmark ---
         xtructure_queue = Queue.build(max_size=max_size, value_class=BenchmarkValue)
@@ -66,8 +75,12 @@ def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional
         )
         xtructure_dequeue_stats = throughput_stats(batch_size, dequeue_durations)
 
-        results["xtructure"].setdefault("enqueue_ops_per_sec", []).append(xtructure_enqueue_stats)
-        results["xtructure"].setdefault("dequeue_ops_per_sec", []).append(xtructure_dequeue_stats)
+        results["xtructure"].setdefault("enqueue_ops_per_sec", []).append(
+            xtructure_enqueue_stats
+        )
+        results["xtructure"].setdefault("dequeue_ops_per_sec", []).append(
+            xtructure_dequeue_stats
+        )
 
         # --- Python collections.deque Benchmark ---
         def python_enqueue_op():
@@ -91,8 +104,12 @@ def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional
         python_dequeue_durations = run_python_trials(python_dequeue_op, trials=trials)
         python_dequeue_stats = throughput_stats(batch_size, python_dequeue_durations)
 
-        results["python"].setdefault("enqueue_ops_per_sec", []).append(python_enqueue_stats)
-        results["python"].setdefault("dequeue_ops_per_sec", []).append(python_dequeue_stats)
+        results["python"].setdefault("enqueue_ops_per_sec", []).append(
+            python_enqueue_stats
+        )
+        results["python"].setdefault("dequeue_ops_per_sec", []).append(
+            python_dequeue_stats
+        )
 
     save_and_print_results(
         results,

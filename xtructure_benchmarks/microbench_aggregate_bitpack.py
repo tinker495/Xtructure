@@ -11,7 +11,9 @@ from xtructure import FieldDescriptor, xtructure_dataclass
 @xtructure_dataclass(validate=False, aggregate_bitpack=True)
 class AggBitpackBench:
     # ~928 bytes packed payload (<= 1e3 target)
-    flags: FieldDescriptor.tensor(dtype=jnp.bool_, shape=(1024,), bits=1, fill_value=False)
+    flags: FieldDescriptor.tensor(
+        dtype=jnp.bool_, shape=(1024,), bits=1, fill_value=False
+    )
     faces: FieldDescriptor.tensor(dtype=jnp.uint8, shape=(256, 3), bits=3, fill_value=0)
     codes: FieldDescriptor.tensor(dtype=jnp.uint16, shape=(256,), bits=12, fill_value=0)
     ids: FieldDescriptor.tensor(dtype=jnp.uint32, shape=(32,), bits=32, fill_value=0)

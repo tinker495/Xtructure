@@ -12,7 +12,9 @@ from ...xtructure_decorators import Xtructurable
 
 def full_like(dataclass_instance: Xtructurable, fill_value: Any) -> Xtructurable:
     """Return a dataclass filled with `fill_value`."""
-    return jax.tree_util.tree_map(lambda x: jnp.full_like(x, fill_value), dataclass_instance)
+    return jax.tree_util.tree_map(
+        lambda x: jnp.full_like(x, fill_value), dataclass_instance
+    )
 
 
 def zeros_like(dataclass_instance: Xtructurable) -> Xtructurable:

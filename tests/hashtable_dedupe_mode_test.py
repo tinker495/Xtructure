@@ -10,7 +10,9 @@ def test_parallel_insert_approx_mode_smoke():
     env = os.environ.copy()
     env["XTRUCTURE_HASHTABLE_DEDUPE_MODE"] = "approx"
     env["PYTHONPATH"] = os.pathsep.join(
-        [str(repo_root), env.get("PYTHONPATH", "")] if env.get("PYTHONPATH") else [str(repo_root)]
+        [str(repo_root), env.get("PYTHONPATH", "")]
+        if env.get("PYTHONPATH")
+        else [str(repo_root)]
     )
 
     code = textwrap.dedent(

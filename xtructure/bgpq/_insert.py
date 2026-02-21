@@ -66,7 +66,9 @@ def _bgpq_merge_buffer_jit(heap: "BGPQ", blockk: chex.Array, blockv: Xtructurabl
     )
 
     buffer_size = jnp.sum(jnp.isfinite(key_buffer), dtype=SIZE_DTYPE)
-    heap = heap.replace(key_buffer=key_buffer, val_buffer=val_buffer, buffer_size=buffer_size)
+    heap = heap.replace(
+        key_buffer=key_buffer, val_buffer=val_buffer, buffer_size=buffer_size
+    )
     return heap, blockk, blockv, buffer_overflow
 
 
@@ -88,14 +90,18 @@ def _bgpq_make_batched_like_jit(heap: "BGPQ", key: chex.Array, val: Xtructurable
     return key, val
 
 
-def _bgpq_insert_heapify_internal(heap: "BGPQ", block_key: chex.Array, block_val: Xtructurable):
+def _bgpq_insert_heapify_internal(
+    heap: "BGPQ", block_key: chex.Array, block_val: Xtructurable
+):
     is_full = heap.heap_size >= (heap.branch_size - 1)
 
     def _get_target_full(h):
         # Find the leaf with the largest max key (worst leaf) to challenge
         return jnp.argmax(h.key_store[:, -1]).astype(SIZE_DTYPE)
 
-    last_node = jax.lax.cond(is_full, _get_target_full, lambda h: SIZE_DTYPE(h.heap_size + 1), heap)
+    last_node = jax.lax.cond(
+        is_full, _get_target_full, lambda h: SIZE_DTYPE(h.heap_size + 1), heap
+    )
 
     max_depth = int(math.ceil(math.log2(int(heap.branch_size) + 1)))
 
@@ -176,7 +182,9 @@ def _bgpq_insert_heapify_internal(heap: "BGPQ", block_key: chex.Array, block_val
         )
 
     valid_node = last_node < heap.branch_size
-    heap = jax.lax.cond(valid_node, _update_if_valid, lambda h, k, v: h, heap, block_key, block_val)
+    heap = jax.lax.cond(
+        valid_node, _update_if_valid, lambda h, k, v: h, heap, block_key, block_val
+    )
 
     # Only increment size if we filled a NEW node (not full and valid)
     added = valid_node & (~is_full)
@@ -191,11 +199,14 @@ def _bgpq_insert_jit(heap: "BGPQ", block_key: chex.Array, block_val: Xtructurabl
         heap.key_store[0], heap.val_store[0], block_key, block_val
     )
     heap = heap.replace(
-        key_store=heap.key_store.at[0].set(root_key), val_store=heap.val_store.at[0].set(root_val)
+        key_store=heap.key_store.at[0].set(root_key),
+        val_store=heap.val_store.at[0].set(root_val),
     )
 
     # Handle buffer overflow
-    heap, block_key, block_val, buffer_overflow = _bgpq_merge_buffer_jit(heap, block_key, block_val)
+    heap, block_key, block_val, buffer_overflow = _bgpq_merge_buffer_jit(
+        heap, block_key, block_val
+    )
 
     # Perform heapification if needed
     heap, added = jax.lax.cond(

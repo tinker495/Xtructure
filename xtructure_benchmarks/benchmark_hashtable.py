@@ -40,7 +40,9 @@ def benchmark_dict_lookup(
     return throughput_stats(len(precomputed_keys), results_tuple)
 
 
-def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional[List[int]] = None):
+def run_benchmarks(
+    mode: str = "kernel", trials: int = 10, batch_sizes: Optional[List[int]] = None
+):
     """Runs the full suite of HashTable benchmarks and saves the results."""
     # Using smaller batch sizes to ensure completion within a reasonable time
     # Using smaller batch sizes to ensure completion within a reasonable time
@@ -51,7 +53,10 @@ def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional
     print("Running HashTable Benchmarks...")
     try:
         print(f"JAX backend: {jax.default_backend()}")
-        print("JAX devices:", ", ".join([d.platform + ":" + d.device_kind for d in jax.devices()]))
+        print(
+            "JAX devices:",
+            ", ".join([d.platform + ":" + d.device_kind for d in jax.devices()]),
+        )
     except Exception:
         pass
     for batch_size in batch_sizes:
@@ -104,8 +109,12 @@ def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional
         )
         xtructure_lookup_stats = throughput_stats(batch_size, lookup_durations)
 
-        results["xtructure"].setdefault("insert_ops_per_sec", []).append(xtructure_insert_stats)
-        results["xtructure"].setdefault("lookup_ops_per_sec", []).append(xtructure_lookup_stats)
+        results["xtructure"].setdefault("insert_ops_per_sec", []).append(
+            xtructure_insert_stats
+        )
+        results["xtructure"].setdefault("lookup_ops_per_sec", []).append(
+            xtructure_lookup_stats
+        )
 
         # --- Python dict Benchmark ---
         # Test both incremental and bulk modes, report the better one
@@ -138,15 +147,21 @@ def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional
             python_insert_candidates.append((stats, op, candidate_bulk))
 
         python_insert_candidates.sort(key=lambda t: t[0]["median"], reverse=True)
-        best_python_insert_stats, best_insert_op, best_is_bulk = python_insert_candidates[0]
+        best_python_insert_stats, best_insert_op, best_is_bulk = (
+            python_insert_candidates[0]
+        )
         py_dict = best_insert_op()
 
         python_lookup_stats = benchmark_dict_lookup(
             py_dict, keys_device, trials=trials, include_preprocessing=(mode == "e2e")
         )
 
-        results["python"].setdefault("insert_ops_per_sec", []).append(best_python_insert_stats)
-        results["python"].setdefault("lookup_ops_per_sec", []).append(python_lookup_stats)
+        results["python"].setdefault("insert_ops_per_sec", []).append(
+            best_python_insert_stats
+        )
+        results["python"].setdefault("lookup_ops_per_sec", []).append(
+            python_lookup_stats
+        )
 
     # Validate and save results to the correct directory
     save_and_print_results(

@@ -120,7 +120,9 @@ def add_shape_dtype_len(cls: Type[T]) -> Type[T]:
         except AttributeError:
             pass
 
-        result = type_tuple(*[getattr(self, field_name).dtype for field_name in field_names])
+        result = type_tuple(
+            *[getattr(self, field_name).dtype for field_name in field_names]
+        )
         object.__setattr__(self, "_dtype_cache", result)
         return result
 

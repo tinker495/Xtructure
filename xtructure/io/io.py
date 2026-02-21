@@ -55,7 +55,8 @@ def _flatten_instance_for_save(
                 packed
                 and bits is not None
                 and not (
-                    descriptor is not None and getattr(descriptor, "packed_bits", None) is not None
+                    descriptor is not None
+                    and getattr(descriptor, "packed_bits", None) is not None
                 )
             ):
                 data_key, shape_key, bits_key, dtype_key = _bitpack_keys(full_key)
@@ -106,7 +107,9 @@ def save(path: str, instance: Xtructurable, *, packed: bool = True):
     np.savez_compressed(path, **data_to_save)
 
 
-def _unflatten_data_for_load(cls: type, data: Dict[str, Any], prefix: str = "") -> Dict[str, Any]:
+def _unflatten_data_for_load(
+    cls: type, data: Dict[str, Any], prefix: str = ""
+) -> Dict[str, Any]:
     """Recursively reconstructs field values from flattened data."""
     field_values = {}
     descriptors = get_field_descriptors(cls)
@@ -128,7 +131,9 @@ def _unflatten_data_for_load(cls: type, data: Dict[str, Any], prefix: str = "") 
                 bits = int(np.asarray(data[bits_key]).reshape(-1)[0])
                 shape = tuple(int(x) for x in np.asarray(data[shape_key]).reshape(-1))
                 packed_bytes = jnp.array(data[data_key], dtype=jnp.uint8)
-                unpacked = from_uint8(packed_bytes, target_shape=shape, active_bits=bits)
+                unpacked = from_uint8(
+                    packed_bytes, target_shape=shape, active_bits=bits
+                )
                 # Cast back to declared dtype when possible.
                 if field_descriptor is not None and not is_xtructure_dataclass_type(
                     field_descriptor.dtype
@@ -160,7 +165,9 @@ def load(path: str) -> Xtructurable:
     with np.load(path, allow_pickle=False) as data:
         # Extract metadata
         if METADATA_MODULE_KEY not in data or METADATA_CLASS_NAME_KEY not in data:
-            raise ValueError("File is missing necessary xtructure metadata for loading.")
+            raise ValueError(
+                "File is missing necessary xtructure metadata for loading."
+            )
 
         module_name = str(data[METADATA_MODULE_KEY])
         class_name = str(data[METADATA_CLASS_NAME_KEY])

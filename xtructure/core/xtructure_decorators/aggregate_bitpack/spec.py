@@ -78,7 +78,9 @@ def _build_word_contrib_tables(
         raise ValueError("words_all_len must be non-negative")
 
     # Each word gets a list of (global_value_idx, value_bit_start, word_bit_start, num_bits)
-    contribs: list[list[tuple[int, int, int, int]]] = [[] for _ in range(int(words_all_len))]
+    contribs: list[list[tuple[int, int, int, int]]] = [
+        [] for _ in range(int(words_all_len))
+    ]
 
     value_offset = 0
     for s in specs:
@@ -172,7 +174,9 @@ def _build_agg_spec(root_cls: Type[Any]) -> tuple[list[_AggLeafSpec], int]:
             bits = int(descriptor.bits)
             unpacked_shape = tuple(descriptor.intrinsic_shape)
             nvalues = (
-                int(np.prod(np.array(unpacked_shape, dtype=np.int64))) if unpacked_shape else 1
+                int(np.prod(np.array(unpacked_shape, dtype=np.int64)))
+                if unpacked_shape
+                else 1
             )
             bit_len = int(nvalues * bits)
 

@@ -65,7 +65,9 @@ def test_load_invalid_file(tmp_path):
 
     np.savez_compressed(invalid_file, data=np.array([1, 2, 3]))
 
-    with pytest.raises(ValueError, match="File is missing necessary xtructure metadata"):
+    with pytest.raises(
+        ValueError, match="File is missing necessary xtructure metadata"
+    ):
         SimpleData.load(str(invalid_file))
 
 
@@ -150,5 +152,7 @@ def test_load_missing_metadata_raises(tmp_path):
     invalid_file = tmp_path / "no_meta.npz"
     np.savez_compressed(invalid_file, some_array=np.array([1, 2, 3]))
 
-    with pytest.raises(ValueError, match="File is missing necessary xtructure metadata"):
+    with pytest.raises(
+        ValueError, match="File is missing necessary xtructure metadata"
+    ):
         load(str(invalid_file))

@@ -24,8 +24,12 @@ class _Updater:
             if hasattr(self.cls, "__dataclass_fields__"):
                 self._field_names = tuple(self.cls.__dataclass_fields__.keys())
             else:
-                self._field_names = tuple(getattr(self.cls, "__annotations__", {}).keys())
-            self._field_getter = attrgetter(*self._field_names) if self._field_names else None
+                self._field_names = tuple(
+                    getattr(self.cls, "__annotations__", {}).keys()
+                )
+            self._field_getter = (
+                attrgetter(*self._field_names) if self._field_names else None
+            )
 
     def set(self, values_to_set):
         new_field_data = {}
@@ -44,7 +48,9 @@ class _Updater:
             if len(self._field_names) == 1:
                 values_tuple = (values_tuple,)
 
-        instance_values = self._field_getter(self.obj_instance) if self._field_getter else ()
+        instance_values = (
+            self._field_getter(self.obj_instance) if self._field_getter else ()
+        )
         if len(self._field_names) == 1:
             instance_values = (instance_values,)
 
@@ -102,7 +108,9 @@ class _Updater:
             if len(self._field_names) == 1:
                 values_tuple = (values_tuple,)
 
-        instance_values = self._field_getter(self.obj_instance) if self._field_getter else ()
+        instance_values = (
+            self._field_getter(self.obj_instance) if self._field_getter else ()
+        )
         if len(self._field_names) == 1:
             instance_values = (instance_values,)
 
@@ -110,7 +118,9 @@ class _Updater:
             zip(self._field_names, instance_values)
         ):
             update_val_for_this_field_if_true = (
-                values_tuple[i] if values_tuple is not None else value_to_conditionally_set
+                values_tuple[i]
+                if values_tuple is not None
+                else value_to_conditionally_set
             )
 
             try:

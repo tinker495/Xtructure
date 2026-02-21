@@ -31,7 +31,9 @@ def _use_kv_backend(backend: str, batch_size: int, context: str = "BACKEND") -> 
 
 
 def sort_arrays(k: chex.Array, v: Xtructurable):
-    sorted_k, sorted_idx = jax.lax.sort_key_val(k, jnp.arange(k.shape[0]), is_stable=SORT_STABLE)
+    sorted_k, sorted_idx = jax.lax.sort_key_val(
+        k, jnp.arange(k.shape[0]), is_stable=SORT_STABLE
+    )
     sorted_v = v[sorted_idx]
     return sorted_k, sorted_v
 

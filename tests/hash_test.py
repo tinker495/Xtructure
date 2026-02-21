@@ -56,7 +56,9 @@ def test_same_state_insert_at_batch():
         key_samples, key_clone = jax.random.split(key)
         samples = HashValueAB.random((batch,), key=key_samples)
         cloned_sample_num = jax.random.randint(key_clone, (), 1, batch // 2)
-        cloned_sample_idx = jax.random.randint(key_clone, (cloned_sample_num,), 0, batch)
+        cloned_sample_idx = jax.random.randint(
+            key_clone, (cloned_sample_num,), 0, batch
+        )
         cloned_sample_idx = jnp.sort(cloned_sample_idx)
         new_clone_idx = jax.random.randint(key_clone, (cloned_sample_num,), 0, batch)
 
@@ -177,7 +179,9 @@ def test_default_value_insertion():
     default_batch = HashValueAB.default((5,))  # Create a batch of default values
 
     # Insert batch of default values
-    fresh_table, updatable, unique_filled, batch_idx = fresh_table.parallel_insert(default_batch)
+    fresh_table, updatable, unique_filled, batch_idx = fresh_table.parallel_insert(
+        default_batch
+    )
 
     # At least one should be updatable (the first unique default value)
     assert jnp.any(updatable), "At least one default value should be updatable in batch"
@@ -186,7 +190,9 @@ def test_default_value_insertion():
     batch_lookup_idx, batch_found = fresh_table.lookup_parallel(default_batch)
 
     # All should be found
-    assert jnp.all(batch_found), "All default values should be found after batch insertion"
+    assert jnp.all(batch_found), (
+        "All default values should be found after batch insertion"
+    )
 
 
 def test_uint32ed_padding_for_non_multiple_of_four_bytes():

@@ -9,7 +9,9 @@ from xtructure import numpy as xnp
 def test_expand_dims_single_dataclass():
     """Expand dims should add a new leading axis."""
     data = SimpleData.default()
-    data = data.replace(id=jnp.array(7, dtype=jnp.uint32), value=jnp.array(3.14, dtype=jnp.float32))
+    data = data.replace(
+        id=jnp.array(7, dtype=jnp.uint32), value=jnp.array(3.14, dtype=jnp.float32)
+    )
 
     expanded = xnp.expand_dims(data, axis=0)
 
@@ -22,7 +24,9 @@ def test_expand_dims_single_dataclass():
 def test_expand_dims_batched_axis():
     """Expand dims on batched dataclass should insert axis at requested position."""
     data = SimpleData.default(shape=(2,))
-    data = data.replace(id=jnp.array([1, 2], dtype=jnp.uint32), value=jnp.array([1.0, 2.0]))
+    data = data.replace(
+        id=jnp.array([1, 2], dtype=jnp.uint32), value=jnp.array([1.0, 2.0])
+    )
 
     expanded = xnp.expand_dims(data, axis=1)
 
@@ -97,7 +101,9 @@ def test_split_even_sections():
 def test_split_by_indices():
     """Split with explicit indices should respect split points."""
     data = SimpleData.default(shape=(5,))
-    data = data.replace(id=jnp.arange(5, dtype=jnp.uint32), value=jnp.arange(5, dtype=jnp.float32))
+    data = data.replace(
+        id=jnp.arange(5, dtype=jnp.uint32), value=jnp.arange(5, dtype=jnp.float32)
+    )
 
     parts = xnp.split(data, jnp.array([2, 4]))
 

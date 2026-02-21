@@ -117,8 +117,12 @@ def test_peek(stack):
 def test_jit_compatibility(stack):
     @jax.jit
     def sequence(stack):
-        p1 = PointU32x2(x=jnp.array(1, dtype=jnp.uint32), y=jnp.array(2, dtype=jnp.uint32))
-        p2 = PointU32x2(x=jnp.arange(2, dtype=jnp.uint32), y=jnp.arange(2, 4, dtype=jnp.uint32))
+        p1 = PointU32x2(
+            x=jnp.array(1, dtype=jnp.uint32), y=jnp.array(2, dtype=jnp.uint32)
+        )
+        p2 = PointU32x2(
+            x=jnp.arange(2, dtype=jnp.uint32), y=jnp.arange(2, 4, dtype=jnp.uint32)
+        )
 
         stack = stack.push(p1)
         stack = stack.push(p2)

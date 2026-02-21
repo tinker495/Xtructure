@@ -13,5 +13,4 @@ repos:
         name: Lint with ruff
       - id: ruff-format
         name: Format with ruff
-        args: [--line-length=100]
         exclude: docs/source-app

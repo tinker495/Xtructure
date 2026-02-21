@@ -70,7 +70,9 @@ def reshape(dataclass_instance: T, new_shape: tuple[int, ...] | int, *args: int)
 
     return jax.tree_util.tree_map(
         lambda x: (
-            x if jnp.ndim(x) < batch_dim else jnp.reshape(x, new_shape + jnp.shape(x)[batch_dim:])
+            x
+            if jnp.ndim(x) < batch_dim
+            else jnp.reshape(x, new_shape + jnp.shape(x)[batch_dim:])
         ),
         dataclass_instance,
     )
@@ -137,9 +139,13 @@ def swapaxes(dataclass_instance: T, axis1: int, axis2: int) -> T:
     axis2_norm = normalize_axis(axis2)
 
     if axis1_norm < 0 or axis1_norm >= batch_ndim:
-        raise ValueError(f"Axis {axis1} is out of bounds for batch dimensions {batch_shape}")
+        raise ValueError(
+            f"Axis {axis1} is out of bounds for batch dimensions {batch_shape}"
+        )
     if axis2_norm < 0 or axis2_norm >= batch_ndim:
-        raise ValueError(f"Axis {axis2} is out of bounds for batch dimensions {batch_shape}")
+        raise ValueError(
+            f"Axis {axis2} is out of bounds for batch dimensions {batch_shape}"
+        )
 
     def swap_batch_axes_only(field: jnp.ndarray) -> jnp.ndarray:
         field_ndim = jnp.ndim(field)
@@ -152,17 +158,25 @@ def swapaxes(dataclass_instance: T, axis1: int, axis2: int) -> T:
 
 def expand_dims(dataclass_instance: T, axis: int) -> T:
     """Insert a new axis into every field."""
-    return jax.tree_util.tree_map(lambda x: jnp.expand_dims(x, axis=axis), dataclass_instance)
+    return jax.tree_util.tree_map(
+        lambda x: jnp.expand_dims(x, axis=axis), dataclass_instance
+    )
 
 
 def squeeze(dataclass_instance: T, axis: Union[int, tuple[int, ...], None] = None) -> T:
     """Remove axes of length one from every field."""
-    return jax.tree_util.tree_map(lambda x: jnp.squeeze(x, axis=axis), dataclass_instance)
+    return jax.tree_util.tree_map(
+        lambda x: jnp.squeeze(x, axis=axis), dataclass_instance
+    )
 
 
-def repeat(dataclass_instance: T, repeats: Union[int, jnp.ndarray], axis: int | None = None) -> T:
+def repeat(
+    dataclass_instance: T, repeats: Union[int, jnp.ndarray], axis: int | None = None
+) -> T:
     """Repeat elements along the given axis."""
-    return jax.tree_util.tree_map(lambda x: jnp.repeat(x, repeats, axis=axis), dataclass_instance)
+    return jax.tree_util.tree_map(
+        lambda x: jnp.repeat(x, repeats, axis=axis), dataclass_instance
+    )
 
 
 def moveaxis(
@@ -195,7 +209,9 @@ def broadcast_arrays(*args: Any) -> list[Any]:
     # and jnp.broadcast_arrays returns a list/tuple, we get a Structure of Lists.
 
     # We assume all args have the same structure (enforced by tree_map generally).
-    broadcasted_leaves_struct = jax.tree_util.tree_map(lambda *xs: jnp.broadcast_arrays(*xs), *args)
+    broadcasted_leaves_struct = jax.tree_util.tree_map(
+        lambda *xs: jnp.broadcast_arrays(*xs), *args
+    )
 
     # Check strictness: tree_map might be lenient. broadcast_arrays implies checked structures.
     # If structures mismatch, tree_map raises error (usually).
@@ -211,7 +227,9 @@ def broadcast_arrays(*args: Any) -> list[Any]:
     # The 'inner' structure is the List structure.
     inner_treedef = jax.tree_util.tree_structure([0] * len(args))
 
-    return jax.tree_util.tree_transpose(outer_treedef, inner_treedef, broadcasted_leaves_struct)
+    return jax.tree_util.tree_transpose(
+        outer_treedef, inner_treedef, broadcasted_leaves_struct
+    )
 
 
 def atleast_1d(*arys: Any) -> Any:

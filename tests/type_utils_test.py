@@ -15,8 +15,13 @@ class MockNonXtructedClass:
 def test_is_xtructure_dataclass_type():
     assert is_xtructure_dataclass_type(MockXtructedClass) is True
     assert is_xtructure_dataclass_type(MockNonXtructedClass) is False
-    assert is_xtructure_dataclass_type(MockXtructedClass()) is False  # instance, not type
-    assert is_xtructure_dataclass_type(type("DynamicClass", (), {"is_xtructed": False})) is False
+    assert (
+        is_xtructure_dataclass_type(MockXtructedClass()) is False
+    )  # instance, not type
+    assert (
+        is_xtructure_dataclass_type(type("DynamicClass", (), {"is_xtructed": False}))
+        is False
+    )
 
 
 def test_is_xtructure_dataclass_instance():

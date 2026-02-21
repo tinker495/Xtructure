@@ -66,7 +66,15 @@ def merge_indices_kernel_loop(ak_ref, bk_ref, merged_keys_ref, merged_indices_re
         )
         return current_idx_a, current_idx_b + 1
 
-    initial_main_loop_state = (0, 0, 0, ak_ref, bk_ref, merged_keys_ref, merged_indices_ref)
+    initial_main_loop_state = (
+        0,
+        0,
+        0,
+        ak_ref,
+        bk_ref,
+        merged_keys_ref,
+        merged_indices_ref,
+    )
 
     def main_loop_condition(state):
         idx_a, idx_b, _, _, _, _, _ = state
@@ -154,7 +162,10 @@ def merge_indices_kernel_loop(ak_ref, bk_ref, merged_keys_ref, merged_indices_re
             eviction_policy="evict_last",
         )
         pl.store(
-            loop_merged_indices_ref, (current_out_ptr,), current_idx_a, eviction_policy="evict_last"
+            loop_merged_indices_ref,
+            (current_out_ptr,),
+            current_idx_a,
+            eviction_policy="evict_last",
         )
         return (
             current_idx_a + 1,
@@ -221,7 +232,9 @@ def merge_indices_kernel_loop(ak_ref, bk_ref, merged_keys_ref, merged_indices_re
 
 
 @jax.jit
-def merge_arrays_indices_loop(ak: jax.Array, bk: jax.Array) -> Tuple[jax.Array, jax.Array]:
+def merge_arrays_indices_loop(
+    ak: jax.Array, bk: jax.Array
+) -> Tuple[jax.Array, jax.Array]:
     """
     Merges two sorted JAX arrays ak and bk using a loop-based Pallas kernel
     and returns a tuple containing:

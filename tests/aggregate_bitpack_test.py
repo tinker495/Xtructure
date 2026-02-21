@@ -7,7 +7,9 @@ from xtructure import FieldDescriptor, xtructure_dataclass
 @xtructure_dataclass(validate=True, aggregate_bitpack=True)
 class AggState:
     # 1-bit flags
-    flags: FieldDescriptor.tensor(dtype=jnp.bool_, shape=(17,), bits=1, fill_value=False)
+    flags: FieldDescriptor.tensor(
+        dtype=jnp.bool_, shape=(17,), bits=1, fill_value=False
+    )
     # 3-bit values in [0,7]
     faces: FieldDescriptor.tensor(dtype=jnp.uint8, shape=(6, 9), bits=3, fill_value=0)
     # 12-bit values -> should unpack to uint32 by default
@@ -66,7 +68,9 @@ def test_aggregate_pack_roundtrip_batched():
 @xtructure_dataclass(validate=True)
 class AggStateAuto:
     # Same structure as AggState, but rely on auto aggregate activation (all fields have bits, no nesting)
-    flags: FieldDescriptor.tensor(dtype=jnp.bool_, shape=(17,), bits=1, fill_value=False)
+    flags: FieldDescriptor.tensor(
+        dtype=jnp.bool_, shape=(17,), bits=1, fill_value=False
+    )
     faces: FieldDescriptor.tensor(dtype=jnp.uint8, shape=(6, 9), bits=3, fill_value=0)
     codes: FieldDescriptor.tensor(dtype=jnp.uint16, shape=(5,), bits=12, fill_value=0)
 
@@ -91,7 +95,8 @@ def test_aggregate_unpack_dtype_policy_and_schema():
     assert schema["mode"] == "aggregate"
     assert (
         schema["storage_bytes"]
-        == AggState.Packed.default_shape.words[0] * 4 + AggState.Packed.default_shape.tail[0]
+        == AggState.Packed.default_shape.words[0] * 4
+        + AggState.Packed.default_shape.tail[0]
     )
 
 
@@ -144,7 +149,9 @@ def test_aggregate_nested_roundtrip_and_partial():
     s = s.replace(
         inner=InnerState(
             a=jnp.array([[1, 2, 3, 4, 5, 6], [7, 0, 1, 2, 3, 4]], dtype=jnp.uint8),
-            codes=jnp.array([[1, 2, 3, 4, 5], [4095, 0, 17, 32, 999]], dtype=jnp.uint16),
+            codes=jnp.array(
+                [[1, 2, 3, 4, 5], [4095, 0, 17, 32, 999]], dtype=jnp.uint16
+            ),
         ),
         flags=jnp.array([[True] * 7, [False] * 7], dtype=jnp.bool_),
     )
@@ -164,4 +171,6 @@ def test_aggregate_nested_roundtrip_and_partial():
 
     # Partial decode for nested leaf via dotted path.
     codes_subset = p.unpack_field("inner.codes", indices=[0, 2, 4])
-    chex.assert_trees_all_equal(codes_subset, s.inner.codes.astype(jnp.uint32)[:, [0, 2, 4]])
+    chex.assert_trees_all_equal(
+        codes_subset, s.inner.codes.astype(jnp.uint32)[:, [0, 2, 4]]
+    )

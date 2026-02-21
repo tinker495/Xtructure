@@ -88,7 +88,8 @@ def plot_performance(results_path: Path):
 
         # Save the plot
         output_filename = (
-            results_path.parent / f"{data_structure_name.lower()}_{op_name.lower()}_performance.png"
+            results_path.parent
+            / f"{data_structure_name.lower()}_{op_name.lower()}_performance.png"
         )
         plt.savefig(output_filename)
         print(f"Saved plot to {output_filename}")

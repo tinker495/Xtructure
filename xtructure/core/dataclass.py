@@ -10,7 +10,9 @@ from typing_extensions import dataclass_transform  # pytype: disable=not-support
 
 FrozenInstanceError = dataclasses.FrozenInstanceError
 _RESERVED_DCLS_FIELD_NAMES = frozenset(("from_tuple", "replace", "to_tuple"))
-_INTERNAL_CACHE_KEYS = frozenset(("_shape_cache", "_dtype_cache", "_structured_type_cache"))
+_INTERNAL_CACHE_KEYS = frozenset(
+    ("_shape_cache", "_dtype_cache", "_structured_type_cache")
+)
 
 
 @dataclass_transform()
@@ -53,7 +55,9 @@ def base_dataclass(
 
     def dcls(cls):
         # Make sure to create a separate _Dataclass instance for each `cls`.
-        return _Dataclass(init, repr, eq, order, unsafe_hash, frozen, kw_only, static_fields)(cls)
+        return _Dataclass(
+            init, repr, eq, order, unsafe_hash, frozen, kw_only, static_fields
+        )(cls)
 
     if cls is None:
         return dcls
@@ -215,7 +219,9 @@ def _flatten_with_path(dcls):
                 ordered_keys.append(name)
                 seen.add(name)
 
-    extra_keys = [k for k in dct.keys() if k not in seen and k not in _INTERNAL_CACHE_KEYS]
+    extra_keys = [
+        k for k in dct.keys() if k not in seen and k not in _INTERNAL_CACHE_KEYS
+    ]
     extra_keys.sort()
     ordered_keys.extend(extra_keys)
 
@@ -232,7 +238,9 @@ def _is_hashable_static(value) -> bool:
 
 
 @functools.cache
-def register_dataclass_type_with_jax_tree_util(data_class, static_fields: tuple[str, ...] = ()):
+def register_dataclass_type_with_jax_tree_util(
+    data_class, static_fields: tuple[str, ...] = ()
+):
     """Register an existing dataclass so JAX knows how to handle it.
 
     This means that functions in jax.tree_util operate over the fields
@@ -266,7 +274,9 @@ def register_dataclass_type_with_jax_tree_util(data_class, static_fields: tuple[
                     ordered_keys.append(name)
                     seen.add(name)
 
-        extra_keys = [k for k in dct.keys() if k not in seen and k not in _INTERNAL_CACHE_KEYS]
+        extra_keys = [
+            k for k in dct.keys() if k not in seen and k not in _INTERNAL_CACHE_KEYS
+        ]
         extra_keys.sort()
         ordered_keys.extend(extra_keys)
 
@@ -307,7 +317,9 @@ def register_dataclass_type_with_jax_tree_util(data_class, static_fields: tuple[
                     ordered_keys.append(name)
                     seen.add(name)
 
-        extra_keys = [k for k in dct.keys() if k not in seen and k not in _INTERNAL_CACHE_KEYS]
+        extra_keys = [
+            k for k in dct.keys() if k not in seen and k not in _INTERNAL_CACHE_KEYS
+        ]
         extra_keys.sort()
         ordered_keys.extend(extra_keys)
 
@@ -355,7 +367,9 @@ def register_dataclass_type_with_jax_tree_util(data_class, static_fields: tuple[
             attribute_dict.update(dict(static_items))
             for field in data_class.__dataclass_fields__.values():
                 if field.name in attribute_dict:
-                    object.__setattr__(dcls_object, field.name, attribute_dict[field.name])
+                    object.__setattr__(
+                        dcls_object, field.name, attribute_dict[field.name]
+                    )
             if getattr(dcls_object, "__post_init__", None):
                 dcls_object.__post_init__()
             return dcls_object
@@ -363,7 +377,9 @@ def register_dataclass_type_with_jax_tree_util(data_class, static_fields: tuple[
     try:
         jax.tree_util.register_pytree_with_keys(
             nodetype=data_class,
-            flatten_with_keys=flatten_with_keys if static_fields else _flatten_with_path,
+            flatten_with_keys=flatten_with_keys
+            if static_fields
+            else _flatten_with_path,
             flatten_func=flatten,
             unflatten_func=unflatten,
         )

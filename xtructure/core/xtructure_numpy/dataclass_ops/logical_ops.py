@@ -11,7 +11,9 @@ from ...xtructure_decorators import Xtructurable
 from ...xtructure_numpy.array_ops import _update_array_on_condition, _where_no_broadcast
 
 
-def where(condition: jnp.ndarray, x: Xtructurable, y: Union[Xtructurable, Any]) -> Xtructurable:
+def where(
+    condition: jnp.ndarray, x: Xtructurable, y: Union[Xtructurable, Any]
+) -> Xtructurable:
     """Apply jnp.where across every field of a dataclass."""
     condition_array = jnp.asarray(condition, dtype=jnp.bool_)
 
@@ -94,7 +96,9 @@ def where_no_broadcast(
             )
 
         return jax.tree_util.tree_map(
-            lambda cond_field, x_field, y_field: _where_no_broadcast(cond_field, x_field, y_field),
+            lambda cond_field, x_field, y_field: _where_no_broadcast(
+                cond_field, x_field, y_field
+            ),
             condition,
             x,
             y,
@@ -127,6 +131,8 @@ def update_on_condition(
             values_to_set,
         )
     return jax.tree_util.tree_map(
-        lambda field: _update_array_on_condition(field, indices, condition, values_to_set),
+        lambda field: _update_array_on_condition(
+            field, indices, condition, values_to_set
+        ),
         dataclass_instance,
     )

@@ -79,5 +79,7 @@ def test_stack_incompatible_batch_shapes():
     data1 = SimpleData.default(shape=(2,))
     data2 = SimpleData.default(shape=(3,))
 
-    with pytest.raises(ValueError, match="All dataclasses must have the same batch shape"):
+    with pytest.raises(
+        ValueError, match="All dataclasses must have the same batch shape"
+    ):
         xnp.stack([data1, data2])

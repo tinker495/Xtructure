@@ -111,19 +111,27 @@ def run_benchmarks(
         "xtructure": {},
         "environment": get_system_info(),
         "config": {
-            "merge_value_backend": os.environ.get("XTRUCTURE_BGPQ_MERGE_VALUE_BACKEND", ""),
+            "merge_value_backend": os.environ.get(
+                "XTRUCTURE_BGPQ_MERGE_VALUE_BACKEND", ""
+            ),
             "merge_value_backend_buffer": os.environ.get(
                 "XTRUCTURE_BGPQ_MERGE_VALUE_BACKEND_BUFFER", ""
             ),
             "merge_value_backend_sortsplit": os.environ.get(
                 "XTRUCTURE_BGPQ_MERGE_VALUE_BACKEND_SORTSPLIT", ""
             ),
-            "merge_value_packing": os.environ.get("XTRUCTURE_BGPQ_MERGE_VALUE_PACKING", "auto"),
-            "merge_value_scalar_max": os.environ.get("XTRUCTURE_BGPQ_MERGE_VALUE_SCALAR_MAX", "16"),
+            "merge_value_packing": os.environ.get(
+                "XTRUCTURE_BGPQ_MERGE_VALUE_PACKING", "auto"
+            ),
+            "merge_value_scalar_max": os.environ.get(
+                "XTRUCTURE_BGPQ_MERGE_VALUE_SCALAR_MAX", "16"
+            ),
             "merge_value_auto_min_batch": os.environ.get(
                 "XTRUCTURE_BGPQ_MERGE_VALUE_AUTO_MIN_BATCH", "0"
             ),
-            "merge_value_reorder": os.environ.get("XTRUCTURE_BGPQ_VALUE_REORDER", "gather"),
+            "merge_value_reorder": os.environ.get(
+                "XTRUCTURE_BGPQ_VALUE_REORDER", "gather"
+            ),
             "num_inserts": num_inserts,
             "prefill": prefill,
             "bench": bench,
@@ -140,20 +148,28 @@ def run_benchmarks(
         rng = jax.random.PRNGKey(batch_size)
         rng, insert_key, prefill_key, delete_key = jax.random.split(rng, 4)
 
-        insert_values = bench_cls.random(shape=(num_inserts, batch_size), key=insert_key)
+        insert_values = bench_cls.random(
+            shape=(num_inserts, batch_size), key=insert_key
+        )
         insert_keys = jax.vmap(vmapped_key_gen)(insert_values)
 
         prefill_values = None
         prefill_keys = None
         if prefill > 0:
-            prefill_values = bench_cls.random(shape=(prefill, batch_size), key=prefill_key)
+            prefill_values = bench_cls.random(
+                shape=(prefill, batch_size), key=prefill_key
+            )
             prefill_keys = jax.vmap(vmapped_key_gen)(prefill_values)
 
-        delete_prefill = max(prefill, num_inserts) if bench in {"delete", "both"} else prefill
+        delete_prefill = (
+            max(prefill, num_inserts) if bench in {"delete", "both"} else prefill
+        )
         delete_values = None
         delete_keys = None
         if bench in {"delete", "both"}:
-            delete_values = bench_cls.random(shape=(delete_prefill, batch_size), key=delete_key)
+            delete_values = bench_cls.random(
+                shape=(delete_prefill, batch_size), key=delete_key
+            )
             delete_keys = jax.vmap(vmapped_key_gen)(delete_values)
 
         max_batches = max(num_inserts, prefill, delete_prefill)
@@ -200,7 +216,9 @@ def run_benchmarks(
             insert_stats = throughput_stats(
                 batch_size * num_inserts, (insert_durations, insert_mem)
             )
-            results["xtructure"].setdefault("insert_ops_per_sec", []).append(insert_stats)
+            results["xtructure"].setdefault("insert_ops_per_sec", []).append(
+                insert_stats
+            )
 
         if bench in {"delete", "both"}:
             heap_delete = heap
@@ -230,13 +248,17 @@ def run_benchmarks(
             delete_stats = throughput_stats(
                 batch_size * num_inserts, (delete_durations, delete_mem)
             )
-            results["xtructure"].setdefault("delete_ops_per_sec", []).append(delete_stats)
+            results["xtructure"].setdefault("delete_ops_per_sec", []).append(
+                delete_stats
+            )
 
     return results
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Benchmark BGPQ with small value payloads.")
+    parser = argparse.ArgumentParser(
+        description="Benchmark BGPQ with small value payloads."
+    )
     parser.add_argument(
         "--trials",
         type=int,

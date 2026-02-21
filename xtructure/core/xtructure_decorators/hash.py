@@ -122,8 +122,12 @@ def byterize_hash_func_builder(x: Xtructurable):
     """
 
     Packed = getattr(x, "Packed", None)
-    agg_tail_bytes = getattr(Packed, "__agg_tail_bytes__", None) if Packed is not None else None
-    agg_words_len = getattr(Packed, "__agg_words_len__", None) if Packed is not None else None
+    agg_tail_bytes = (
+        getattr(Packed, "__agg_tail_bytes__", None) if Packed is not None else None
+    )
+    agg_words_len = (
+        getattr(Packed, "__agg_words_len__", None) if Packed is not None else None
+    )
 
     has_agg_layout = agg_tail_bytes is not None and agg_words_len is not None
     agg_mode = os.environ.get("XTRUCTURE_HASH_AGG_MODE", "raw").strip().lower()
@@ -135,9 +139,13 @@ def byterize_hash_func_builder(x: Xtructurable):
         raise ValueError("XTRUCTURE_HASH_STREAM must be one of: off, on, auto")
 
     try:
-        stream_threshold = int(os.environ.get("XTRUCTURE_HASH_STREAM_THRESHOLD_U32", "8192"))
+        stream_threshold = int(
+            os.environ.get("XTRUCTURE_HASH_STREAM_THRESHOLD_U32", "8192")
+        )
     except ValueError as exc:
-        raise ValueError("XTRUCTURE_HASH_STREAM_THRESHOLD_U32 must be an integer") from exc
+        raise ValueError(
+            "XTRUCTURE_HASH_STREAM_THRESHOLD_U32 must be an integer"
+        ) from exc
     if stream_threshold < 0:
         raise ValueError("XTRUCTURE_HASH_STREAM_THRESHOLD_U32 must be >= 0")
 
@@ -179,7 +187,9 @@ def byterize_hash_func_builder(x: Xtructurable):
 
         pad_len = (-bytes_len) % 4
         if pad_len:
-            byte_array = jnp.pad(byte_array, (0, pad_len), mode="constant", constant_values=0)
+            byte_array = jnp.pad(
+                byte_array, (0, pad_len), mode="constant", constant_values=0
+            )
 
         chunks = jnp.reshape(byte_array, (-1, 4))
         # Fast-path: bitcast a (N, 4) uint8 buffer to (N,) uint32 without per-row vmap.
@@ -210,9 +220,13 @@ def byterize_hash_func_builder(x: Xtructurable):
             if dtype == jnp.float32:
                 return jax.lax.bitcast_convert_type(leaf, jnp.uint32).reshape(-1)
             if dtype == jnp.float64:
-                return _split_uint64_to_uint32(jax.lax.bitcast_convert_type(leaf, jnp.uint64))
+                return _split_uint64_to_uint32(
+                    jax.lax.bitcast_convert_type(leaf, jnp.uint64)
+                )
             if dtype in (jnp.float16, jnp.bfloat16):
-                return _pack_uint16_to_uint32(jax.lax.bitcast_convert_type(leaf, jnp.uint16))
+                return _pack_uint16_to_uint32(
+                    jax.lax.bitcast_convert_type(leaf, jnp.uint16)
+                )
 
         return _to_uint32_from_bytes(_to_bytes_leaf(leaf))
 

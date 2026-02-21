@@ -20,7 +20,9 @@ def _public_jnp_callables() -> set[str]:
 _ARRAY_PARAM_NAMES = {"a", "A", "arr", "ary", "array", "x"}
 
 
-def _signature_shape(sig: inspect.Signature) -> list[tuple[str, inspect._ParameterKind, object]]:
+def _signature_shape(
+    sig: inspect.Signature,
+) -> list[tuple[str, inspect._ParameterKind, object]]:
     return [(p.name, p.kind, p.default) for p in sig.parameters.values()]
 
 
@@ -66,11 +68,17 @@ def test_xnp_signatures_match_jnp():
         xnp_params = list(xnp_sig.parameters.values())
         if len(jnp_params) != len(xnp_params):
             mismatches.append(
-                (name, f"parameter count differs: jnp={len(jnp_params)} xnp={len(xnp_params)}")
+                (
+                    name,
+                    f"parameter count differs: jnp={len(jnp_params)} xnp={len(xnp_params)}",
+                )
             )
             continue
         for jnp_param, xnp_param in zip(jnp_params, xnp_params, strict=True):
-            if jnp_param.kind != xnp_param.kind or jnp_param.default != xnp_param.default:
+            if (
+                jnp_param.kind != xnp_param.kind
+                or jnp_param.default != xnp_param.default
+            ):
                 diff = "\n".join(
                     difflib.unified_diff(
                         [str(jnp_sig)],

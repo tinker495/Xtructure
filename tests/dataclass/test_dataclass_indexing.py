@@ -80,7 +80,8 @@ def test_at_set_nested_data():
             id=jnp.array(10, dtype=jnp.uint32), value=jnp.array(1.1, dtype=jnp.float32)
         ),
         vector=VectorData(
-            position=jnp.ones(3, dtype=jnp.float32), velocity=jnp.ones(3, dtype=jnp.float32) * 2
+            position=jnp.ones(3, dtype=jnp.float32),
+            velocity=jnp.ones(3, dtype=jnp.float32) * 2,
         ),
     )
 
@@ -97,8 +98,12 @@ def test_at_set_nested_data():
 
     assert updated_data.simple.id[1] == original_data.simple.id[1]
     assert updated_data.simple.value[1] == original_data.simple.value[1]
-    assert jnp.array_equal(updated_data.vector.position[1], original_data.vector.position[1])
-    assert jnp.array_equal(updated_data.vector.velocity[1], original_data.vector.velocity[1])
+    assert jnp.array_equal(
+        updated_data.vector.position[1], original_data.vector.position[1]
+    )
+    assert jnp.array_equal(
+        updated_data.vector.velocity[1], original_data.vector.velocity[1]
+    )
 
     assert original_data.simple.id[0] != data_to_set_single_nested.simple.id
 
@@ -160,7 +165,9 @@ class TestIndexingDecorator(unittest.TestCase):
         condition = jnp.array([True, True, False, True])
         values_to_set = jnp.array([10, 20, 30, 40])
 
-        updated_instance = instance.at[indices].set_as_condition(condition, values_to_set)
+        updated_instance = instance.at[indices].set_as_condition(
+            condition, values_to_set
+        )
 
         expected_x = jnp.array([10.0, 20.0, 40.0, 0.0])
 
@@ -193,7 +200,9 @@ class TestIndexingDecorator(unittest.TestCase):
         for idx, value in updates_to_apply.items():
             expected_x[idx] = value
 
-        updated_instance = instance.at[indices].set_as_condition(condition, values_to_set)
+        updated_instance = instance.at[indices].set_as_condition(
+            condition, values_to_set
+        )
 
         self.assertTrue(
             jnp.array_equal(updated_instance.x, jnp.array(expected_x)),
@@ -229,7 +238,9 @@ class TestIndexingDecorator(unittest.TestCase):
         for idx, value in updates_to_apply.items():
             expected_x[idx] = value
 
-        updated_instance = instance.at[indices].set_as_condition(condition, scalar_value)
+        updated_instance = instance.at[indices].set_as_condition(
+            condition, scalar_value
+        )
 
         self.assertTrue(
             jnp.array_equal(updated_instance.x, jnp.array(expected_x)),

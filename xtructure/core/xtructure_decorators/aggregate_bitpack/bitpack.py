@@ -163,7 +163,9 @@ def to_uint8(values: chex.Array, active_bits: int = 1) -> chex.Array:
 
     if active_bits in (2, 4):
         values_per_byte = 8 // active_bits
-        padding = (values_per_byte - (values_flat.size % values_per_byte)) % values_per_byte
+        padding = (
+            values_per_byte - (values_flat.size % values_per_byte)
+        ) % values_per_byte
         if padding:
             values_flat = jnp.concatenate(
                 [values_flat, jnp.zeros((padding,), dtype=values_flat.dtype)]
@@ -171,28 +173,32 @@ def to_uint8(values: chex.Array, active_bits: int = 1) -> chex.Array:
         grouped = values_flat.reshape((-1, values_per_byte))
 
         mask = jnp.uint8((1 << active_bits) - 1)
-        shifts = (jnp.arange(values_per_byte, dtype=jnp.uint8) * jnp.uint8(active_bits)).astype(
-            jnp.uint8
-        )
+        shifts = (
+            jnp.arange(values_per_byte, dtype=jnp.uint8) * jnp.uint8(active_bits)
+        ).astype(jnp.uint8)
 
         grouped_u8 = (grouped.astype(jnp.uint8) & mask).astype(jnp.uint8)
         parts = jnp.left_shift(grouped_u8, shifts[None, :])
         return jnp.bitwise_or.reduce(parts, axis=1).astype(jnp.uint8)
 
     # General path for any other bit-width (3..32 except 4,8). Use L = lcm(active_bits, 8) to align blocks.
-    tables, num_values_per_block, num_bytes_per_block, _words_all_len = _get_block_pack_tables(
-        active_bits
+    tables, num_values_per_block, num_bytes_per_block, _words_all_len = (
+        _get_block_pack_tables(active_bits)
     )
 
     padding = (
         num_values_per_block - (values_flat.size % num_values_per_block)
     ) % num_values_per_block
     if padding:
-        values_flat = jnp.concatenate([values_flat, jnp.zeros((padding,), dtype=values_flat.dtype)])
+        values_flat = jnp.concatenate(
+            [values_flat, jnp.zeros((padding,), dtype=values_flat.dtype)]
+        )
 
     grouped = values_flat.reshape((-1, num_values_per_block)).astype(jnp.uint32)
     words = pack_words_all_xla(grouped, tables)
-    bytes_all = jax.lax.bitcast_convert_type(words, jnp.uint8).reshape((words.shape[0], -1))
+    bytes_all = jax.lax.bitcast_convert_type(words, jnp.uint8).reshape(
+        (words.shape[0], -1)
+    )
     return bytes_all[:, :num_bytes_per_block].reshape((-1,)).astype(jnp.uint8)
 
 
@@ -219,7 +225,9 @@ def from_uint8(
         return jnp.zeros(target_shape, dtype=jnp.uint8)
 
     if active_bits == 1:
-        bits = jnp.unpackbits(packed_bytes, count=num_target_elements, bitorder="little")
+        bits = jnp.unpackbits(
+            packed_bytes, count=num_target_elements, bitorder="little"
+        )
         return bits.reshape(target_shape).astype(jnp.bool_)
 
     if active_bits == 8:
@@ -229,28 +237,36 @@ def from_uint8(
         values_per_byte = 8 // active_bits
         mask = jnp.uint8((1 << active_bits) - 1)
 
-        shifts = (jnp.arange(values_per_byte, dtype=jnp.uint8) * jnp.uint8(active_bits)).astype(
-            jnp.uint8
-        )
+        shifts = (
+            jnp.arange(values_per_byte, dtype=jnp.uint8) * jnp.uint8(active_bits)
+        ).astype(jnp.uint8)
         vals = jnp.right_shift(packed_bytes[:, None], shifts[None, :]) & mask
         all_values = vals.reshape((-1,))
         return all_values[:num_target_elements].reshape(target_shape)
 
-    tables, num_values_per_block, num_bytes_per_block, words_all_len = _get_block_pack_tables(
-        active_bits
+    tables, num_values_per_block, num_bytes_per_block, words_all_len = (
+        _get_block_pack_tables(active_bits)
     )
     # Avoid Python int overflow and handle active_bits == 32.
-    mask = jnp.uint32(0xFFFFFFFF) if active_bits == 32 else jnp.uint32((1 << active_bits) - 1)
+    mask = (
+        jnp.uint32(0xFFFFFFFF)
+        if active_bits == 32
+        else jnp.uint32((1 << active_bits) - 1)
+    )
 
     total_blocks = (packed_bytes.size + num_bytes_per_block - 1) // num_bytes_per_block
     total_bytes = total_blocks * num_bytes_per_block
     if total_bytes != packed_bytes.size:
-        packed_bytes = jnp.pad(packed_bytes, (0, total_bytes - packed_bytes.size), mode="constant")
+        packed_bytes = jnp.pad(
+            packed_bytes, (0, total_bytes - packed_bytes.size), mode="constant"
+        )
 
     grouped = packed_bytes.reshape((-1, num_bytes_per_block))
     pad = (-num_bytes_per_block) % 4
     if pad:
-        grouped = jnp.pad(grouped, ((0, 0), (0, pad)), mode="constant", constant_values=0)
+        grouped = jnp.pad(
+            grouped, ((0, 0), (0, pad)), mode="constant", constant_values=0
+        )
 
     words = jax.lax.bitcast_convert_type(
         grouped.reshape((-1, words_all_len, 4)), jnp.uint32
@@ -259,7 +275,9 @@ def from_uint8(
         [words, jnp.zeros((words.shape[0], 1), dtype=jnp.uint32)], axis=1
     )
 
-    bit_pos = jnp.arange(num_values_per_block, dtype=jnp.uint32) * jnp.uint32(active_bits)
+    bit_pos = jnp.arange(num_values_per_block, dtype=jnp.uint32) * jnp.uint32(
+        active_bits
+    )
     word_idx = jnp.right_shift(bit_pos, jnp.uint32(5)).astype(jnp.int32)
     shift = (bit_pos & jnp.uint32(31)).astype(jnp.uint32)
 
@@ -268,7 +286,9 @@ def from_uint8(
 
     shift2d = shift[None, :]
     low = jnp.right_shift(w0, shift2d)
-    high = jnp.where(shift2d == 0, jnp.uint32(0), jnp.left_shift(w1, jnp.uint32(32) - shift2d))
+    high = jnp.where(
+        shift2d == 0, jnp.uint32(0), jnp.left_shift(w1, jnp.uint32(32) - shift2d)
+    )
     vals = jnp.bitwise_and(jnp.bitwise_or(low, high), mask)
 
     out_dtype = jnp.uint8 if active_bits <= 8 else jnp.uint32

@@ -24,7 +24,9 @@ def _check_homogeneous_inputs(func_name: str, arrays_list: list[Any]) -> bool:
         raise ValueError(f"Cannot {func_name} empty list.")
     is_dataclass = [_is_xtructurable(arr) for arr in arrays_list]
     if any(is_dataclass) and not all(is_dataclass):
-        raise TypeError(f"{func_name} inputs must be all xtructure dataclasses or all arrays.")
+        raise TypeError(
+            f"{func_name} inputs must be all xtructure dataclasses or all arrays."
+        )
     return all(is_dataclass)
 
 
@@ -32,14 +34,18 @@ def _reject_dataclass_kwargs(func_name: str, **kwargs: Any) -> None:
     rejected = {name: value for name, value in kwargs.items() if value is not None}
     if rejected:
         keys = ", ".join(sorted(rejected.keys()))
-        raise TypeError(f"{func_name} does not support {keys} for xtructure dataclass inputs.")
+        raise TypeError(
+            f"{func_name} does not support {keys} for xtructure dataclass inputs."
+        )
 
 
 def concat(arrays, /, *, axis: int | None = 0):
     arrays_list = _coerce_sequence(arrays)
     if _check_homogeneous_inputs("concat", arrays_list):
         if axis is None:
-            return jax.tree_util.tree_map(lambda *xs: jnp.concatenate(xs, axis=None), *arrays_list)
+            return jax.tree_util.tree_map(
+                lambda *xs: jnp.concatenate(xs, axis=None), *arrays_list
+            )
         return _dc.concat(arrays_list, axis=axis)
     return jnp.concat(arrays_list, axis=axis)
 
@@ -48,9 +54,13 @@ def concatenate(arrays, axis: int | None = 0, dtype: Any | None = None):
     arrays_list = _coerce_sequence(arrays)
     if _check_homogeneous_inputs("concatenate", arrays_list):
         if dtype is not None:
-            raise TypeError("concatenate does not support dtype for xtructure dataclass inputs.")
+            raise TypeError(
+                "concatenate does not support dtype for xtructure dataclass inputs."
+            )
         if axis is None:
-            return jax.tree_util.tree_map(lambda *xs: jnp.concatenate(xs, axis=None), *arrays_list)
+            return jax.tree_util.tree_map(
+                lambda *xs: jnp.concatenate(xs, axis=None), *arrays_list
+            )
         return _dc.concat(arrays_list, axis=axis)
     return jnp.concatenate(arrays_list, axis=axis, dtype=dtype)
 
@@ -99,7 +109,9 @@ def where(condition, x=None, y=None, /, *, size=None, fill_value=None):
         if x is None or y is None:
             raise TypeError("x and y must be provided for xtructure dataclass inputs.")
         if _is_xtructurable(y) and not _is_xtructurable(x):
-            raise TypeError("x and y must both be xtructure dataclasses for dataclass where.")
+            raise TypeError(
+                "x and y must both be xtructure dataclasses for dataclass where."
+            )
         if _is_xtructurable(x) and _is_xtructurable(y):
             if jax.tree_util.tree_structure(x) != jax.tree_util.tree_structure(y):
                 raise TypeError("x and y must have the same tree structure.")
@@ -158,7 +170,9 @@ def take_along_axis(arr, indices, axis: int | None = -1, mode=None, fill_value=N
                 arr,
             )
         return _dc.take_along_axis(arr, indices, axis=axis)
-    return jnp.take_along_axis(arr, indices, axis=axis, mode=mode, fill_value=fill_value)
+    return jnp.take_along_axis(
+        arr, indices, axis=axis, mode=mode, fill_value=fill_value
+    )
 
 
 def tile(A, reps):
@@ -202,16 +216,22 @@ def unique_mask(
 def update_on_condition(dataclass_instance, indices, condition, values_to_set):
     if _is_xtructurable(dataclass_instance):
         if _is_xtructurable(values_to_set):
-            if jax.tree_util.tree_structure(values_to_set) != jax.tree_util.tree_structure(
-                dataclass_instance
-            ):
+            if jax.tree_util.tree_structure(
+                values_to_set
+            ) != jax.tree_util.tree_structure(dataclass_instance):
                 raise TypeError(
                     "values_to_set must have the same tree structure as dataclass_instance."
                 )
-        return _dc.update_on_condition(dataclass_instance, indices, condition, values_to_set)
+        return _dc.update_on_condition(
+            dataclass_instance, indices, condition, values_to_set
+        )
     if _is_xtructurable(values_to_set):
-        raise TypeError("values_to_set must not be an xtructure dataclass when updating an array.")
-    return _update_array_on_condition(dataclass_instance, indices, condition, values_to_set)
+        raise TypeError(
+            "values_to_set must not be an xtructure dataclass when updating an array."
+        )
+    return _update_array_on_condition(
+        dataclass_instance, indices, condition, values_to_set
+    )
 
 
 def expand_dims(a, axis: int | Sequence[int]):
@@ -254,7 +274,9 @@ def split(ary, indices_or_sections, axis: int = 0):
     return list(jnp.split(ary, indices_or_sections, axis=axis))
 
 
-def full_like(a, fill_value, dtype: Any | None = None, shape: Any = None, *, device=None):
+def full_like(
+    a, fill_value, dtype: Any | None = None, shape: Any = None, *, device=None
+):
     if _is_xtructurable(a):
         _reject_dataclass_kwargs("full_like", dtype=dtype, shape=shape, device=device)
         return _dc.full_like(a, fill_value)
@@ -265,14 +287,18 @@ def zeros_like(a, dtype=None, shape=None, *, device=None, out_sharding=None):
     if _is_xtructurable(a):
         _reject_dataclass_kwargs("zeros_like", dtype=dtype, shape=shape, device=device)
         return _dc.zeros_like(a)
-    return jnp.zeros_like(a, dtype=dtype, shape=shape, device=device, out_sharding=out_sharding)
+    return jnp.zeros_like(
+        a, dtype=dtype, shape=shape, device=device, out_sharding=out_sharding
+    )
 
 
 def ones_like(a, dtype=None, shape=None, *, device=None, out_sharding=None):
     if _is_xtructurable(a):
         _reject_dataclass_kwargs("ones_like", dtype=dtype, shape=shape, device=device)
         return _dc.ones_like(a)
-    return jnp.ones_like(a, dtype=dtype, shape=shape, device=device, out_sharding=out_sharding)
+    return jnp.ones_like(
+        a, dtype=dtype, shape=shape, device=device, out_sharding=out_sharding
+    )
 
 
 def equal(x, y, /):

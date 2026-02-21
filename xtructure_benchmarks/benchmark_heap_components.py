@@ -26,14 +26,18 @@ def key_gen(x: HeapValueABC) -> jax.Array:
 vmapped_key_gen = jax.jit(jax.vmap(key_gen))
 
 
-def _make_sorted_block(key: jax.Array, batch_size: int) -> Tuple[jax.Array, HeapValueABC]:
+def _make_sorted_block(
+    key: jax.Array, batch_size: int
+) -> Tuple[jax.Array, HeapValueABC]:
     values = HeapValueABC.random(shape=(batch_size,), key=key)
     keys = vmapped_key_gen(values)
     return sort_arrays(keys, values)
 
 
 def _bench(name: str, fn, args_supplier, num_ops: int, trials: int, warmup: int):
-    durations, mem = run_jax_trials(fn, trials=trials, warmup=warmup, args_supplier=args_supplier)
+    durations, mem = run_jax_trials(
+        fn, trials=trials, warmup=warmup, args_supplier=args_supplier
+    )
     stats = throughput_stats(num_ops, (durations, mem))
     print(f"{name:24s} median={stats['median']:.2f} iqr={stats['iqr']:.2f}")
 

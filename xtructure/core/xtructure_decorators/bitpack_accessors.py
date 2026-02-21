@@ -79,7 +79,9 @@ def _is_packed_descriptor(descriptor: FieldDescriptor) -> bool:
     )
 
 
-def _unpack_value(packed_value: Any, descriptor: FieldDescriptor, batch_shape: tuple[int, ...]):
+def _unpack_value(
+    packed_value: Any, descriptor: FieldDescriptor, batch_shape: tuple[int, ...]
+):
     packed_bits = int(descriptor.packed_bits)  # type: ignore[arg-type]
     unpacked_shape = tuple(descriptor.unpacked_intrinsic_shape)  # type: ignore[arg-type]
     unpacked_dtype = descriptor.unpacked_dtype
@@ -118,18 +120,20 @@ def _unpack_value(packed_value: Any, descriptor: FieldDescriptor, batch_shape: t
     # Convert packed bytes -> uint32 words (per row)
     pad_bytes = (-expected_packed_len) % 4
     if pad_bytes:
-        flat = jnp.pad(flat, ((0, 0), (0, pad_bytes)), mode="constant", constant_values=0)
+        flat = jnp.pad(
+            flat, ((0, 0), (0, pad_bytes)), mode="constant", constant_values=0
+        )
 
-    words = jax.lax.bitcast_convert_type(flat.reshape((flat.shape[0], -1, 4)), jnp.uint32).reshape(
-        (flat.shape[0], -1)
-    )
+    words = jax.lax.bitcast_convert_type(
+        flat.reshape((flat.shape[0], -1, 4)), jnp.uint32
+    ).reshape((flat.shape[0], -1))
     words_padded = jnp.concatenate(
         [words, jnp.zeros((words.shape[0], 1), dtype=jnp.uint32)], axis=1
     )
 
-    bit_pos = (jnp.arange(num_values, dtype=jnp.uint32) * jnp.uint32(packed_bits)).astype(
-        jnp.uint32
-    )
+    bit_pos = (
+        jnp.arange(num_values, dtype=jnp.uint32) * jnp.uint32(packed_bits)
+    ).astype(jnp.uint32)
     word_idx = jnp.right_shift(bit_pos, jnp.uint32(5)).astype(jnp.int32)
     shift = (bit_pos & jnp.uint32(31)).astype(jnp.uint32)
 
@@ -139,9 +143,15 @@ def _unpack_value(packed_value: Any, descriptor: FieldDescriptor, batch_shape: t
 
     shift2d = shift[None, :]
     low = jnp.right_shift(w0, shift2d)
-    high = jnp.where(shift2d == 0, jnp.uint32(0), jnp.left_shift(w1, jnp.uint32(32) - shift2d))
+    high = jnp.where(
+        shift2d == 0, jnp.uint32(0), jnp.left_shift(w1, jnp.uint32(32) - shift2d)
+    )
 
-    mask = jnp.uint32(0xFFFFFFFF) if packed_bits == 32 else jnp.uint32((1 << packed_bits) - 1)
+    mask = (
+        jnp.uint32(0xFFFFFFFF)
+        if packed_bits == 32
+        else jnp.uint32((1 << packed_bits) - 1)
+    )
     vals = jnp.bitwise_and(jnp.bitwise_or(low, high), mask)
 
     out_dtype = jnp.uint8 if packed_bits <= 8 else jnp.uint32
@@ -154,7 +164,9 @@ def _unpack_value(packed_value: Any, descriptor: FieldDescriptor, batch_shape: t
     return out.reshape(batch_shape + unpacked_shape)
 
 
-def _pack_value(unpacked_value: Any, descriptor: FieldDescriptor, batch_shape: tuple[int, ...]):
+def _pack_value(
+    unpacked_value: Any, descriptor: FieldDescriptor, batch_shape: tuple[int, ...]
+):
     packed_bits = int(descriptor.packed_bits)  # type: ignore[arg-type]
     unpacked_shape = tuple(descriptor.unpacked_intrinsic_shape)  # type: ignore[arg-type]
 
@@ -186,16 +198,21 @@ def _pack_value(unpacked_value: Any, descriptor: FieldDescriptor, batch_shape: t
         return packed.reshape(batch_shape + (expected_packed_len,)).astype(jnp.uint8)
 
     # General pack: pad values to lcm(active_bits, 8) block size and pack bitstream.
-    tables, expected_len_cached, padded_values, words_all_len = _get_bitpack_pack_tables(
-        packed_bits=int(packed_bits),
-        num_values=int(num_values),
+    tables, expected_len_cached, padded_values, words_all_len = (
+        _get_bitpack_pack_tables(
+            packed_bits=int(packed_bits),
+            num_values=int(num_values),
+        )
     )
     if expected_len_cached != expected_packed_len:
         raise ValueError("packed_num_bytes mismatch for packed_tensor")
 
     if padded_values != num_values:
         flat = jnp.pad(
-            flat, ((0, 0), (0, int(padded_values - num_values))), mode="constant", constant_values=0
+            flat,
+            ((0, 0), (0, int(padded_values - num_values))),
+            mode="constant",
+            constant_values=0,
         )
 
     if words_all_len == 0 or tables is None:
@@ -204,7 +221,9 @@ def _pack_value(unpacked_value: Any, descriptor: FieldDescriptor, batch_shape: t
         )
 
     words = pack_words_all_xla(jnp.asarray(flat, dtype=jnp.uint32), tables)
-    bytes_all = jax.lax.bitcast_convert_type(words, jnp.uint8).reshape((flat.shape[0], -1))
+    bytes_all = jax.lax.bitcast_convert_type(words, jnp.uint8).reshape(
+        (flat.shape[0], -1)
+    )
     packed = bytes_all[:, :expected_packed_len]
     return packed.reshape(batch_shape + (expected_packed_len,)).astype(jnp.uint8)
 
@@ -213,7 +232,9 @@ def add_bitpack_accessors(cls: Type[T]) -> Type[T]:
     """Attach unpacked accessors for any packed fields defined on the class."""
     field_descriptors: dict[str, FieldDescriptor] = get_field_descriptors(cls)
 
-    packed_fields = [name for name, fd in field_descriptors.items() if _is_packed_descriptor(fd)]
+    packed_fields = [
+        name for name, fd in field_descriptors.items() if _is_packed_descriptor(fd)
+    ]
     if not packed_fields:
         return cls
 

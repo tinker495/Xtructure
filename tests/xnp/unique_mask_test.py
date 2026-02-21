@@ -10,7 +10,9 @@ from xtructure import numpy as xnp
 def test_unique_mask_basic_uniqueness():
     """Test basic uniqueness without cost consideration."""
     data = HashableData.default(shape=(5,))
-    data = data.replace(id=jnp.array([1, 2, 1, 3, 2]), value=jnp.array([1.0, 2.0, 1.0, 3.0, 2.0]))
+    data = data.replace(
+        id=jnp.array([1, 2, 1, 3, 2]), value=jnp.array([1.0, 2.0, 1.0, 3.0, 2.0])
+    )
 
     mask = xnp.unique_mask(data)
 
@@ -37,7 +39,9 @@ def test_unique_mask_with_costs():
 def test_unique_mask_tie_breaking():
     """Test tie-breaking when costs are equal."""
     data = HashableData.default(shape=(4,))
-    data = data.replace(id=jnp.array([1, 2, 1, 2]), value=jnp.array([1.0, 2.0, 1.0, 2.0]))
+    data = data.replace(
+        id=jnp.array([1, 2, 1, 2]), value=jnp.array([1.0, 2.0, 1.0, 2.0])
+    )
     costs = jnp.array([3.0, 4.0, 3.0, 4.0])
 
     mask = xnp.unique_mask(data, key=costs)
@@ -49,7 +53,9 @@ def test_unique_mask_tie_breaking():
 def test_unique_mask_infinite_costs():
     """Test that entries with infinite cost are excluded."""
     data = HashableData.default(shape=(4,))
-    data = data.replace(id=jnp.array([1, 2, 1, 2]), value=jnp.array([1.0, 2.0, 1.0, 2.0]))
+    data = data.replace(
+        id=jnp.array([1, 2, 1, 2]), value=jnp.array([1.0, 2.0, 1.0, 2.0])
+    )
     costs = jnp.array([1.0, jnp.inf, 2.0, 3.0])
 
     mask = xnp.unique_mask(data, key=costs)
@@ -85,7 +91,9 @@ def test_unique_mask_all_unique():
 def test_unique_mask_explicit_batch_len():
     """Test with explicitly provided batch_len."""
     data = HashableData.default(shape=(4,))
-    data = data.replace(id=jnp.array([1, 2, 1, 3]), value=jnp.array([1.0, 2.0, 1.0, 3.0]))
+    data = data.replace(
+        id=jnp.array([1, 2, 1, 3]), value=jnp.array([1.0, 2.0, 1.0, 3.0])
+    )
     costs = jnp.array([2.0, 3.0, 1.0, 4.0])
 
     mask = xnp.unique_mask(data, key=costs, batch_len=4)
@@ -97,7 +105,9 @@ def test_unique_mask_explicit_batch_len():
 def test_unique_mask_no_key():
     """Test unique_mask without key returns first occurrence."""
     data = HashableData.default(shape=(5,))
-    data = data.replace(id=jnp.array([1, 2, 1, 3, 2]), value=jnp.array([1.0, 2.0, 1.0, 3.0, 2.0]))
+    data = data.replace(
+        id=jnp.array([1, 2, 1, 3, 2]), value=jnp.array([1.0, 2.0, 1.0, 3.0, 2.0])
+    )
 
     mask = xnp.unique_mask(data, key=None)
 

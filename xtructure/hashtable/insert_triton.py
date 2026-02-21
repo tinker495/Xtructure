@@ -82,7 +82,8 @@ def _make_reserve_slots_kernel(
         def _outer_cond(state):
             probe, _bucket, inserted, _slot = state
             return jnp.logical_and(
-                jnp.logical_and(is_active, jnp.logical_not(inserted)), probe < max_probe_buckets
+                jnp.logical_and(is_active, jnp.logical_not(inserted)),
+                probe < max_probe_buckets,
             )
 
         def _outer_body(state):
@@ -107,7 +108,9 @@ def _make_reserve_slots_kernel(
                 claimed = jnp.logical_and(do_try, jnp.bitwise_and(old, lsb) == 0)
 
                 new_occ = jnp.bitwise_or(old, lsb)
-                occ = jnp.asarray(jax.lax.select(do_try, new_occ, occ), dtype=jnp.uint32)
+                occ = jnp.asarray(
+                    jax.lax.select(do_try, new_occ, occ), dtype=jnp.uint32
+                )
 
                 slot_candidate = jnp.uint32(31) - jax.lax.clz(lsb)
                 slot = jnp.where(claimed, slot_candidate, slot)
@@ -163,7 +166,9 @@ def _get_reserve_slots_fn(
 
     compiler_params = None
     if num_warps is not None or num_stages is not None:
-        compiler_params = pl_triton.CompilerParams(num_warps=num_warps, num_stages=num_stages)
+        compiler_params = pl_triton.CompilerParams(
+            num_warps=num_warps, num_stages=num_stages
+        )
 
     @jax.jit
     def _reserve_slots(
@@ -211,7 +216,9 @@ def reserve_slots_triton(
         raise ValueError("reserve_slots_triton requires a GPU backend.")
 
     cfg = _triton_insert_config()
-    max_probe_env = os.environ.get("XTRUCTURE_HASHTABLE_TRITON_INSERT_MAX_PROBE_BUCKETS")
+    max_probe_env = os.environ.get(
+        "XTRUCTURE_HASHTABLE_TRITON_INSERT_MAX_PROBE_BUCKETS"
+    )
     if max_probe_env is None or max_probe_env.strip().lower() in {"", "none", "auto"}:
         max_probe_buckets = int(capacity)
     else:

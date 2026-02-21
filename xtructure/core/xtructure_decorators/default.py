@@ -72,11 +72,13 @@ def _create_default_method(
             # Check if it's a JAX primitive type class
             is_jax_primitive_type_class = False
             try:
-                if jnp.issubdtype(dtype_of_field_descriptor, jnp.number) or jnp.issubdtype(
-                    dtype_of_field_descriptor, jnp.bool_
-                ):
+                if jnp.issubdtype(
+                    dtype_of_field_descriptor, jnp.number
+                ) or jnp.issubdtype(dtype_of_field_descriptor, jnp.bool_):
                     is_jax_primitive_type_class = True
-            except TypeError:  # Not a type that jnp.issubdtype recognizes as a primitive base
+            except (
+                TypeError
+            ):  # Not a type that jnp.issubdtype recognizes as a primitive base
                 is_jax_primitive_type_class = False
 
             if is_jax_primitive_type_class:
@@ -141,7 +143,9 @@ def _create_default_method(
     def default(cls: Type[T], shape: TypingTuple[int, ...] = ()) -> T:
         default_values: Dict[str, Any] = {}
 
-        def resolve_fill_value(field_info: FieldInfo, field_shape: TypingTuple[int, ...]) -> Any:
+        def resolve_fill_value(
+            field_info: FieldInfo, field_shape: TypingTuple[int, ...]
+        ) -> Any:
             if field_info.fill_value_factory is not None:
                 return field_info.fill_value_factory(field_shape, field_info.dtype)
             return field_info.fill_value

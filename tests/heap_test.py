@@ -250,9 +250,15 @@ def test_heap_overflow_eviction():
     # Filter out Infs if any (shouldn't be any)
     valid_keys = all_keys[jnp.isfinite(all_keys)]
 
-    assert jnp.all(valid_keys <= 95.0), f"Found keys > 95.0: {valid_keys[valid_keys > 95.0]}"
-    assert jnp.sum(valid_keys == 95.0) == batch_size, "New keys (95.0) not found in heap"
-    assert jnp.sum(valid_keys == 100.0) == 0, "Old worst keys (100.0) failed to be evicted"
+    assert jnp.all(valid_keys <= 95.0), (
+        f"Found keys > 95.0: {valid_keys[valid_keys > 95.0]}"
+    )
+    assert jnp.sum(valid_keys == 95.0) == batch_size, (
+        "New keys (95.0) not found in heap"
+    )
+    assert jnp.sum(valid_keys == 100.0) == 0, (
+        "Old worst keys (100.0) failed to be evicted"
+    )
 
     # Also verify structure (implementation detail check, but good for debugging)
     # 95s should be at Node 2 now

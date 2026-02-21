@@ -75,11 +75,15 @@ def _parse_value_packing() -> str:
 
 
 def _parse_value_scalar_max() -> int:
-    value = os.environ.get("XTRUCTURE_BGPQ_MERGE_VALUE_SCALAR_MAX", str(_DEFAULT_VALUE_SCALAR_MAX))
+    value = os.environ.get(
+        "XTRUCTURE_BGPQ_MERGE_VALUE_SCALAR_MAX", str(_DEFAULT_VALUE_SCALAR_MAX)
+    )
     try:
         scalar_max = int(value)
     except ValueError as exc:
-        raise ValueError("XTRUCTURE_BGPQ_MERGE_VALUE_SCALAR_MAX must be an integer.") from exc
+        raise ValueError(
+            "XTRUCTURE_BGPQ_MERGE_VALUE_SCALAR_MAX must be an integer."
+        ) from exc
     if scalar_max <= 0:
         raise ValueError("XTRUCTURE_BGPQ_MERGE_VALUE_SCALAR_MAX must be positive.")
     return scalar_max
@@ -106,7 +110,9 @@ def _validate_block_size(block_size: int) -> int:
 
 
 def _make_merge_parallel_kernel(block_size: int, unroll_max: int):
-    def merge_parallel_kernel(ak_ref, bk_ref, orig_n_ref, merged_keys_ref, merged_indices_ref):
+    def merge_parallel_kernel(
+        ak_ref, bk_ref, orig_n_ref, merged_keys_ref, merged_indices_ref
+    ):
         """
         Pallas kernel that merges two sorted arrays in parallel using the
         Merge Path algorithm for block-level partitioning.
@@ -136,7 +142,9 @@ def _make_merge_parallel_kernel(block_size: int, unroll_max: int):
 
             a_exhausted = current_idx_a >= n
             b_exhausted = current_idx_b >= m
-            take_a = jnp.logical_or(b_exhausted, jnp.logical_and(~a_exhausted, val_a <= val_b))
+            take_a = jnp.logical_or(
+                b_exhausted, jnp.logical_and(~a_exhausted, val_a <= val_b)
+            )
 
             merged_keys_ref[out_ptr] = jax.lax.select(take_a, val_a, val_b)
             merged_indices_ref[out_ptr] = jax.lax.select(
@@ -153,7 +161,9 @@ def _make_merge_parallel_kernel(block_size: int, unroll_max: int):
             current_idx_a = idx_a
             current_idx_b = idx_b
             for step in range(block_size):
-                current_idx_a, current_idx_b = loop_body(step, current_idx_a, current_idx_b)
+                current_idx_a, current_idx_b = loop_body(
+                    step, current_idx_a, current_idx_b
+                )
         else:
 
             def fori_body(step, state):
@@ -196,14 +206,18 @@ def _make_merge_parallel_kernel_kv(block_size: int, unroll_max: int, leaf_count:
 
             a_exhausted = current_idx_a >= n
             b_exhausted = current_idx_b >= m
-            take_a = jnp.logical_or(b_exhausted, jnp.logical_and(~a_exhausted, val_a <= val_b))
+            take_a = jnp.logical_or(
+                b_exhausted, jnp.logical_and(~a_exhausted, val_a <= val_b)
+            )
 
             out_keys_ref[out_ptr] = jax.lax.select(take_a, val_a, val_b)
 
             for av_ref, bv_ref, out_ref in zip(av_refs, bv_refs, out_val_refs):
                 val_a_leaf = av_ref[pl.dslice(safe_idx_a, 1)]
                 val_b_leaf = bv_ref[pl.dslice(safe_idx_b, 1)]
-                out_ref[pl.dslice(out_ptr, 1)] = jax.lax.select(take_a, val_a_leaf, val_b_leaf)
+                out_ref[pl.dslice(out_ptr, 1)] = jax.lax.select(
+                    take_a, val_a_leaf, val_b_leaf
+                )
 
             take_a_i = take_a.astype(idx_dtype)
             take_b_i = jnp.logical_not(take_a).astype(idx_dtype)
@@ -213,7 +227,9 @@ def _make_merge_parallel_kernel_kv(block_size: int, unroll_max: int, leaf_count:
             current_idx_a = idx_a
             current_idx_b = idx_b
             for step in range(block_size):
-                current_idx_a, current_idx_b = loop_body(step, current_idx_a, current_idx_b)
+                current_idx_a, current_idx_b = loop_body(
+                    step, current_idx_a, current_idx_b
+                )
         else:
 
             def fori_body(step, state):
@@ -236,10 +252,14 @@ def _get_merge_arrays_parallel(
     merge_parallel_kernel = _make_merge_parallel_kernel(block_size, unroll_max)
     compiler_params = None
     if num_warps is not None or num_stages is not None:
-        compiler_params = pl_triton.CompilerParams(num_warps=num_warps, num_stages=num_stages)
+        compiler_params = pl_triton.CompilerParams(
+            num_warps=num_warps, num_stages=num_stages
+        )
 
     @jax.jit
-    def _merge_arrays_parallel(ak: jax.Array, bk: jax.Array) -> Tuple[jax.Array, jax.Array]:
+    def _merge_arrays_parallel(
+        ak: jax.Array, bk: jax.Array
+    ) -> Tuple[jax.Array, jax.Array]:
         if ak.ndim != 1 or bk.ndim != 1:
             raise ValueError("Input arrays ak and bk must be 1D.")
 
@@ -292,10 +312,14 @@ def _get_merge_arrays_parallel_kv(
     leaf_count: int,
 ):
     block_size = _validate_block_size(block_size)
-    merge_parallel_kernel = _make_merge_parallel_kernel_kv(block_size, unroll_max, leaf_count)
+    merge_parallel_kernel = _make_merge_parallel_kernel_kv(
+        block_size, unroll_max, leaf_count
+    )
     compiler_params = None
     if num_warps is not None or num_stages is not None:
-        compiler_params = pl_triton.CompilerParams(num_warps=num_warps, num_stages=num_stages)
+        compiler_params = pl_triton.CompilerParams(
+            num_warps=num_warps, num_stages=num_stages
+        )
 
     def _merge_arrays_parallel_kv(ak, bk, av_leaves, bv_leaves):
         n, m = ak.shape[0], bk.shape[0]
@@ -303,7 +327,9 @@ def _get_merge_arrays_parallel_kv(
         if total_len == 0:
             key_dtype = jnp.result_type(ak.dtype, bk.dtype)
             out_keys = jnp.array([], dtype=key_dtype)
-            out_vals = [jnp.empty((0,) + leaf.shape[1:], dtype=leaf.dtype) for leaf in av_leaves]
+            out_vals = [
+                jnp.empty((0,) + leaf.shape[1:], dtype=leaf.dtype) for leaf in av_leaves
+            ]
             return out_keys, out_vals
 
         key_dtype = jnp.result_type(ak.dtype, bk.dtype)
@@ -336,7 +362,9 @@ def _get_merge_arrays_parallel_kv(
     return _merge_arrays_parallel_kv
 
 
-def merge_arrays_parallel(ak: chex.Array, bk: chex.Array) -> Tuple[chex.Array, chex.Array]:
+def merge_arrays_parallel(
+    ak: chex.Array, bk: chex.Array
+) -> Tuple[chex.Array, chex.Array]:
     """
     Merges two sorted JAX arrays using the parallel Merge Path Pallas kernel.
     """
@@ -347,7 +375,9 @@ def merge_arrays_parallel(ak: chex.Array, bk: chex.Array) -> Tuple[chex.Array, c
     unroll_max = _parse_unroll_max()
     num_warps = _parse_triton_param("XTRUCTURE_BGPQ_MERGE_NUM_WARPS")
     num_stages = _parse_triton_param("XTRUCTURE_BGPQ_MERGE_NUM_STAGES")
-    return _get_merge_arrays_parallel(block_size, unroll_max, num_warps, num_stages)(ak, bk)
+    return _get_merge_arrays_parallel(block_size, unroll_max, num_warps, num_stages)(
+        ak, bk
+    )
 
 
 def merge_arrays_parallel_kv(
@@ -460,7 +490,9 @@ def merge_arrays_parallel_kv(
             slice_vals = out_vals_flat[offset : offset + shard_count]
             offset += shard_count
             concatenated = jnp.concatenate(slice_vals, axis=1)
-            restored_leaves.append(concatenated.reshape((concatenated.shape[0],) + inner_shape))
+            restored_leaves.append(
+                concatenated.reshape((concatenated.shape[0],) + inner_shape)
+            )
         else:
             leaf = out_vals_flat[offset]
             offset += 1

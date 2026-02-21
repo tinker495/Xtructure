@@ -22,7 +22,9 @@ SIZE_DTYPE = jnp.uint32
 # - `parallel` / `pallas`
 # - `sort` / `xla`
 _DEFAULT_MERGE_BACKEND = "parallel" if jax.default_backend() == "gpu" else "sort"
-_MERGE_BACKEND = os.environ.get("XTRUCTURE_BGPQ_MERGE_BACKEND", _DEFAULT_MERGE_BACKEND).lower()
+_MERGE_BACKEND = os.environ.get(
+    "XTRUCTURE_BGPQ_MERGE_BACKEND", _DEFAULT_MERGE_BACKEND
+).lower()
 
 if _MERGE_BACKEND in {"sort", "xla"}:
     merge_array_backend = merge_sort_split_idx

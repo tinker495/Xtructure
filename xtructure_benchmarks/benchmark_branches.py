@@ -37,7 +37,9 @@ def run_benchmarks(output_dir):
 
     # Determine repo root (parent of the directory containing this script)
     script_dir = Path(__file__).parent.resolve()
-    repo_root = script_dir.parent if script_dir.name == "xtructure_benchmarks" else script_dir
+    repo_root = (
+        script_dir.parent if script_dir.name == "xtructure_benchmarks" else script_dir
+    )
 
     # Define benchmarks to run (relative to repo root)
     scripts = [
@@ -117,16 +119,24 @@ def compare_results(branches, result_dirs):
                 if i >= len(target_vals):
                     break
 
-                b_val = base_vals[i]["median"] if isinstance(base_vals[i], dict) else base_vals[i]
+                b_val = (
+                    base_vals[i]["median"]
+                    if isinstance(base_vals[i], dict)
+                    else base_vals[i]
+                )
                 t_val = (
-                    target_vals[i]["median"] if isinstance(target_vals[i], dict) else target_vals[i]
+                    target_vals[i]["median"]
+                    if isinstance(target_vals[i], dict)
+                    else target_vals[i]
                 )
 
                 if b_val == 0:
                     ratio_str = "Inf"
                 else:
                     ratio = t_val / b_val
-                    color = "green" if ratio > 1.05 else "red" if ratio < 0.95 else "white"
+                    color = (
+                        "green" if ratio > 1.05 else "red" if ratio < 0.95 else "white"
+                    )
                     ratio_str = f"[{color}]{ratio:.2f}x[/{color}]"
 
                 table.add_row(

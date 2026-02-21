@@ -16,7 +16,9 @@ def test_tile_single_dataclass():
     assert result.structured_type.name == "BATCHED"
     assert result.shape.batch == (3,)
     assert jnp.array_equal(result.id, jnp.array([42, 42, 42], dtype=jnp.uint32))
-    assert jnp.array_equal(result.value, jnp.array([3.14, 3.14, 3.14], dtype=jnp.float32))
+    assert jnp.array_equal(
+        result.value, jnp.array([3.14, 3.14, 3.14], dtype=jnp.float32)
+    )
 
 
 def test_tile_batched_dataclass_1d():
@@ -32,7 +34,9 @@ def test_tile_batched_dataclass_1d():
     assert result.structured_type.name == "BATCHED"
     assert result.shape.batch == (4,)
     assert jnp.array_equal(result.id, jnp.array([1, 2, 1, 2], dtype=jnp.uint32))
-    assert jnp.array_equal(result.value, jnp.array([1.0, 2.0, 1.0, 2.0], dtype=jnp.float32))
+    assert jnp.array_equal(
+        result.value, jnp.array([1.0, 2.0, 1.0, 2.0], dtype=jnp.float32)
+    )
 
 
 def test_tile_batched_dataclass_2d():
@@ -136,9 +140,15 @@ def test_tile_nested_dataclass():
     assert result.vector.velocity.shape == (6,)
 
     assert jnp.array_equal(result.simple.id, jnp.array([1, 1], dtype=jnp.uint32))
-    assert jnp.array_equal(result.simple.value, jnp.array([1.0, 1.0], dtype=jnp.float32))
-    assert jnp.allclose(result.vector.position, jnp.array([1.0, 2.0, 3.0, 1.0, 2.0, 3.0]))
-    assert jnp.allclose(result.vector.velocity, jnp.array([0.1, 0.2, 0.3, 0.1, 0.2, 0.3]))
+    assert jnp.array_equal(
+        result.simple.value, jnp.array([1.0, 1.0], dtype=jnp.float32)
+    )
+    assert jnp.allclose(
+        result.vector.position, jnp.array([1.0, 2.0, 3.0, 1.0, 2.0, 3.0])
+    )
+    assert jnp.allclose(
+        result.vector.velocity, jnp.array([0.1, 0.2, 0.3, 0.1, 0.2, 0.3])
+    )
 
 
 def test_tile_equivalent_to_jnp_tile():
@@ -152,7 +162,9 @@ def test_tile_equivalent_to_jnp_tile():
     reps = (2, 3)
 
     result_xnp = xnp.tile(data, reps)
-    result_manual = SimpleData(id=jnp.tile(data.id, reps), value=jnp.tile(data.value, reps))
+    result_manual = SimpleData(
+        id=jnp.tile(data.id, reps), value=jnp.tile(data.value, reps)
+    )
 
     assert jnp.array_equal(result_xnp.id, result_manual.id)
     assert jnp.array_equal(result_xnp.value, result_manual.value)

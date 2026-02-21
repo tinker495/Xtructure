@@ -73,7 +73,8 @@ def _update_array_on_condition(
         winners_sorted = sorted_true_indices != invalid_index
     else:
         is_first = jnp.concatenate(
-            [jnp.array([True]), sorted_true_indices[1:] != sorted_true_indices[:-1]], axis=0
+            [jnp.array([True]), sorted_true_indices[1:] != sorted_true_indices[:-1]],
+            axis=0,
         )
         winners_sorted = jnp.logical_and(is_first, sorted_true_indices != invalid_index)
 

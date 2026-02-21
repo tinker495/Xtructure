@@ -62,20 +62,30 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
             cfg["nested_class_type"] = actual_dtype_or_nested_dtype_tuple
         else:
             # This field is a regular JAX array
-            actual_dtype = actual_dtype_or_nested_dtype_tuple  # It's a single JAX dtype here
+            actual_dtype = (
+                actual_dtype_or_nested_dtype_tuple  # It's a single JAX dtype here
+            )
             cfg["actual_dtype"] = actual_dtype  # Store the single JAX dtype
 
             if jnp.issubdtype(actual_dtype, jnp.integer):
-                cfg["type"] = "bits_int"  # Unified type for all full-range integers via bits
+                cfg["type"] = (
+                    "bits_int"  # Unified type for all full-range integers via bits
+                )
                 if jnp.issubdtype(actual_dtype, jnp.unsignedinteger):
-                    cfg["bits_gen_dtype"] = actual_dtype  # Generate bits of this same unsigned type
+                    cfg["bits_gen_dtype"] = (
+                        actual_dtype  # Generate bits of this same unsigned type
+                    )
                     cfg["view_as_signed"] = False
                 else:  # It's a signed integer
-                    unsigned_equivalent_str = f"uint{np.dtype(actual_dtype).itemsize * 8}"
+                    unsigned_equivalent_str = (
+                        f"uint{np.dtype(actual_dtype).itemsize * 8}"
+                    )
                     cfg["bits_gen_dtype"] = jnp.dtype(
                         unsigned_equivalent_str
                     )  # Generate bits of corresponding unsigned type
-                    cfg["view_as_signed"] = True  # And then view them as the actual signed type
+                    cfg["view_as_signed"] = (
+                        True  # And then view them as the actual signed type
+                    )
             elif jnp.issubdtype(actual_dtype, jnp.floating):
                 cfg["type"] = "float"
                 cfg["gen_dtype"] = actual_dtype
@@ -101,7 +111,9 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
                 nested_class = cfg["nested_class_type"]
                 current_default_shape = cfg["default_field_shape"]
                 target_shape = shape + current_default_shape
-                data[field_name] = nested_class.random(shape=target_shape, key=field_key)
+                data[field_name] = nested_class.random(
+                    shape=target_shape, key=field_key
+                )
             else:
                 current_default_shape = cfg["default_field_shape"]
                 if not isinstance(current_default_shape, tuple):
@@ -122,10 +134,14 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
                         field_key, target_shape, dtype=cfg["gen_dtype"]
                     )
                 elif cfg["type"] == "bool":
-                    data[field_name] = jax.random.bernoulli(field_key, shape=target_shape)
+                    data[field_name] = jax.random.bernoulli(
+                        field_key, shape=target_shape
+                    )
                 else:
                     try:
-                        data[field_name] = jnp.zeros(target_shape, dtype=cfg["gen_dtype"])
+                        data[field_name] = jnp.zeros(
+                            target_shape, dtype=cfg["gen_dtype"]
+                        )
                     except TypeError:
                         raise NotImplementedError(
                             f"Random generation for dtype {cfg['gen_dtype']} "

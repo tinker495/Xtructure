@@ -43,9 +43,13 @@ def _parse_int_env(name: str, default: int) -> int:
     return parsed
 
 
-_DEDUPE_MODE_RAW = os.environ.get("XTRUCTURE_HASHTABLE_DEDUPE_MODE", "safe").strip().lower()
+_DEDUPE_MODE_RAW = (
+    os.environ.get("XTRUCTURE_HASHTABLE_DEDUPE_MODE", "safe").strip().lower()
+)
 
-_SORT_BACKEND = os.environ.get("XTRUCTURE_HASHTABLE_SORT_BACKEND", "stable_argsort").strip().lower()
+_SORT_BACKEND = (
+    os.environ.get("XTRUCTURE_HASHTABLE_SORT_BACKEND", "stable_argsort").strip().lower()
+)
 if _SORT_BACKEND not in {"stable_argsort", "lax_unstable", "lax_stable"}:
     raise ValueError(
         "Invalid XTRUCTURE_HASHTABLE_SORT_BACKEND. Expected one of: stable_argsort, lax_unstable, lax_stable."
@@ -140,7 +144,9 @@ def _compute_unique_mask_from_uint32eds(
         sort_keys = []
         for i in range(word_count):
             sort_keys.append(
-                jnp.asarray(jax.lax.select(filled, keys[:, i], sentinel), dtype=jnp.uint32)
+                jnp.asarray(
+                    jax.lax.select(filled, keys[:, i], sentinel), dtype=jnp.uint32
+                )
             )
 
         perm = indices
@@ -211,8 +217,12 @@ def _compute_unique_mask_from_uint32eds(
         row_changed_sig = jnp.logical_or(
             sorted_h1[1:] != sorted_h1[:-1], sorted_h2[1:] != sorted_h2[:-1]
         )
-        row_changed_sig = jnp.logical_or(row_changed_sig, sorted_h3[1:] != sorted_h3[:-1])
-        row_changed_sig = jnp.logical_or(row_changed_sig, sorted_h4[1:] != sorted_h4[:-1])
+        row_changed_sig = jnp.logical_or(
+            row_changed_sig, sorted_h3[1:] != sorted_h3[:-1]
+        )
+        row_changed_sig = jnp.logical_or(
+            row_changed_sig, sorted_h4[1:] != sorted_h4[:-1]
+        )
 
         if _DEDUPE_MODE == "safe":
             sorted_filled_sig = filled[sorted_indices_sig]
@@ -225,7 +235,9 @@ def _compute_unique_mask_from_uint32eds(
                 lhs = keys[sorted_indices_sig[1:]]
                 rhs = keys[sorted_indices_sig[:-1]]
                 adj_equal = jnp.all(lhs == rhs, axis=1)
-                collision = jnp.any(jnp.logical_and(same_sig, jnp.logical_not(adj_equal)))
+                collision = jnp.any(
+                    jnp.logical_and(same_sig, jnp.logical_not(adj_equal))
+                )
                 return collision
 
             collision = jax.lax.cond(
@@ -262,7 +274,9 @@ def _compute_unique_mask_from_uint32eds(
         sorted_unique_key = unique_key_arr[sorted_indices]
         masked_key = jnp.where(sorted_filled, sorted_unique_key, jnp.inf)
         min_keys = (
-            jnp.full((batch_len,), jnp.inf, dtype=masked_key.dtype).at[group_id].min(masked_key)
+            jnp.full((batch_len,), jnp.inf, dtype=masked_key.dtype)
+            .at[group_id]
+            .min(masked_key)
         )
         candidate_indices = jnp.where(
             masked_key == min_keys[group_id],
@@ -273,10 +287,14 @@ def _compute_unique_mask_from_uint32eds(
         candidate_indices = jnp.where(sorted_filled, sorted_indices, batch_len_i32)
 
     representative_per_group = (
-        jnp.full((batch_len,), batch_len_i32, dtype=jnp.int32).at[group_id].min(candidate_indices)
+        jnp.full((batch_len,), batch_len_i32, dtype=jnp.int32)
+        .at[group_id]
+        .min(candidate_indices)
     )
     representative_per_group = jnp.where(
-        representative_per_group == batch_len_i32, jnp.int32(0), representative_per_group
+        representative_per_group == batch_len_i32,
+        jnp.int32(0),
+        representative_per_group,
     )
     representative_sorted = representative_per_group[group_id]
 
@@ -319,7 +337,9 @@ def _compute_unique_mask_from_hash_pairs(
     secondary_hashes = jnp.asarray(secondary_hashes, dtype=jnp.uint32).reshape(-1)
     batch_len = int(primary_hashes.shape[0])
     if secondary_hashes.shape[0] != batch_len:
-        raise ValueError("primary_hashes and secondary_hashes must have the same length.")
+        raise ValueError(
+            "primary_hashes and secondary_hashes must have the same length."
+        )
 
     # Exact mode semantics: do not rely on hash pairs.
     if _DEDUPE_MODE == "exact":
@@ -340,7 +360,9 @@ def _compute_unique_mask_from_hash_pairs(
 
     sentinel = jnp.broadcast_to(jnp.uint32(0xFFFFFFFF), primary_hashes.shape)
     h1 = jnp.asarray(jax.lax.select(filled, primary_hashes, sentinel), dtype=jnp.uint32)
-    h2 = jnp.asarray(jax.lax.select(filled, secondary_hashes, sentinel), dtype=jnp.uint32)
+    h2 = jnp.asarray(
+        jax.lax.select(filled, secondary_hashes, sentinel), dtype=jnp.uint32
+    )
 
     indices = jnp.arange(batch_len, dtype=jnp.int32)
 
@@ -398,7 +420,9 @@ def _compute_unique_mask_from_hash_pairs(
             sorted_unique_key = unique_key_arr[sorted_indices]
             masked_key = jnp.where(sorted_filled, sorted_unique_key, jnp.inf)
             min_keys = (
-                jnp.full((batch_len,), jnp.inf, dtype=masked_key.dtype).at[group_id].min(masked_key)
+                jnp.full((batch_len,), jnp.inf, dtype=masked_key.dtype)
+                .at[group_id]
+                .min(masked_key)
             )
             candidate_indices = jnp.where(
                 masked_key == min_keys[group_id],
@@ -420,7 +444,9 @@ def _compute_unique_mask_from_hash_pairs(
         )
         representative_sorted = representative_per_group[group_id]
 
-        representative_indices = cast(jax.Array, jnp.zeros((batch_len,), dtype=jnp.int32))
+        representative_indices = cast(
+            jax.Array, jnp.zeros((batch_len,), dtype=jnp.int32)
+        )
         representative_indices = cast(
             jax.Array,
             representative_indices.at[sorted_indices].set(representative_sorted),
@@ -460,7 +486,9 @@ def _compute_unique_mask_from_hash_pairs(
             adj_equal = jnp.all(lhs == rhs, axis=1)
             return jnp.any(jnp.logical_and(same_pair, jnp.logical_not(adj_equal)))
 
-        collision = lax.cond(has_dups, _check_collision, lambda _: jnp.bool_(False), operand=None)
+        collision = lax.cond(
+            has_dups, _check_collision, lambda _: jnp.bool_(False), operand=None
+        )
 
         def _fallback(_):
             return _compute_unique_mask_from_uint32eds(
@@ -481,7 +509,9 @@ def _normalize_probe_step(step: chex.Array, modulus: int) -> chex.Array:
     modulus_u32 = jnp.maximum(modulus_u32, SIZE_DTYPE(1))
     mask = modulus_u32 - SIZE_DTYPE(1)
     is_pow2 = jnp.logical_and(modulus_u32 > 0, (modulus_u32 & mask) == 0)
-    step_u32 = cast(jax.Array, jnp.where(is_pow2, step_u32 & mask, step_u32 % modulus_u32))
+    step_u32 = cast(
+        jax.Array, jnp.where(is_pow2, step_u32 & mask, step_u32 % modulus_u32)
+    )
     step_u32 = cast(jax.Array, jnp.bitwise_or(step_u32, SIZE_DTYPE(1)))
     return cast(jax.Array, step_u32)
 
@@ -501,7 +531,9 @@ def get_new_idx_from_uint32ed(
     mask = modulus_u32 - SIZE_DTYPE(1)
     is_pow2 = jnp.logical_and(modulus_u32 > 0, (modulus_u32 & mask) == 0)
     index = jax.lax.select(
-        is_pow2, jnp.asarray(primary_hash, dtype=SIZE_DTYPE) & mask, primary_hash % modulus_u32
+        is_pow2,
+        jnp.asarray(primary_hash, dtype=SIZE_DTYPE) & mask,
+        primary_hash % modulus_u32,
     )
     step = _normalize_probe_step(secondary_hash, modulus)
     return index, step, primary_hash, secondary_hash
@@ -524,7 +556,9 @@ def get_new_idx_byterized(
     mask = modulus_u32 - SIZE_DTYPE(1)
     is_pow2 = jnp.logical_and(modulus_u32 > 0, (modulus_u32 & mask) == 0)
     idx = jax.lax.select(
-        is_pow2, jnp.asarray(primary_hash, dtype=SIZE_DTYPE) & mask, primary_hash % modulus_u32
+        is_pow2,
+        jnp.asarray(primary_hash, dtype=SIZE_DTYPE) & mask,
+        primary_hash % modulus_u32,
     )
     step = _normalize_probe_step(secondary_hash, modulus)
     fingerprint = _mix_fingerprint(primary_hash, secondary_hash, jnp.uint32(0))
@@ -551,7 +585,9 @@ def get_new_idx_hashed(
     mask = modulus_u32 - SIZE_DTYPE(1)
     is_pow2 = jnp.logical_and(modulus_u32 > 0, (modulus_u32 & mask) == 0)
     idx = jax.lax.select(
-        is_pow2, jnp.asarray(primary_hash, dtype=SIZE_DTYPE) & mask, primary_hash % modulus_u32
+        is_pow2,
+        jnp.asarray(primary_hash, dtype=SIZE_DTYPE) & mask,
+        primary_hash % modulus_u32,
     )
     step = _normalize_probe_step(secondary_hash, modulus)
     fingerprint = _mix_fingerprint(primary_hash, secondary_hash, jnp.uint32(0))

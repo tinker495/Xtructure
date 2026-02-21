@@ -79,7 +79,9 @@ def _resolve_slot_conflicts(flat_indices: chex.Array, active: chex.Array) -> che
 
 
 @jax.jit
-def _hashtable_insert_jit(table: Any, input: Xtructurable) -> tuple[Any, chex.Array, Any]:
+def _hashtable_insert_jit(
+    table: Any, input: Xtructurable
+) -> tuple[Any, chex.Array, Any]:
     def _update_table(
         table: Any,
         input: Xtructurable,
@@ -87,10 +89,12 @@ def _hashtable_insert_jit(table: Any, input: Xtructurable) -> tuple[Any, chex.Ar
         fingerprint: chex.Array,
     ):
         table = table.replace(
-            table=table.table.at[idx.index * table.bucket_size + idx.slot_index].set(input),
-            fingerprints=table.fingerprints.at[idx.index * table.bucket_size + idx.slot_index].set(
-                fingerprint
+            table=table.table.at[idx.index * table.bucket_size + idx.slot_index].set(
+                input
             ),
+            fingerprints=table.fingerprints.at[
+                idx.index * table.bucket_size + idx.slot_index
+            ].set(fingerprint),
             bucket_fill_levels=table.bucket_fill_levels.at[idx.index].add(1),
             size=table.size + 1,
         )
@@ -120,7 +124,11 @@ def _hashtable_insert_jit(table: Any, input: Xtructurable) -> tuple[Any, chex.Ar
     table = jax.lax.cond(can_insert, _do_insert, _no_insert)
     inserted = can_insert
     bucket_size_u32 = SIZE_DTYPE(table.bucket_size)
-    return table, inserted, HashIdxCls(index=idx.index * bucket_size_u32 + idx.slot_index)
+    return (
+        table,
+        inserted,
+        HashIdxCls(index=idx.index * bucket_size_u32 + idx.slot_index),
+    )
 
 
 def _hashtable_parallel_insert_internal(
@@ -164,11 +172,13 @@ def _hashtable_parallel_insert_internal(
         )(unupdateds, idxs, probe_steps)
 
     valid_initial = index.slot_index < table.bucket_size
-    flat_initial_slots = index.index * SIZE_DTYPE(table.bucket_size) + index.slot_index.astype(
-        SIZE_DTYPE
-    )
+    flat_initial_slots = index.index * SIZE_DTYPE(
+        table.bucket_size
+    ) + index.slot_index.astype(SIZE_DTYPE)
     initial_candidates = jnp.logical_and(updatable, valid_initial)
-    initial_unique_mask = _resolve_slot_conflicts(flat_initial_slots, initial_candidates)
+    initial_unique_mask = _resolve_slot_conflicts(
+        flat_initial_slots, initial_candidates
+    )
     pending = jnp.logical_or(
         jnp.logical_and(updatable, jnp.logical_not(initial_unique_mask)),
         jnp.logical_and(updatable, jnp.logical_not(valid_initial)),
@@ -178,7 +188,9 @@ def _hashtable_parallel_insert_internal(
         _, pending, probes = val
         return jnp.logical_and(jnp.any(pending), probes < table.max_probes)
 
-    def _body(val: tuple[Any, chex.Array, chex.Array]) -> tuple[Any, chex.Array, chex.Array]:
+    def _body(
+        val: tuple[Any, chex.Array, chex.Array],
+    ) -> tuple[Any, chex.Array, chex.Array]:
         idxs, pending, probes = val
         updated_idxs = _next_idx(idxs, pending)
 
@@ -196,11 +208,15 @@ def _hashtable_parallel_insert_internal(
         )
         return updated_idxs, next_pending, probes + 1
 
-    index, pending, _ = jax.lax.while_loop(_cond, _body, (index, pending, jnp.uint32(0)))
+    index, pending, _ = jax.lax.while_loop(
+        _cond, _body, (index, pending, jnp.uint32(0))
+    )
 
     successful = jnp.logical_and(updatable, jnp.logical_not(pending))
     successful = jnp.logical_and(successful, index.slot_index < table.bucket_size)
-    flat_indices = index.index * SIZE_DTYPE(table.bucket_size) + index.slot_index.astype(SIZE_DTYPE)
+    flat_indices = index.index * SIZE_DTYPE(
+        table.bucket_size
+    ) + index.slot_index.astype(SIZE_DTYPE)
 
     safe_flat_indices = _scatter_safe_indices(
         flat_indices,
@@ -230,8 +246,12 @@ def _hashtable_parallel_insert_internal(
             dtype=jnp.uint32,
         )
         bit = jnp.left_shift(jnp.uint32(1), safe_slot_u32)
-        bit = jnp.asarray(jax.lax.select(successful, bit, jnp.uint32(0)), dtype=jnp.uint32)
-        table = table.replace(bucket_occupancy=table.bucket_occupancy.at[bucket_i32].add(bit))
+        bit = jnp.asarray(
+            jax.lax.select(successful, bit, jnp.uint32(0)), dtype=jnp.uint32
+        )
+        table = table.replace(
+            bucket_occupancy=table.bucket_occupancy.at[bucket_i32].add(bit)
+        )
     return table, index, successful
 
 
@@ -259,7 +279,9 @@ def _hashtable_parallel_insert_internal_triton(
     )
 
     bucket_size_u32 = SIZE_DTYPE(bucket_size)
-    flat_indices = out_bucket.astype(SIZE_DTYPE) * bucket_size_u32 + out_slot.astype(SIZE_DTYPE)
+    flat_indices = out_bucket.astype(SIZE_DTYPE) * bucket_size_u32 + out_slot.astype(
+        SIZE_DTYPE
+    )
 
     safe_flat_indices = _scatter_safe_indices(
         flat_indices,
@@ -275,13 +297,17 @@ def _hashtable_parallel_insert_internal_triton(
 
     full_mask = jnp.uint32(0xFFFFFFFF if bucket_size >= 32 else (1 << bucket_size) - 1)
     occ_rows = occ[out_bucket.astype(jnp.int32)]
-    fill_rows = jax.lax.population_count(jnp.bitwise_and(occ_rows, full_mask)).astype(SIZE_DTYPE)
+    fill_rows = jax.lax.population_count(jnp.bitwise_and(occ_rows, full_mask)).astype(
+        SIZE_DTYPE
+    )
     safe_buckets = _scatter_safe_indices(
         out_bucket,
         inserted,
         out_of_bounds=int(table.bucket_fill_levels.shape[0]),
     )
-    new_bucket_fill_levels = table.bucket_fill_levels.at[safe_buckets].set(fill_rows, mode="drop")
+    new_bucket_fill_levels = table.bucket_fill_levels.at[safe_buckets].set(
+        fill_rows, mode="drop"
+    )
 
     table = table.replace(
         table=new_table,
@@ -323,7 +349,9 @@ def _hashtable_parallel_insert_internal_pallas(
     )
 
     bucket_size_u32 = SIZE_DTYPE(bucket_size)
-    flat_indices = out_bucket.astype(SIZE_DTYPE) * bucket_size_u32 + out_slot.astype(SIZE_DTYPE)
+    flat_indices = out_bucket.astype(SIZE_DTYPE) * bucket_size_u32 + out_slot.astype(
+        SIZE_DTYPE
+    )
 
     safe_flat_indices = _scatter_safe_indices(
         flat_indices,
@@ -374,30 +402,43 @@ def _hashtable_parallel_insert_jit(
                     inputs, table._capacity, table.seed
                 ),
             )
-            unique_filled, representative_indices = _compute_unique_mask_from_hash_pairs(
-                primary_hashes,
-                secondary_hashes,
-                filled_mask,
-                unique_key,
-                uint32eds=None,
+            unique_filled, representative_indices = (
+                _compute_unique_mask_from_hash_pairs(
+                    primary_hashes,
+                    secondary_hashes,
+                    filled_mask,
+                    unique_key,
+                    uint32eds=None,
+                )
             )
         else:
             # Safe/exact: compute uint32ed for collision detection / full-row dedupe fallback.
-            initial_idx, steps, uint32eds, fingerprints, primary_hashes, secondary_hashes = cast(
+            (
+                initial_idx,
+                steps,
+                uint32eds,
+                fingerprints,
+                primary_hashes,
+                secondary_hashes,
+            ) = cast(
                 tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array, jax.Array],
                 jax.vmap(get_new_idx_byterized, in_axes=(0, None, None))(
                     inputs, table._capacity, table.seed
                 ),
             )
-            unique_filled, representative_indices = _compute_unique_mask_from_hash_pairs(
-                primary_hashes,
-                secondary_hashes,
-                filled_mask,
-                unique_key,
-                uint32eds=uint32eds,
+            unique_filled, representative_indices = (
+                _compute_unique_mask_from_hash_pairs(
+                    primary_hashes,
+                    secondary_hashes,
+                    filled_mask,
+                    unique_key,
+                    uint32eds=uint32eds,
+                )
             )
 
-        idx = BucketIdxCls(index=initial_idx, slot_index=jnp.zeros(batch_len, dtype=SLOT_IDX_DTYPE))
+        idx = BucketIdxCls(
+            index=initial_idx, slot_index=jnp.zeros(batch_len, dtype=SLOT_IDX_DTYPE)
+        )
 
         initial_found = jnp.logical_not(unique_filled)
         idx, found = _hashtable_lookup_parallel_internal(
@@ -413,30 +454,38 @@ def _hashtable_parallel_insert_jit(
         updatable = jnp.logical_and(jnp.logical_not(found), unique_filled)
 
         use_triton = (
-            jax.default_backend() == "gpu" and table.bucket_size <= 32 and triton_insert_enabled()
+            jax.default_backend() == "gpu"
+            and table.bucket_size <= 32
+            and triton_insert_enabled()
         )
 
         use_pallas = (
-            jax.default_backend() == "tpu" and table.bucket_size <= 32 and pallas_insert_enabled()
+            jax.default_backend() == "tpu"
+            and table.bucket_size <= 32
+            and pallas_insert_enabled()
         )
 
         if use_triton:
-            updated_table, inserted_idx, inserted = _hashtable_parallel_insert_internal_triton(
-                table,
-                inputs,
-                steps,
-                idx.index,
-                updatable,
-                fingerprints,
+            updated_table, inserted_idx, inserted = (
+                _hashtable_parallel_insert_internal_triton(
+                    table,
+                    inputs,
+                    steps,
+                    idx.index,
+                    updatable,
+                    fingerprints,
+                )
             )
         elif use_pallas:
-            updated_table, inserted_idx, inserted = _hashtable_parallel_insert_internal_pallas(
-                table,
-                inputs,
-                steps,
-                idx.index,
-                updatable,
-                fingerprints,
+            updated_table, inserted_idx, inserted = (
+                _hashtable_parallel_insert_internal_pallas(
+                    table,
+                    inputs,
+                    steps,
+                    idx.index,
+                    updatable,
+                    fingerprints,
+                )
             )
         else:
             updated_table, inserted_idx, inserted = _hashtable_parallel_insert_internal(
@@ -452,7 +501,9 @@ def _hashtable_parallel_insert_jit(
         cond_keep_current = jnp.logical_or(cond_found, jnp.logical_not(inserted))
 
         inserted_index = jnp.asarray(inserted_idx.index, dtype=idx.index.dtype)
-        inserted_slot_index = jnp.asarray(inserted_idx.slot_index, dtype=idx.slot_index.dtype)
+        inserted_slot_index = jnp.asarray(
+            inserted_idx.slot_index, dtype=idx.slot_index.dtype
+        )
         current_index = jnp.asarray(idx.index)
         current_slot_index = jnp.asarray(idx.slot_index)
 
@@ -466,7 +517,9 @@ def _hashtable_parallel_insert_jit(
             current_slot_index,
             inserted_slot_index,
         )
-        provisional_idx = BucketIdxCls(index=provisional_index, slot_index=provisional_slot_index)
+        provisional_idx = BucketIdxCls(
+            index=provisional_index, slot_index=provisional_slot_index
+        )
 
         representative_indices = jnp.asarray(representative_indices, dtype=jnp.int32)
         final_idx = BucketIdxCls(

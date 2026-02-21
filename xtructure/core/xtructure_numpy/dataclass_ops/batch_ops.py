@@ -80,13 +80,17 @@ def concat(dataclasses: List[T], axis: int = 0) -> T:
 
             for i, (dim1, dim2) in enumerate(zip(first_batch_shape, batch_shape)):
                 if i != concat_axis_adjusted and dim1 != dim2:
-                    raise ValueError(f"Incompatible batch dimensions at axis {i}: {dim1} vs {dim2}")
+                    raise ValueError(
+                        f"Incompatible batch dimensions at axis {i}: {dim1} vs {dim2}"
+                    )
 
         return jax.tree_util.tree_map(
             lambda *arrays: jnp.concatenate(arrays, axis=axis), *dataclasses
         )
 
-    raise ValueError(f"Concatenation not supported for structured type: {first_structured_type}")
+    raise ValueError(
+        f"Concatenation not supported for structured type: {first_structured_type}"
+    )
 
 
 def pad(
@@ -113,13 +117,18 @@ def pad(
             result = type(dataclass_instance).default((target_size,))
             return result.at[pad_before].set(dataclass_instance)
 
-        expanded = jax.tree_util.tree_map(lambda x: jnp.expand_dims(x, axis=0), dataclass_instance)
+        expanded = jax.tree_util.tree_map(
+            lambda x: jnp.expand_dims(x, axis=0), dataclass_instance
+        )
         batch_ndim = 1
         pad_width_spec = normalized_pad_width
 
         return jax.tree_util.tree_map(
             lambda x: jnp.pad(
-                x, pad_width_spec + [(0, 0)] * (x.ndim - batch_ndim), mode=mode, **kwargs
+                x,
+                pad_width_spec + [(0, 0)] * (x.ndim - batch_ndim),
+                mode=mode,
+                **kwargs,
             ),
             expanded,
         )
@@ -149,7 +158,10 @@ def pad(
         pad_width_spec = normalized_pad_width
         return jax.tree_util.tree_map(
             lambda x: jnp.pad(
-                x, pad_width_spec + [(0, 0)] * (x.ndim - batch_ndim), mode=mode, **kwargs
+                x,
+                pad_width_spec + [(0, 0)] * (x.ndim - batch_ndim),
+                mode=mode,
+                **kwargs,
             ),
             dataclass_instance,
         )
@@ -163,7 +175,9 @@ def stack(dataclasses: List[T], axis: int = 0) -> T:
         raise ValueError("Cannot stack empty list of dataclasses")
 
     if len(dataclasses) == 1:
-        return jax.tree_util.tree_map(lambda x: jnp.expand_dims(x, axis=axis), dataclasses[0])
+        return jax.tree_util.tree_map(
+            lambda x: jnp.expand_dims(x, axis=axis), dataclasses[0]
+        )
 
     first_type = type(dataclasses[0])
     if not all(isinstance(dc, first_type) for dc in dataclasses):
@@ -181,12 +195,16 @@ def stack(dataclasses: List[T], axis: int = 0) -> T:
                     f"All dataclasses must have the same batch shape: {first_batch_shape} vs {dc.shape.batch}"
                 )
 
-    return jax.tree_util.tree_map(lambda *arrays: jnp.stack(arrays, axis=axis), *dataclasses)
+    return jax.tree_util.tree_map(
+        lambda *arrays: jnp.stack(arrays, axis=axis), *dataclasses
+    )
 
 
 def take(dataclass_instance: T, indices: jnp.ndarray, axis: int = 0) -> T:
     """Take elements along an axis from every field."""
-    return jax.tree_util.tree_map(lambda x: jnp.take(x, indices, axis=axis), dataclass_instance)
+    return jax.tree_util.tree_map(
+        lambda x: jnp.take(x, indices, axis=axis), dataclass_instance
+    )
 
 
 def take_along_axis(dataclass_instance: T, indices: jnp.ndarray, axis: int) -> T:
@@ -196,7 +214,9 @@ def take_along_axis(dataclass_instance: T, indices: jnp.ndarray, axis: int) -> T
     def _reorder_leaf(leaf: jnp.ndarray) -> jnp.ndarray:
         axis_in_leaf = axis if axis >= 0 else axis + leaf.ndim
         if axis_in_leaf < 0 or axis_in_leaf >= leaf.ndim:
-            raise ValueError(f"`axis` {axis} is out of bounds for array with ndim {leaf.ndim}.")
+            raise ValueError(
+                f"`axis` {axis} is out of bounds for array with ndim {leaf.ndim}."
+            )
 
         if indices_array.ndim > leaf.ndim:
             raise ValueError(
@@ -284,7 +304,9 @@ def block(arrays: Any) -> Any:
     # We assume all leaves have the same structure.
 
     def find_structure(x):
-        if hasattr(x, "__dataclass_fields__"):  # crude check for Xtructure or use is_xtructure...
+        if hasattr(
+            x, "__dataclass_fields__"
+        ):  # crude check for Xtructure or use is_xtructure...
             return jax.tree_util.tree_structure(x)
         if isinstance(x, (list, tuple)):
             for item in x:
@@ -316,7 +338,9 @@ def block(arrays: Any) -> Any:
 
     # 3. Transpose
     try:
-        struct_of_nested_lists = jax.tree_util.tree_transpose(outer_treedef, inner_treedef, arrays)
+        struct_of_nested_lists = jax.tree_util.tree_transpose(
+            outer_treedef, inner_treedef, arrays
+        )
     except TypeError:
         # Mismatch in structures or something else
         raise ValueError("Inconsistent logical structure in block input.")

@@ -21,7 +21,9 @@ def _parse_max_probe_buckets(capacity: int) -> int:
     env_value = os.environ.get("XTRUCTURE_HASHTABLE_PALLAS_INSERT_MAX_PROBE_BUCKETS")
     if env_value is None or env_value.strip().lower() in {"", "none", "auto"}:
         return int(capacity)
-    return _parse_int_env("XTRUCTURE_HASHTABLE_PALLAS_INSERT_MAX_PROBE_BUCKETS", int(capacity))
+    return _parse_int_env(
+        "XTRUCTURE_HASHTABLE_PALLAS_INSERT_MAX_PROBE_BUCKETS", int(capacity)
+    )
 
 
 def _validate_bucket_size(bucket_size: int) -> None:
@@ -165,8 +167,12 @@ def _get_reserve_slots_fn(
             slot_init = jnp.zeros((batch,), dtype=jnp.uint32)
             ins_init = jnp.zeros((batch,), dtype=jnp.bool_)
 
-            fill_shape = jax.ShapeDtypeStruct(bucket_fill_levels.shape, bucket_fill_levels.dtype)
-            occ_shape = jax.ShapeDtypeStruct(bucket_occupancy.shape, bucket_occupancy.dtype)
+            fill_shape = jax.ShapeDtypeStruct(
+                bucket_fill_levels.shape, bucket_fill_levels.dtype
+            )
+            occ_shape = jax.ShapeDtypeStruct(
+                bucket_occupancy.shape, bucket_occupancy.dtype
+            )
             slot_shape = jax.ShapeDtypeStruct((batch,), jnp.uint32)
             ins_shape = jax.ShapeDtypeStruct((batch,), jnp.bool_)
             out_shape = (fill_shape, occ_shape, slot_shape, ins_shape)
@@ -188,11 +194,19 @@ def _get_reserve_slots_fn(
             )
 
             inserted_round = (
-                jnp.zeros((batch,), dtype=jnp.bool_).at[sorted_batch_idx].set(ins_sorted)
+                jnp.zeros((batch,), dtype=jnp.bool_)
+                .at[sorted_batch_idx]
+                .set(ins_sorted)
             )
-            slot_round = jnp.zeros((batch,), dtype=jnp.uint32).at[sorted_batch_idx].set(slot_sorted)
+            slot_round = (
+                jnp.zeros((batch,), dtype=jnp.uint32)
+                .at[sorted_batch_idx]
+                .set(slot_sorted)
+            )
             bucket_round = (
-                jnp.zeros((batch,), dtype=jnp.uint32).at[sorted_batch_idx].set(sorted_bucket)
+                jnp.zeros((batch,), dtype=jnp.uint32)
+                .at[sorted_batch_idx]
+                .set(sorted_bucket)
             )
 
             newly_inserted = jnp.logical_and(pending, inserted_round)

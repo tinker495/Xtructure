@@ -20,7 +20,9 @@ def astype(
     # We map jnp.astype over the tree.
     # Note: jnp.astype behavior on copy/device might be backend specific,
     # but we pass it through.
-    return jax.tree_util.tree_map(lambda leaf: jnp.astype(leaf, dtype, copy=copy, device=device), x)
+    return jax.tree_util.tree_map(
+        lambda leaf: jnp.astype(leaf, dtype, copy=copy, device=device), x
+    )
 
 
 def result_type(*args: Any) -> Any:

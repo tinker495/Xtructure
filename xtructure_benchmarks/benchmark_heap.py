@@ -49,7 +49,9 @@ def benchmark_bgpq_insert(
     return durations
 
 
-def benchmark_bgpq_delete(heap: BGPQ, trials: int = 10, include_host_transfer: bool = False):
+def benchmark_bgpq_delete(
+    heap: BGPQ, trials: int = 10, include_host_transfer: bool = False
+):
     """Benchmarks the batched deletion from the xtructure BGPQ."""
 
     durations = run_jax_trials(
@@ -130,7 +132,10 @@ def run_benchmarks(
     print("Running Heap (BGPQ) Benchmarks...")
     try:
         print(f"JAX backend: {jax.default_backend()}")
-        print("JAX devices:", ", ".join([d.platform + ":" + d.device_kind for d in jax.devices()]))
+        print(
+            "JAX devices:",
+            ", ".join([d.platform + ":" + d.device_kind for d in jax.devices()]),
+        )
     except Exception:
         pass
     for batch_size in batch_sizes:
@@ -143,7 +148,9 @@ def run_benchmarks(
         bgpq_heap = BGPQ.build(max_size, batch_size, BenchmarkValue, jnp.float32)
 
         # We need to make the keys/values batched to the BGPQ batch_size
-        padded_keys, padded_values = BGPQ.make_batched(keys_device, values_device, batch_size)
+        padded_keys, padded_values = BGPQ.make_batched(
+            keys_device, values_device, batch_size
+        )
         padded_keys_host = jax.device_get(padded_keys)
         padded_values_host = jax.device_get(padded_values)
 
@@ -174,8 +181,12 @@ def run_benchmarks(
         )
         xtructure_delete_stats = throughput_stats(batch_size, delete_durations)
 
-        results["xtructure"].setdefault("insert_ops_per_sec", []).append(xtructure_insert_stats)
-        results["xtructure"].setdefault("delete_ops_per_sec", []).append(xtructure_delete_stats)
+        results["xtructure"].setdefault("insert_ops_per_sec", []).append(
+            xtructure_insert_stats
+        )
+        results["xtructure"].setdefault("delete_ops_per_sec", []).append(
+            xtructure_delete_stats
+        )
 
         # --- Python heapq Benchmark --- (fixed algorithm for fairness)
         insert_candidates = []
@@ -202,7 +213,9 @@ def run_benchmarks(
         python_delete_stats = benchmark_heapq_delete(py_heap, batch_size)
 
         results["python"].setdefault("insert_ops_per_sec", []).append(best_insert_stats)
-        results["python"].setdefault("delete_ops_per_sec", []).append(python_delete_stats)
+        results["python"].setdefault("delete_ops_per_sec", []).append(
+            python_delete_stats
+        )
 
     # Validate and save results
     save_and_print_results(

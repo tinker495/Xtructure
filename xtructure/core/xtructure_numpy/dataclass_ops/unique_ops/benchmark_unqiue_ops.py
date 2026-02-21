@@ -73,7 +73,9 @@ def _make_test_data(
     else:
         num_unique = int(size * (1 - duplication_rate))
         max_val = 2**30
-        unique_pool = jax.random.randint(k1, (num_unique,), 0, max_val, dtype=jnp.uint32)
+        unique_pool = jax.random.randint(
+            k1, (num_unique,), 0, max_val, dtype=jnp.uint32
+        )
 
         if skewed:
             # Skewed distribution: some items are much more frequent
@@ -197,7 +199,9 @@ def run_bench(
                     )
                 else:
                     slowdown = (1 / speedup - 1) * 100
-                    print(f"  Speedup (Legacy -> Lexsort): {speedup:.2f}x ({slowdown:.1f}% slower)")
+                    print(
+                        f"  Speedup (Legacy -> Lexsort): {speedup:.2f}x ({slowdown:.1f}% slower)"
+                    )
 
     print("\nSummary (Winner by Setting):")
     for (size, dup), winner in winners.items():
@@ -205,9 +209,15 @@ def run_bench(
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Benchmark unique_mask implementations.")
+    parser = argparse.ArgumentParser(
+        description="Benchmark unique_mask implementations."
+    )
     parser.add_argument(
-        "--sizes", type=int, nargs="+", default=[4096, 16384, 65536], help="Batch sizes to test."
+        "--sizes",
+        type=int,
+        nargs="+",
+        default=[4096, 16384, 65536],
+        help="Batch sizes to test.",
     )
     parser.add_argument(
         "--duplication",
@@ -216,9 +226,13 @@ def _parse_args() -> argparse.Namespace:
         default=[0.0, 0.5, 0.9],
         help="Duplication rates (0.0 to 1.0).",
     )
-    parser.add_argument("--no-cost", action="store_true", help="Disable cost/key array.")
+    parser.add_argument(
+        "--no-cost", action="store_true", help="Disable cost/key array."
+    )
     parser.add_argument("--no-filled", action="store_true", help="Disable filled mask.")
-    parser.add_argument("--skewed", action="store_true", help="Enable skewed distribution.")
+    parser.add_argument(
+        "--skewed", action="store_true", help="Enable skewed distribution."
+    )
     parser.add_argument("--trials", type=int, default=50, help="Number of trials.")
     parser.add_argument("--warmup", type=int, default=5, help="Warmup iterations.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed.")

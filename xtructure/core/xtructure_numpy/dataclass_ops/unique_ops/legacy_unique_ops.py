@@ -81,13 +81,19 @@ def unique_mask_legacy(
         if filled is not None:
             can_be_considered = jnp.logical_and(is_min_cost, filled)
             fallback_idx = jnp.full_like(batch_idx, batch_len)
-            indices_to_consider = _where_no_broadcast(can_be_considered, batch_idx, fallback_idx)
+            indices_to_consider = _where_no_broadcast(
+                can_be_considered, batch_idx, fallback_idx
+            )
         else:
             fallback_idx = jnp.full_like(batch_idx, batch_len)
-            indices_to_consider = _where_no_broadcast(is_min_cost, batch_idx, fallback_idx)
+            indices_to_consider = _where_no_broadcast(
+                is_min_cost, batch_idx, fallback_idx
+            )
 
         winning_indices_per_group = jnp.full((batch_len,), batch_len, dtype=jnp.int32)
-        winning_indices_per_group = winning_indices_per_group.at[inv].min(indices_to_consider)
+        winning_indices_per_group = winning_indices_per_group.at[inv].min(
+            indices_to_consider
+        )
 
         winning_index_for_each_item = winning_indices_per_group[inv]
         final_mask = batch_idx == winning_index_for_each_item

@@ -68,14 +68,18 @@ def _verify_outputs(
     _assert_device_true(jnp.all(in_bounds), f"{name}: indices out of bounds")
 
     reconstructed = concat[indices]
-    _assert_device_true(jnp.array_equal(keys, reconstructed), f"{name}: keys do not match indices")
+    _assert_device_true(
+        jnp.array_equal(keys, reconstructed), f"{name}: keys do not match indices"
+    )
 
     keys_any = cast(Any, keys)
     sorted_ok = jnp.all(keys_any[:-1] <= keys_any[1:])
     _assert_device_true(sorted_ok, f"{name}: keys are not sorted")
 
     ref_keys, ref_indices = reference
-    _assert_device_true(jnp.array_equal(keys, ref_keys), f"{name}: keys differ from reference")
+    _assert_device_true(
+        jnp.array_equal(keys, ref_keys), f"{name}: keys differ from reference"
+    )
     _assert_device_true(
         jnp.array_equal(indices, ref_indices), f"{name}: indices differ from reference"
     )
@@ -118,7 +122,9 @@ def _make_sorted_inputs(
     return jnp.sort(ak), jnp.sort(bk), av, bv
 
 
-def _time_method(method: MethodFn, ak: chex.Array, bk: chex.Array, trials: int) -> List[float]:
+def _time_method(
+    method: MethodFn, ak: chex.Array, bk: chex.Array, trials: int
+) -> List[float]:
     durations: List[float] = []
     for _ in range(trials):
         start = time.perf_counter()
@@ -250,13 +256,19 @@ def run_bench(
 
 
 def _make_merge_sort_split_fn(backend: MethodFn) -> ValueMethodFn:
-    def _gather_sorted_values(av: Xtructurable, bv: Xtructurable, sorted_idx: chex.Array):
-        reorder_mode = os.environ.get("XTRUCTURE_BGPQ_VALUE_REORDER", "gather").strip().lower()
+    def _gather_sorted_values(
+        av: Xtructurable, bv: Xtructurable, sorted_idx: chex.Array
+    ):
+        reorder_mode = (
+            os.environ.get("XTRUCTURE_BGPQ_VALUE_REORDER", "gather").strip().lower()
+        )
         if reorder_mode in {"concat", "concat_gather"}:
             val = xnp.concatenate([av, bv], axis=0)
             return val[sorted_idx]
         if reorder_mode not in {"gather", "direct"}:
-            raise ValueError("Invalid XTRUCTURE_BGPQ_VALUE_REORDER. Expected gather or concat.")
+            raise ValueError(
+                "Invalid XTRUCTURE_BGPQ_VALUE_REORDER. Expected gather or concat."
+            )
         n = jax.tree_util.tree_leaves(av)[0].shape[0]
         m = jax.tree_util.tree_leaves(bv)[0].shape[0]
         if n == 0:
@@ -343,7 +355,9 @@ def run_bench_values(
     value_methods: Dict[str, ValueMethodFn] = {
         name: _make_merge_sort_split_fn(method) for name, method in methods.items()
     }
-    value_methods["parallel_kv"] = _make_merge_sort_split_kv_fn(merge_arrays_parallel_kv)
+    value_methods["parallel_kv"] = _make_merge_sort_split_kv_fn(
+        merge_arrays_parallel_kv
+    )
     print("Value methods:", ", ".join(value_methods.keys()))
 
     winners: Dict[int, str] = {}
@@ -418,7 +432,9 @@ def _parse_args() -> argparse.Namespace:
         default=[2**10, 2**12, 2**14],
         help="List of per-array sizes (n=m).",
     )
-    parser.add_argument("--trials", type=int, default=10000, help="Number of timed trials.")
+    parser.add_argument(
+        "--trials", type=int, default=10000, help="Number of timed trials."
+    )
     parser.add_argument("--warmup", type=int, default=3, help="Warmup iterations.")
     parser.add_argument("--seed", type=int, default=0, help="PRNG seed.")
     parser.add_argument(
@@ -499,7 +515,9 @@ def main() -> None:
             for num_warps, num_stages in itertools.product(args.warps, args.stages):
                 os.environ["XTRUCTURE_BGPQ_MERGE_NUM_WARPS"] = str(num_warps)
                 os.environ["XTRUCTURE_BGPQ_MERGE_NUM_STAGES"] = str(num_stages)
-                print(f"\n=== Triton sweep num_warps={num_warps} num_stages={num_stages} ===")
+                print(
+                    f"\n=== Triton sweep num_warps={num_warps} num_stages={num_stages} ==="
+                )
                 run_bench(
                     sizes=args.sizes,
                     trials=args.trials,
