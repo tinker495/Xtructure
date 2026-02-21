@@ -43,9 +43,12 @@ def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional
 
         # --- xtructure.Queue Benchmark ---
         xtructure_queue = Queue.build(max_size=max_size, value_class=BenchmarkValue)
-        enqueue_args_supplier = (
-            lambda: (jax.device_put(values_host),) if mode == "e2e" else (values_device,)
-        )
+
+        def enqueue_args_supplier():
+            if mode == "e2e":
+                return (jax.device_put(values_host),)
+            return (values_device,)
+
         enqueue_durations = run_jax_trials(
             lambda batch: xtructure_queue.enqueue(batch),
             trials=trials,

@@ -164,7 +164,7 @@ def run_bench(
 
     for size in sizes:
         for dup in duplication_rates:
-            print(f"\nSize={size}, Duplication={dup*100:.0f}%")
+            print(f"\nSize={size}, Duplication={dup * 100:.0f}%")
 
             results = {}
             throughputs = {}
@@ -201,7 +201,7 @@ def run_bench(
 
     print("\nSummary (Winner by Setting):")
     for (size, dup), winner in winners.items():
-        print(f"  Size={size:<8} Dup={dup*100:<3.0f}% : {winner}")
+        print(f"  Size={size:<8} Dup={dup * 100:<3.0f}% : {winner}")
 
 
 def _parse_args() -> argparse.Namespace:

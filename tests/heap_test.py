@@ -277,15 +277,15 @@ def test_heap_overflow_eviction():
     # Node 2: Key 95, Val ID 4
     # (Node 2 was 100/ID 1, should be replaced by 95/ID 4)
 
-    assert jnp.all(
-        heap.val_store.a[0] == 2
-    ), f"Node 0 value mismatch. Expected 2, got {heap.val_store.a[0]}"
-    assert jnp.all(
-        heap.val_store.a[1] == 3
-    ), f"Node 1 value mismatch. Expected 3, got {heap.val_store.a[1]}"
-    assert jnp.all(
-        heap.val_store.a[2] == 4
-    ), f"Node 2 value mismatch. Expected 4, got {heap.val_store.a[2]}"
+    assert jnp.all(heap.val_store.a[0] == 2), (
+        f"Node 0 value mismatch. Expected 2, got {heap.val_store.a[0]}"
+    )
+    assert jnp.all(heap.val_store.a[1] == 3), (
+        f"Node 1 value mismatch. Expected 3, got {heap.val_store.a[1]}"
+    )
+    assert jnp.all(heap.val_store.a[2] == 4), (
+        f"Node 2 value mismatch. Expected 4, got {heap.val_store.a[2]}"
+    )
 
     # 4. Verify Min-Heap Property
     # For every node i, key[i] <= key[2*i + 1] and key[i] <= key[2*i + 2]
@@ -296,9 +296,9 @@ def test_heap_overflow_eviction():
     min_left = jnp.min(heap.key_store[1])
     min_right = jnp.min(heap.key_store[2])
 
-    assert (
-        max_root <= min_left
-    ), f"Heap property violated: Root max {max_root} > Left min {min_left}"
-    assert (
-        max_root <= min_right
-    ), f"Heap property violated: Root max {max_root} > Right min {min_right}"
+    assert max_root <= min_left, (
+        f"Heap property violated: Root max {max_root} > Left min {min_left}"
+    )
+    assert max_root <= min_right, (
+        f"Heap property violated: Root max {max_root} > Right min {min_right}"
+    )

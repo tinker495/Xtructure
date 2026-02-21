@@ -1,6 +1,7 @@
 """Tests for xnp spatial operators: roll, flip, rot90."""
 
 import jax.numpy as jnp
+
 from tests.xnp.shared_data import SimpleData
 from xtructure import numpy as xnp
 

@@ -117,7 +117,7 @@ class _Dataclass:
         invalid_fields = fields_names.intersection(_RESERVED_DCLS_FIELD_NAMES)
         if invalid_fields:
             raise ValueError(
-                f"The following dataclass fields are disallowed: " f"{invalid_fields} ({dcls})."
+                f"The following dataclass fields are disallowed: {invalid_fields} ({dcls})."
             )
 
         def _from_tuple(args):

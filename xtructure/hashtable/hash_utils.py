@@ -1,4 +1,5 @@
 """Hash helpers for bucketed double hashing."""
+
 from __future__ import annotations
 
 import os

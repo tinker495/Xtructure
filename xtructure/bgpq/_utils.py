@@ -26,7 +26,7 @@ def _use_kv_backend(backend: str, batch_size: int, context: str = "BACKEND") -> 
             ) from exc
         return threshold_value > 0 and batch_size >= threshold_value
     raise ValueError(
-        f"Invalid XTRUCTURE_BGPQ_MERGE_VALUE_{context}. " "Expected off/auto/parallel/kv_parallel."
+        f"Invalid XTRUCTURE_BGPQ_MERGE_VALUE_{context}. Expected off/auto/parallel/kv_parallel."
     )
 
 

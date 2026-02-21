@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Sequence, TypeVar, Union
+from typing import Sequence, TypeVar, Union
 
 import jax
 import jax.numpy as jnp

@@ -1,6 +1,7 @@
 """Tests for xnp shape/broadcast operators: moveaxis, broadcast_to, broadcast_arrays, atleast_nd."""
 
 import jax.numpy as jnp
+
 from tests.xnp.shared_data import SimpleData
 from xtructure import numpy as xnp
 

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import List, TypeVar, Union
+from collections.abc import Sequence
+from typing import Any, List, TypeVar, Union
 
 import jax
 import jax.numpy as jnp
@@ -255,7 +256,7 @@ def vstack(tup: Sequence[Any], dtype: Any = None) -> Any:
     # We will ignore dtype for now or apply astype after?
     # jnp.vstack signature: vstack(tup, dtype=None, casting='same_kind')
     # If we pass arguments to stack, we need lambda.
-    
+
     # We map *tup.
     return jax.tree_util.tree_map(lambda *xs: jnp.vstack(xs, dtype=dtype), *tup)
 
@@ -281,15 +282,15 @@ def block(arrays: Any) -> Any:
     """
     # 1. Inspect the nested list to find the structure (treedef) of the leaves (Xtructures).
     # We assume all leaves have the same structure.
-    
+
     def find_structure(x):
-        if hasattr(x, "__dataclass_fields__"): # crude check for Xtructure or use is_xtructure...
-             return jax.tree_util.tree_structure(x)
+        if hasattr(x, "__dataclass_fields__"):  # crude check for Xtructure or use is_xtructure...
+            return jax.tree_util.tree_structure(x)
         if isinstance(x, (list, tuple)):
-             for item in x:
-                 res = find_structure(item)
-                 if res is not None:
-                     return res
+            for item in x:
+                res = find_structure(item)
+                if res is not None:
+                    return res
         return None
 
     inner_treedef = find_structure(arrays)
@@ -305,15 +306,14 @@ def block(arrays: Any) -> Any:
     # Inner structure is Struct structure.
     # jax.tree_util.tree_transpose(outer_def, inner_def, pytree)
     # But to get outer_def, we need to treat Structs as leaves.
-    
+
     # We can use jax.tree_util.tree_structure(arrays, is_leaf=lambda x: hasattr(x, "__dataclass_fields__"))
     # Note: is_leaf checks are tried on nodes.
-    
+
     outer_treedef = jax.tree_util.tree_structure(
-        arrays, 
-        is_leaf=lambda x: hasattr(x, "__dataclass_fields__")
+        arrays, is_leaf=lambda x: hasattr(x, "__dataclass_fields__")
     )
-    
+
     # 3. Transpose
     try:
         struct_of_nested_lists = jax.tree_util.tree_transpose(outer_treedef, inner_treedef, arrays)
@@ -324,9 +324,6 @@ def block(arrays: Any) -> Any:
     # 4. Apply block to each field (which is now a nested list of arrays)
     # Use is_leaf to prevent tree_map from descending into the lists we just created.
     res = jax.tree_util.tree_map(
-        jnp.block, 
-        struct_of_nested_lists, 
-        is_leaf=lambda x: isinstance(x, list)
+        jnp.block, struct_of_nested_lists, is_leaf=lambda x: isinstance(x, list)
     )
     return res
-

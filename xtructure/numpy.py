@@ -11,4 +11,3 @@ code that does `import xtructure.numpy`.
 """
 
 from .xtructure_numpy import *  # noqa: F401,F403
-

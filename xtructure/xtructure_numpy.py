@@ -7,10 +7,10 @@ You can import it as: import xtructure.xtructure_numpy as xnp
 
 from .core.xtructure_numpy import (
     allclose,
+    astype,
     atleast_1d,
     atleast_2d,
     atleast_3d,
-    astype,
     block,
     broadcast_arrays,
     broadcast_to,

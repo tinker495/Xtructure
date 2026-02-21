@@ -5,7 +5,6 @@ import jax.numpy as jnp
 import numpy as np
 
 from xtructure.core.field_descriptors import FieldDescriptor, get_field_descriptors
-from xtructure.core.structuredtype import StructuredType
 from xtructure.core.type_utils import is_xtructure_dataclass_type
 
 T = TypeVar("T")
@@ -123,9 +122,7 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
                         field_key, target_shape, dtype=cfg["gen_dtype"]
                     )
                 elif cfg["type"] == "bool":
-                    data[field_name] = jax.random.bernoulli(
-                        field_key, shape=target_shape
-                    )
+                    data[field_name] = jax.random.bernoulli(field_key, shape=target_shape)
                 else:
                     try:
                         data[field_name] = jnp.zeros(target_shape, dtype=cfg["gen_dtype"])
@@ -143,4 +140,3 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
     # add_xnp_instance_methods() in method_factory.py
 
     return cls
-

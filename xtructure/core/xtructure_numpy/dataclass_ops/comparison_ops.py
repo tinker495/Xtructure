@@ -44,7 +44,6 @@ def allclose(
 ) -> bool | jnp.ndarray:
     """Returns True if two arrays are element-wise equal within a tolerance."""
     # First apply isclose element-wise
-    tree_is_close = isclose(a, b, rtol=rtol, atol=atol, equal_nan=equal_nan)
     # Then reduce using logical_and across the entire tree
     # tree_reduce applies function to leaves two at a time.
     # We first reduce each leaf to a single boolean (since isclose returns an array structure)
@@ -53,13 +52,13 @@ def allclose(
     # No, jnp.allclose(arr1, arr2) returns True/False.
     # If we map it, we get a structure of True/False scalars.
     # Then we reduce that structure with logical_and.
-    
+
     # Wait, strict alignment means strictly following jnp signature.
     # jnp.allclose returns a scalar boolean (or boolean array scalar).
-    
+
     # Let's map jnp.allclose per leaf?
     # But structural allclose implies ALL fields are close.
-    
+
     def _leaf_allclose(x, y):
         # We must allow for potential broadcasting inside jax if shapes match
         return jnp.allclose(x, y, rtol=rtol, atol=atol, equal_nan=equal_nan)

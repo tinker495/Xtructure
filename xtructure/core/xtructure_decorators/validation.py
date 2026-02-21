@@ -30,8 +30,7 @@ def add_runtime_validation(cls: Type[T], *, enabled: bool) -> Type[T]:
 
         if array.dtype != expected_dtype:
             raise TypeError(
-                f"{cls.__name__}.{field_name} expected dtype {expected_dtype}, "
-                f"got {array.dtype}."
+                f"{cls.__name__}.{field_name} expected dtype {expected_dtype}, got {array.dtype}."
             )
 
         intrinsic_shape = tuple(descriptor.intrinsic_shape)

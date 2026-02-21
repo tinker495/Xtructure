@@ -1,4 +1,5 @@
 """Lookup helpers for HashTable."""
+
 from __future__ import annotations
 
 from typing import Any, cast
@@ -158,7 +159,7 @@ def _hashtable_lookup_parallel_internal(
         return jnp.any(active)
 
     def _body(
-        val: tuple[Any, chex.Array, chex.Array, chex.Array]
+        val: tuple[Any, chex.Array, chex.Array, chex.Array],
     ) -> tuple[Any, chex.Array, chex.Array, chex.Array]:
         idxs, founds, probes, active = val
 

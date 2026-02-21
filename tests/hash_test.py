@@ -73,13 +73,13 @@ def test_same_state_insert_at_batch():
         # Verify uniqueness tracking
         bytesed = jax.vmap(lambda x: x.bytes)(idxs)
         unique_idxs = jnp.unique(bytesed, axis=0)
-        assert (
-            unique_idxs.shape[0] == unique_count
-        ), f"unique_idxs.shape: {unique_idxs.shape}, unique_count: {unique_count}"
+        assert unique_idxs.shape[0] == unique_count, (
+            f"unique_idxs.shape: {unique_idxs.shape}, unique_count: {unique_count}"
+        )
         assert unique_idxs.shape[0] == jnp.sum(unique), "Unique index mismatch"
-        assert jnp.all(
-            jnp.unique(unique_idxs, axis=0) == unique_idxs
-        ), "Duplicate indices in unique set"
+        assert jnp.all(jnp.unique(unique_idxs, axis=0) == unique_idxs), (
+            "Duplicate indices in unique set"
+        )
 
         # Verify inserted states exist in table
         _, found = table.lookup_parallel(samples)
@@ -100,9 +100,9 @@ def test_same_state_insert_at_batch():
         idx, found = table.lookup_parallel(samples)
         assert jnp.all(found), "Cross-batch state missing"
         contents = table[idx]
-        assert jnp.all(
-            jax.vmap(lambda x, y: x == y)(contents, samples)
-        ), "Inserted states not found in table"
+        assert jnp.all(jax.vmap(lambda x, y: x == y)(contents, samples)), (
+            "Inserted states not found in table"
+        )
 
 
 def test_large_hash_table():
@@ -128,9 +128,9 @@ def test_large_hash_table():
         )
         inserted_count += jnp.sum(inserted)
 
-    assert (
-        inserted_count == unique_bytes_len
-    ), f"inserted_count: {inserted_count}, unique_bytes_len: {unique_bytes_len}, unique_hash_len: {unique_hash_len}"
+    assert inserted_count == unique_bytes_len, (
+        f"inserted_count: {inserted_count}, unique_bytes_len: {unique_bytes_len}, unique_hash_len: {unique_hash_len}"
+    )
 
     # Verify all states can be found
     _, found = table.lookup_parallel(sample)
@@ -168,9 +168,9 @@ def test_default_value_insertion():
 
     # Verify the retrieved value matches the inserted value
     retrieved_value = table[lookup_idx]
-    assert (
-        retrieved_value == default_value
-    ), "Retrieved value should match the inserted default value"
+    assert retrieved_value == default_value, (
+        "Retrieved value should match the inserted default value"
+    )
 
     # Test with parallel operations as well - use a fresh table
     fresh_table: HashTable = HashTable.build(HashValueAB, 1, int(1e4))

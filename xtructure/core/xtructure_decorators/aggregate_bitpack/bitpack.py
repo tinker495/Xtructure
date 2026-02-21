@@ -151,9 +151,9 @@ def to_uint8(values: chex.Array, active_bits: int = 1) -> chex.Array:
             flatten_input = flatten_input != 0
         return jnp.packbits(flatten_input, axis=-1, bitorder="little")
 
-    assert jnp.issubdtype(
-        values.dtype, jnp.integer
-    ), f"values must be integer array for active_bits={active_bits}, got dtype={values.dtype}"
+    assert jnp.issubdtype(values.dtype, jnp.integer), (
+        f"values must be integer array for active_bits={active_bits}, got dtype={values.dtype}"
+    )
 
     values_flat = values.reshape((-1,))
 

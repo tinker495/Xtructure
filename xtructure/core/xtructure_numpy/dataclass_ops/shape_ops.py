@@ -69,9 +69,9 @@ def reshape(dataclass_instance: T, new_shape: tuple[int, ...] | int, *args: int)
         )
 
     return jax.tree_util.tree_map(
-        lambda x: x
-        if jnp.ndim(x) < batch_dim
-        else jnp.reshape(x, new_shape + jnp.shape(x)[batch_dim:]),
+        lambda x: (
+            x if jnp.ndim(x) < batch_dim else jnp.reshape(x, new_shape + jnp.shape(x)[batch_dim:])
+        ),
         dataclass_instance,
     )
 

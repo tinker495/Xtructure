@@ -30,5 +30,5 @@ elif _MERGE_BACKEND in {"parallel", "pallas"}:
     merge_array_backend = merge_arrays_parallel
 else:
     raise ValueError(
-        "Invalid XTRUCTURE_BGPQ_MERGE_BACKEND. " "Expected one of: sort, xla, parallel, pallas"
+        "Invalid XTRUCTURE_BGPQ_MERGE_BACKEND. Expected one of: sort, xla, parallel, pallas"
     )

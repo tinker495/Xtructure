@@ -1,6 +1,7 @@
 """Tests for xnp type operators: astype, result_type, can_cast."""
 
 import jax.numpy as jnp
+
 from tests.xnp.shared_data import SimpleData
 from xtructure import numpy as xnp
 

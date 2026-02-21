@@ -314,7 +314,7 @@ def _descriptor_from_annotation(annotation: Any) -> FieldDescriptor | None:
 
 
 def extract_field_descriptors_from_annotations(
-    annotations: Dict[str, Any]
+    annotations: Dict[str, Any],
 ) -> Dict[str, FieldDescriptor]:
     field_descriptors: Dict[str, FieldDescriptor] = {}
     invalid_annotations = []

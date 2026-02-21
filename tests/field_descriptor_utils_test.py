@@ -37,4 +37,3 @@ def test_descriptor_metadata_exposes_core_attributes():
     assert meta["intrinsic_shape"] == descriptor.intrinsic_shape
     assert meta["fill_value"] == descriptor.fill_value
     assert meta["fill_value_factory"] == descriptor.fill_value_factory
-

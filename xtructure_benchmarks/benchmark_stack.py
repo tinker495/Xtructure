@@ -42,9 +42,12 @@ def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional
 
         # --- xtructure.Stack Benchmark ---
         xtructure_stack = Stack.build(max_size=max_size, value_class=BenchmarkValue)
-        push_args_supplier = (
-            lambda: (jax.device_put(values_host),) if mode == "e2e" else (values_device,)
-        )
+
+        def push_args_supplier():
+            if mode == "e2e":
+                return (jax.device_put(values_host),)
+            return (values_device,)
+
         push_durations = run_jax_trials(
             lambda batch: xtructure_stack.push(batch),
             trials=trials,

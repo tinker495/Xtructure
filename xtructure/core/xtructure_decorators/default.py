@@ -1,6 +1,5 @@
-from typing import Any, Callable, Dict, List, NamedTuple
+from typing import Any, Callable, Dict, List, NamedTuple, Type, TypeVar, Union
 from typing import Tuple as TypingTuple
-from typing import Type, TypeVar, Union
 
 import jax.numpy as jnp
 

@@ -161,11 +161,11 @@ def _pack_value(unpacked_value: Any, descriptor: FieldDescriptor, batch_shape: t
     arr = jnp.asarray(unpacked_value)
     if arr.shape[: len(batch_shape)] != batch_shape:
         raise ValueError(
-            f"Unpacked value batch_shape mismatch: expected {batch_shape}, got {arr.shape[:len(batch_shape)]}."
+            f"Unpacked value batch_shape mismatch: expected {batch_shape}, got {arr.shape[: len(batch_shape)]}."
         )
     if arr.shape[len(batch_shape) :] != unpacked_shape:
         raise ValueError(
-            f"Unpacked value trailing shape mismatch: expected {unpacked_shape}, got {arr.shape[len(batch_shape):]}."
+            f"Unpacked value trailing shape mismatch: expected {unpacked_shape}, got {arr.shape[len(batch_shape) :]}."
         )
 
     num_values = int(np.prod(np.array(unpacked_shape, dtype=np.int64)))

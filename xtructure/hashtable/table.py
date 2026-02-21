@@ -1,4 +1,5 @@
 """HashTable data container and public API."""
+
 from __future__ import annotations
 
 from functools import partial
