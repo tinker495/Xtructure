@@ -6,9 +6,20 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
-from common import human_format
 from rich.console import Console
 from rich.table import Table
+
+from xtructure_benchmarks.common import human_format
+
+# Benchmark scripts with standard CLI (--mode, --trials, --batch-sizes).
+# Specialized scripts (benchmark_heap_small, benchmark_heap_components) have
+# different CLI interfaces and must be run individually.
+BENCHMARK_SCRIPTS = {
+    "benchmark_hashtable": "HashTable",
+    "benchmark_heap": "Heap (BGPQ)",
+    "benchmark_queue": "Queue",
+    "benchmark_stack": "Stack",
+}
 
 
 def display_summary_table():
@@ -40,7 +51,9 @@ def display_summary_table():
         largest_batch_idx = -1
 
         xtructure_data = data["xtructure"]
-        python_data = data["python"]
+        python_data = data.get("python")
+        if python_data is None:
+            continue
         operations = list(xtructure_data.keys())
 
         for i, op in enumerate(operations):
@@ -115,6 +128,40 @@ def run_script(script_path: Path, extra_args: Optional[List[str]] = None):
         raise
 
 
+def _filter_scripts(
+    benchmarks_dir: Path,
+    run_all: bool,
+    only: Optional[str],
+) -> List[Path]:
+    """Return the list of benchmark scripts to run based on CLI flags."""
+    # Only consider scripts registered in BENCHMARK_SCRIPTS (excludes meta-scripts
+    # like benchmark_branches.py which have incompatible CLI interfaces)
+    all_scripts = sorted(
+        s for s in benchmarks_dir.glob("benchmark_*.py") if s.stem in BENCHMARK_SCRIPTS
+    )
+
+    if run_all or only is None:
+        return all_scripts
+
+    # Parse --only filter (comma-separated, matched against stem or display name)
+    requested = {s.strip().lower() for s in only.split(",") if s.strip()}
+    filtered: List[Path] = []
+    for script in all_scripts:
+        stem = script.stem  # e.g. "benchmark_hashtable"
+        short_name = stem.replace("benchmark_", "")  # e.g. "hashtable"
+        display_name = BENCHMARK_SCRIPTS.get(stem, "").lower()
+
+        if short_name in requested or stem in requested or display_name in requested:
+            filtered.append(script)
+
+    if not filtered:
+        available = ", ".join(s.stem.replace("benchmark_", "") for s in all_scripts)
+        print(f"⚠️  No benchmarks matched --only={only}")
+        print(f"   Available: {available}")
+
+    return filtered
+
+
 def main():
     """
     Finds and runs all benchmark scripts, then runs the visualization script.
@@ -125,12 +172,20 @@ def main():
     results_dir = benchmarks_dir / "results"
     results_dir.mkdir(exist_ok=True)
 
-    # 1. Find and run all benchmark scripts
-    benchmark_scripts = sorted(benchmarks_dir.glob("benchmark_*.py"))
-    print(f"Found {len(benchmark_scripts)} benchmark scripts to run.")
-
     # Build pass-through args for each benchmark
-    parser = argparse.ArgumentParser(description="Run all xtructure benchmarks")
+    parser = argparse.ArgumentParser(description="Run xtructure benchmarks")
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        dest="run_all",
+        help="Run all benchmarks (default behavior)",
+    )
+    parser.add_argument(
+        "--only",
+        type=str,
+        default=None,
+        help="Comma-separated list of benchmarks to run (e.g. hashtable,heap,queue,stack)",
+    )
     parser.add_argument("--mode", choices=["kernel", "e2e"], default="e2e")
     parser.add_argument("--trials", type=int, default=10)
     parser.add_argument(
@@ -151,6 +206,10 @@ def main():
         help="Use JAX default precision (float32) instead of strict float64 (Default is strict mode)",
     )
     args, _ = parser.parse_known_args()
+
+    # Filter benchmark scripts
+    benchmark_scripts = _filter_scripts(benchmarks_dir, args.run_all, args.only)
+    print(f"Found {len(benchmark_scripts)} benchmark scripts to run.")
 
     common_args: List[str] = ["--mode", args.mode, "--trials", str(args.trials)]
     if args.batch_sizes:

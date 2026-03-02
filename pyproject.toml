@@ -22,6 +22,9 @@ dependencies = [
     "rich",
 ]
 
+[project.scripts]
+benchmarks = "xtructure_benchmarks.run_all:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
@@ -29,6 +32,10 @@ dev = [
     "sphinx-rtd-theme>=1.0.0",
     "myst-parser>=2.0.0",
     "ruff>=0.8.0",
+]
+benchmark = [
+    "matplotlib>=3.0.0",
+    "click>=8.0.0",
 ]
 
 [build-system]
@@ -42,6 +49,8 @@ dev-dependencies = [
     "sphinx-rtd-theme>=1.0.0",
     "myst-parser>=2.0.0",
     "ruff>=0.8.0",
+    "matplotlib>=3.0.0",
+    "click>=8.0.0",
 ]
 
 [tool.pytest.ini_options]
