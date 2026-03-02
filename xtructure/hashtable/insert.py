@@ -344,7 +344,6 @@ def _hashtable_parallel_insert_internal_pallas(
             updatable,
             bucket_size=bucket_size,
             capacity=capacity,
-            backend="mosaic_tpu",
         ),
     )
 

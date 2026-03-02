@@ -102,7 +102,6 @@ def _get_reserve_slots_fn(
     bucket_size: int,
     capacity: int,
     max_probe_buckets: int,
-    backend: str,
 ):
     _validate_bucket_size(bucket_size)
     if capacity <= 0 or (capacity & (capacity - 1)) != 0:
@@ -181,7 +180,6 @@ def _get_reserve_slots_fn(
                 kernel,
                 grid=(batch,),
                 out_shape=out_shape,
-                backend=backend,
                 input_output_aliases={0: 0, 1: 1, 5: 2, 6: 3},
             )(
                 fill,
@@ -250,13 +248,11 @@ def reserve_slots_pallas(
     *,
     bucket_size: int,
     capacity: int,
-    backend: str,
 ) -> Tuple[chex.Array, chex.Array, chex.Array, chex.Array, chex.Array]:
     cfg_max = _parse_max_probe_buckets(int(capacity))
     fn = _get_reserve_slots_fn(
         bucket_size=int(bucket_size),
         capacity=int(capacity),
         max_probe_buckets=int(cfg_max),
-        backend=str(backend),
     )
     return fn(bucket_fill_levels, bucket_occupancy, start_buckets, probe_steps, active)

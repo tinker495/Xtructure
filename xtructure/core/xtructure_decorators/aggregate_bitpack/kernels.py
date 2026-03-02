@@ -15,6 +15,8 @@ from typing import Any, Literal
 import jax
 import jax.numpy as jnp
 import numpy as np
+from jax.experimental import pallas as pl
+from jax.experimental.pallas import triton as pl_triton
 
 from .spec import _AggWordContribTables
 
@@ -84,8 +86,6 @@ def _get_pack_words_all_pallas(
         raise ValueError("words_all_len must be non-negative")
     if max_contrib < 0:
         raise ValueError("max_contrib must be non-negative")
-
-    from jax.experimental import pallas as pl
 
     # Rehydrate constant tables from bytes.
     # Keep these as NumPy arrays to avoid tracer leakage through the lru_cache.
@@ -165,11 +165,13 @@ def _get_pack_words_all_pallas(
         out_shape = jax.ShapeDtypeStruct((flat_n, words_all_len), jnp.uint32)
         grid_words = (words_all_len + word_tile - 1) // word_tile
 
+        compiler_params = pl_triton.CompilerParams() if backend == "triton" else None
+
         return pl.pallas_call(
             _kernel,
             grid=(flat_n, grid_words),
             out_shape=out_shape,
-            backend=backend,
+            compiler_params=compiler_params,
         )(
             values_padded,
             value_idx_tbl,

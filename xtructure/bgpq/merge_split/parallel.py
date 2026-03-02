@@ -291,8 +291,7 @@ def _get_merge_arrays_parallel(
             merge_parallel_kernel,
             grid=(grid_size,),
             out_shape=(out_keys_shape_dtype, out_idx_shape_dtype),
-            backend="triton",
-            compiler_params=compiler_params,
+            compiler_params=compiler_params or pl_triton.CompilerParams(),
         )(
             ak,
             bk,
@@ -351,8 +350,7 @@ def _get_merge_arrays_parallel_kv(
             merge_parallel_kernel,
             grid=(grid_size,),
             out_shape=out_shape,
-            backend="triton",
-            compiler_params=compiler_params,
+            compiler_params=compiler_params or pl_triton.CompilerParams(),
         )(*inputs)
 
         out_keys = outputs[0][:total_len]

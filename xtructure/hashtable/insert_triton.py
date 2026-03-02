@@ -189,8 +189,7 @@ def _get_reserve_slots_fn(
             kernel,
             grid=(batch,),
             out_shape=out_shape,
-            backend="triton",
-            compiler_params=compiler_params,
+            compiler_params=compiler_params or pl_triton.CompilerParams(),
             input_output_aliases={0: 0},
         )(
             bucket_occupancy,
