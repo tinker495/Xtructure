@@ -437,7 +437,9 @@ def save_and_print_results(
     results: Dict[str, Any], output_path: str, title: str
 ) -> None:
     validate_results_schema(results)
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    output_dir = os.path.dirname(output_path)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
     with open(output_path, "w") as f:
         json.dump(results, f, indent=4)
     print(f"{title} saved to {output_path}")
@@ -446,6 +448,15 @@ def save_and_print_results(
 
 def add_common_benchmark_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--mode", choices=["kernel", "e2e"], default="kernel")
+    parser.add_argument(
+        "--transfer-policy",
+        choices=["none", "payload_only", "full_tree"],
+        default="none",
+    )
+    parser.add_argument("--inner-steps", type=int, default=200)
+    parser.add_argument("--warmup-iters", type=int, default=5)
+    parser.add_argument("--measure-iters", type=int, default=10)
+    parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--trials", type=int, default=10)
     parser.add_argument(
         "--batch-sizes",

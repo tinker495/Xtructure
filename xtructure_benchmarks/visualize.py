@@ -3,108 +3,84 @@ from pathlib import Path
 
 import matplotlib
 import matplotlib.pyplot as plt
-from matplotlib.ticker import FuncFormatter
-
-from xtructure_benchmarks.common import human_format
 
 matplotlib.use("Agg")
 
 
-def plot_performance(results_path: Path):
-    """
-    Loads benchmark results from a JSON file and plots the performance comparison.
-    """
-    with open(results_path, "r") as f:
-        data = json.load(f)
+def _params_summary(params: dict) -> str:
+    if not params:
+        return "-"
+    return ", ".join(f"{k}={params[k]}" for k in sorted(params))
 
+
+def _plot_new_schema(data: dict, path: Path) -> list[Path]:
+    out = []
+    records = data.get("records", [])
+    if not records:
+        return out
+    for idx, rec in enumerate(records):
+        metrics = rec.get("metrics", {})
+        plt.figure(figsize=(8, 4))
+        plt.bar(
+            ["step_time_ms", "items_per_sec"],
+            [
+                metrics.get("step_time_ms_median", 0),
+                metrics.get("items_per_sec_median", 0),
+            ],
+        )
+        plt.title(f"{rec.get('name', 'workload')} ({path.stem})")
+        plt.tight_layout()
+        output = path.parent / f"{path.stem}_record{idx}.png"
+        plt.savefig(output)
+        plt.close()
+        out.append(output)
+    return out
+
+
+def _plot_legacy_schema(data: dict, path: Path) -> list[Path]:
+    out = []
+    if "batch_sizes" not in data or "xtructure" not in data:
+        return out
     batch_sizes = data["batch_sizes"]
-    xtructure_data = data["xtructure"]
-    python_data = data["python"]
-
-    data_structure_name = results_path.stem.split("_")[0].capitalize()
-
-    # Determine the operations (e.g., insert, lookup, push, pop)
-    operations = list(xtructure_data.keys())
-
-    for op in operations:
-        plt.figure(figsize=(10, 6))
-        ax = plt.gca()  # Get current axes
-
-        op_name = op.replace("_ops_per_sec", "").capitalize()
-        title = f"{data_structure_name} {op_name} Performance"
-
-        # Extract median values and error bars from new format
-        xtructure_values = []
-        xtructure_errors = []
-        python_values = []
-        python_errors = []
-
-        for result in xtructure_data[op]:
-            if isinstance(result, dict):
-                xtructure_values.append(result["median"])
-                xtructure_errors.append(result["iqr"] / 2)  # Half IQR for error bars
-            else:
-                # Backward compatibility
-                xtructure_values.append(result)
-                xtructure_errors.append(0)
-
-        for result in python_data[op]:
-            if isinstance(result, dict):
-                python_values.append(result["median"])
-                python_errors.append(result["iqr"] / 2)  # Half IQR for error bars
-            else:
-                # Backward compatibility
-                python_values.append(result)
-                python_errors.append(0)
-
-        plt.errorbar(
-            batch_sizes,
-            xtructure_values,
-            yerr=xtructure_errors,
-            fmt="o-",
-            label=f"xtructure.{data_structure_name}",
-            capsize=5,
-        )
-        plt.errorbar(
-            batch_sizes,
-            python_values,
-            yerr=python_errors,
-            fmt="s--",
-            label="Python Baseline",
-            capsize=5,
-        )
-
+    for op, vals in data["xtructure"].items():
+        y = [v["median"] if isinstance(v, dict) else v for v in vals]
+        plt.figure(figsize=(8, 4))
+        plt.plot(batch_sizes, y, marker="o")
         plt.xscale("log", base=2)
         plt.yscale("log")
-
-        # Apply human-readable format to the y-axis
-        ax.yaxis.set_major_formatter(FuncFormatter(human_format))
-
-        plt.xlabel("Batch Size (log scale)")
-        plt.ylabel("Operations per Second")
-        plt.title(title)
-        plt.legend()
-        plt.grid(True, which="both", ls="--")
-
-        # Save the plot
-        output_filename = (
-            results_path.parent
-            / f"{data_structure_name.lower()}_{op_name.lower()}_performance.png"
-        )
-        plt.savefig(output_filename)
-        print(f"Saved plot to {output_filename}")
+        plt.title(f"{path.stem}: {op}")
+        plt.tight_layout()
+        output = path.parent / f"{path.stem}_{op}.png"
+        plt.savefig(output)
         plt.close()
+        out.append(output)
+    return out
 
 
-def visualize_all():
-    """
-    Finds all benchmark result JSON files and generates plots for them.
-    """
+def visualize_all() -> None:
     results_dir = Path(__file__).parent / "results"
-
-    for results_file in results_dir.glob("*_results.json"):
-        print(f"Processing {results_file}...")
-        plot_performance(results_file)
+    report_lines = ["# Benchmark Report", ""]
+    for result_file in sorted(results_dir.glob("*_results.json")):
+        with open(result_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if "schema_version" in data:
+            images = _plot_new_schema(data, result_file)
+            report_lines.append(f"## {result_file.name}")
+            report_lines.append(f"- schema_version: {data.get('schema_version')}")
+            for rec in data.get("records", []):
+                params = rec.get("params", {})
+                report_lines.append(
+                    f"- {rec['name']}: step_time_ms={rec['metrics'].get('step_time_ms_median', 0):.3f}, items_per_sec={rec['metrics'].get('items_per_sec_median', 0):.3f}"
+                )
+                report_lines.append(f"- params: {_params_summary(params)}")
+            for image in images:
+                report_lines.append(f"![{image.name}]({image.name})")
+            report_lines.append("")
+        else:
+            _plot_legacy_schema(data, result_file)
+    report_path = results_dir / "report.md"
+    report_path.write_text("\n".join(report_lines), encoding="utf-8")
+    print(f"Wrote report: {report_path}")
 
 
 if __name__ == "__main__":
