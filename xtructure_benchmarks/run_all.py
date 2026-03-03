@@ -54,6 +54,8 @@ def display_summary_table():
     v2_table.add_column("Record", style="green")
     v2_table.add_column("batch_size", justify="right", style="bold white")
     v2_table.add_column("items/sec", justify="right", style="bold blue")
+    v2_table.add_column("processed/sec", justify="right", style="bold cyan")
+    v2_table.add_column("accepted/sec", justify="right", style="bold green")
     v2_table.add_column("step ms", justify="right", style="bold yellow")
 
     results_dir = Path(__file__).parent / "results"
@@ -72,6 +74,8 @@ def display_summary_table():
                     rec.get("name", "-"),
                     str(p.get("batch_size", "-")),
                     f"{human_format(m.get('items_per_sec_median', 0.0))}",
+                    f"{human_format(m.get('processed_per_sec_median', 0.0))}",
+                    f"{human_format(m.get('accepted_per_sec_median', 0.0))}",
                     f"{m.get('step_time_ms_median', 0.0):.3f}",
                 )
                 has_v2 = True

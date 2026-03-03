@@ -63,8 +63,7 @@ def main() -> None:
                 lambda a, b: jnp.where(dup_mask, b, a), nodes, dup_nodes
             )
 
-            uniq_key_dtype = jnp.float64 if jax.config.jax_enable_x64 else jnp.float32
-            uniq = xnp.unique_mask(nodes, key=nodes.key.astype(uniq_key_dtype))
+            uniq = xnp.unique_mask(nodes, key=nodes.key)
             sort_keys = jnp.where(uniq, nodes.cost, jnp.inf)
             sorted_cost, sort_idx = jax.lax.sort_key_val(
                 sort_keys, jnp.arange(batch_size)

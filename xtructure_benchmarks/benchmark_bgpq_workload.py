@@ -38,6 +38,27 @@ def _parse_batch_sizes(batch_sizes: str) -> list[int]:
     return [int(x.strip()) for x in batch_sizes.split(",") if x.strip()]
 
 
+def _add_workload_derived_metrics(
+    metrics: dict[str, float],
+    *,
+    payload_items: int,
+    processed_sum: int,
+    inserted_sum: int,
+) -> None:
+    payload_base = max(1.0, float(payload_items))
+    processed_scale = float(processed_sum) / payload_base
+    accepted_scale = float(inserted_sum) / payload_base
+
+    metrics["payload_items_per_call"] = float(payload_items)
+    metrics["processed_sum_per_call"] = float(processed_sum)
+    metrics["inserted_sum_per_call"] = float(inserted_sum)
+
+    for suffix in ("median", "iqr", "p99"):
+        base = float(metrics.get(f"items_per_sec_{suffix}", 0.0))
+        metrics[f"processed_per_sec_{suffix}"] = base * processed_scale
+        metrics[f"accepted_per_sec_{suffix}"] = base * accepted_scale
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="BGPQ steady-state workload benchmark")
     add_harness_args(parser)
@@ -115,9 +136,10 @@ def main() -> None:
             )
 
             processed = jnp.asarray(0, dtype=jnp.int32)
+            inserted = jnp.asarray(0, dtype=jnp.int32)
 
             def pop_body(i, carry):
-                hp, proc = carry
+                hp, proc, ins = carry
                 hp, popped_keys, popped_vals = hp.delete_mins()
                 process_mask = _pop_process_mask(
                     popped_keys, args.pop_ratio, args.min_pop
@@ -127,40 +149,56 @@ def main() -> None:
 
                 row_child_keys = child_keys[i]
                 row_child_vals = jax.tree_util.tree_map(lambda x: x[i], child_vals)
+                process_mask_2d = jnp.broadcast_to(
+                    process_mask[None, :], (args.branching_factor, batch_size)
+                )
+                masked_child_keys = jnp.where(process_mask_2d, row_child_keys, jnp.inf)
 
-                def insert_child_row(j, hcarry):
-                    masked_keys = jnp.where(process_mask, row_child_keys[j], jnp.inf)
-                    row_vals = jax.tree_util.tree_map(lambda x: x[j], row_child_vals)
-                    return hcarry.insert(masked_keys, row_vals)
+                def insert_child_row(carry_h, row):
+                    row_keys, row_vals = row
+                    return carry_h.insert(row_keys, row_vals), None
 
-                hp = jax.lax.fori_loop(0, args.branching_factor, insert_child_row, hp)
-                return hp, proc + jnp.sum(process_mask, dtype=jnp.int32)
+                hp, _ = jax.lax.scan(
+                    insert_child_row, hp, (masked_child_keys, row_child_vals)
+                )
+                processed_now = jnp.sum(process_mask, dtype=jnp.int32)
+                inserted_now = jnp.sum(process_mask_2d, dtype=jnp.int32)
+                return hp, proc + processed_now, ins + inserted_now
 
-            h, processed = jax.lax.fori_loop(
-                0, args.pop_calls, pop_body, (h, processed)
+            h, processed, inserted = jax.lax.fori_loop(
+                0, args.pop_calls, pop_body, (h, processed, inserted)
             )
-            return (h, k), processed
+            return (h, k), processed, inserted
 
         @jax.jit
         def run_inner(state):
             def body(_, carry):
-                core, total_processed = carry
-                core, processed = one_step(core)
-                return core, total_processed + processed
+                core, total_processed, total_inserted = carry
+                core, processed, inserted = one_step(core)
+                return (
+                    core,
+                    total_processed + processed,
+                    total_inserted + inserted,
+                )
 
             return jax.lax.fori_loop(
-                0, args.inner_steps, body, (state, jnp.asarray(0, jnp.int32))
+                0,
+                args.inner_steps,
+                body,
+                (state, jnp.asarray(0, jnp.int32), jnp.asarray(0, jnp.int32)),
             )
 
         def fn():
-            (h, _), processed = run_inner((heap, run_key))
+            (h, _), processed, inserted = run_inner((heap, run_key))
             if args.transfer_policy == "payload_only":
-                return processed
-            return (h.heap_size, h.buffer_size, processed)
+                return (processed, inserted)
+            return (h.heap_size, h.buffer_size, processed, inserted)
 
-        candidates_per_call = (
-            batch_size * args.branching_factor * args.pop_calls * args.inner_steps
+        sample_processed, sample_inserted = jax.device_get(
+            run_inner((heap, run_key))[1:]
         )
+        payload_items = max(1, int(sample_inserted))
+
         run_case(
             result,
             name="bgpq_frontier_step",
@@ -174,9 +212,15 @@ def main() -> None:
                 "pop_calls": args.pop_calls,
                 "value_kind": args.value_kind,
             },
-            payload_items=int(candidates_per_call),
+            payload_items=payload_items,
             fn=fn,
             args=args,
+        )
+        _add_workload_derived_metrics(
+            result.records[-1].metrics,
+            payload_items=payload_items,
+            processed_sum=int(sample_processed),
+            inserted_sum=int(sample_inserted),
         )
 
     finalize_result(result, args, args.output, extra_run={"batch_sizes": batch_sizes})

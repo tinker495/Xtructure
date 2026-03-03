@@ -151,8 +151,12 @@ def unique_mask(
 
     if key is not None:
         key_arr = jnp.asarray(key)
-        # Docstring semantics: entries with +inf cost are excluded.
-        finite_key = key_arr < jnp.array(jnp.inf, dtype=key_arr.dtype)
+        if jnp.issubdtype(key_arr.dtype, jnp.floating):
+            # Docstring semantics: entries with +inf cost are excluded.
+            finite_key = jnp.isfinite(key_arr)
+        else:
+            # Integer priority keys have no +/-inf sentinel.
+            finite_key = jnp.ones((batch_len_i,), dtype=jnp.bool_)
         effective_filled = jnp.logical_and(effective_filled, finite_key)
 
     # 4. Handle filled: invalid items get MAX_KEY so they sort to the end
@@ -176,8 +180,17 @@ def unique_mask(
 
     if key is not None:
         key_arr2 = jnp.asarray(key)
-        inf_fill = jnp.array(jnp.inf, dtype=key_arr2.dtype)
-        valid_key = jnp.where(effective_filled, key_arr2, inf_fill)
+        if jnp.issubdtype(key_arr2.dtype, jnp.floating):
+            invalid_fill = jnp.array(jnp.inf, dtype=key_arr2.dtype)
+        elif jnp.issubdtype(key_arr2.dtype, jnp.integer) or key_arr2.dtype == jnp.bool_:
+            invalid_fill = jnp.array(
+                jnp.iinfo(key_arr2.dtype).max, dtype=key_arr2.dtype
+            )
+        else:
+            raise TypeError(
+                f"Unsupported key dtype for unique_mask key: {key_arr2.dtype}"
+            )
+        valid_key = jnp.where(effective_filled, key_arr2, invalid_fill)
         perm = _stable_sort_perm(perm, valid_key)
 
     # Hash keys: least significant first so the first hash becomes most significant.
