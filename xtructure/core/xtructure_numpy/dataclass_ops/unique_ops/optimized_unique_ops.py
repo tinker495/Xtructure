@@ -78,8 +78,6 @@ def unique_mask(
 
         def key_fn(x):
             # Prefer aggregate-packed representation if available for density
-            if hasattr(x, "packed"):
-                return x.packed.words
             return x.uint32ed
 
     # 1. Generate keys for uniqueness
