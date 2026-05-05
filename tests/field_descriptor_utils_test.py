@@ -30,6 +30,12 @@ def test_broadcast_intrinsic_shape_prepends_batch_dims():
     assert broadcasted.intrinsic_shape == (8, 2, 3)
 
 
+def test_broadcast_intrinsic_shape_handles_int_intrinsic_shape():
+    original = FieldDescriptor(jnp.float32, intrinsic_shape=3)
+    broadcasted = broadcast_intrinsic_shape(original, (2,))
+    assert broadcasted.intrinsic_shape == (2, 3)
+
+
 def test_descriptor_metadata_exposes_core_attributes():
     descriptor = FieldDescriptor(jnp.float32, (1, 2), fill_value=0.0)
     meta = descriptor_metadata(descriptor)
@@ -37,4 +43,3 @@ def test_descriptor_metadata_exposes_core_attributes():
     assert meta["intrinsic_shape"] == descriptor.intrinsic_shape
     assert meta["fill_value"] == descriptor.fill_value
     assert meta["fill_value_factory"] == descriptor.fill_value_factory
-

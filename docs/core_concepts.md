@@ -67,6 +67,7 @@ This decorator transforms a Python class into a JAX-compatible structure and add
     *   `path`: File path from which to load the instance.
     *   Returns an instance of the class loaded from the specified file.
     *   Raises a `TypeError` if the loaded instance is not of the expected class type.
+    *   Xtructure `.npz` files should be treated as trusted inputs: loading imports the module recorded in file metadata so the class can be reconstructed.
 *   `check_invariants(self)`: Manually triggers validation logic.
     *   Checks if all fields match their declared `dtype` and `intrinsic_shape`.
     *   Runs any custom `validator` callbacks defined in `FieldDescriptor`.
@@ -296,6 +297,16 @@ codes_some = p.unpack_field("codes", indices=[0, 2])  # returns batch + (2,)
 # If you already have a logical instance and want to store it compactly:
 p2 = AggState.default().packed
 ```
+
+Aggregate bitpacking also reserves generated module-level names so IO metadata can round-trip generated classes:
+
+- `AggStatePacked` backs `AggState.Packed`.
+- `AggStateUnpacked` backs `AggState.Packed.default().unpacked`; nested aggregate views reserve the same
+  `<NestedClassName>Unpacked` pattern.
+- Re-running or reloading the same aggregate class definition replaces earlier generated classes with the same
+  generated role.
+- A user-defined object with one of these reserved names is treated as a collision and raises `TypeError` during
+  decoration instead of being overwritten silently.
 
 You can also trigger validation manually at any time using `.check_invariants()`:
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from typing import Any, Iterable, Sequence
 
 import jax
@@ -33,6 +34,37 @@ def _reject_dataclass_kwargs(func_name: str, **kwargs: Any) -> None:
     if rejected:
         keys = ", ".join(sorted(rejected.keys()))
         raise TypeError(f"{func_name} does not support {keys} for xtructure dataclass inputs.")
+
+
+def _supports_keyword(func: Any, name: str) -> bool:
+    try:
+        parameters = inspect.signature(func).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    return any(
+        param.name == name or param.kind is inspect.Parameter.VAR_KEYWORD for param in parameters
+    )
+
+
+def _like_kwargs(
+    func_name: str,
+    jnp_func: Any,
+    *,
+    dtype: Any | None,
+    shape: Any,
+    device: Any,
+    out_sharding: Any,
+) -> dict[str, Any]:
+    kwargs = {"dtype": dtype, "shape": shape, "device": device}
+    if out_sharding is None:
+        return kwargs
+    if not _supports_keyword(jnp_func, "out_sharding"):
+        raise TypeError(
+            f"{func_name} out_sharding requires a JAX version whose jnp.{func_name} "
+            "supports out_sharding."
+        )
+    kwargs["out_sharding"] = out_sharding
+    return kwargs
 
 
 def concat(arrays, /, *, axis: int | None = 0):
@@ -261,18 +293,64 @@ def full_like(a, fill_value, dtype: Any | None = None, shape: Any = None, *, dev
     return jnp.full_like(a, fill_value, dtype=dtype, shape=shape, device=device)
 
 
-def zeros_like(a, dtype: Any | None = None, shape: Any = None, *, device=None):
+def zeros_like(
+    a,
+    dtype: Any | None = None,
+    shape: Any = None,
+    *,
+    device=None,
+    out_sharding=None,
+):
     if _is_xtructurable(a):
-        _reject_dataclass_kwargs("zeros_like", dtype=dtype, shape=shape, device=device)
+        _reject_dataclass_kwargs(
+            "zeros_like",
+            dtype=dtype,
+            shape=shape,
+            device=device,
+            out_sharding=out_sharding,
+        )
         return _dc.zeros_like(a)
-    return jnp.zeros_like(a, dtype=dtype, shape=shape, device=device)
+    return jnp.zeros_like(
+        a,
+        **_like_kwargs(
+            "zeros_like",
+            jnp.zeros_like,
+            dtype=dtype,
+            shape=shape,
+            device=device,
+            out_sharding=out_sharding,
+        ),
+    )
 
 
-def ones_like(a, dtype: Any | None = None, shape: Any = None, *, device=None):
+def ones_like(
+    a,
+    dtype: Any | None = None,
+    shape: Any = None,
+    *,
+    device=None,
+    out_sharding=None,
+):
     if _is_xtructurable(a):
-        _reject_dataclass_kwargs("ones_like", dtype=dtype, shape=shape, device=device)
+        _reject_dataclass_kwargs(
+            "ones_like",
+            dtype=dtype,
+            shape=shape,
+            device=device,
+            out_sharding=out_sharding,
+        )
         return _dc.ones_like(a)
-    return jnp.ones_like(a, dtype=dtype, shape=shape, device=device)
+    return jnp.ones_like(
+        a,
+        **_like_kwargs(
+            "ones_like",
+            jnp.ones_like,
+            dtype=dtype,
+            shape=shape,
+            device=device,
+            out_sharding=out_sharding,
+        ),
+    )
 
 
 __all__ = [

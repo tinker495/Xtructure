@@ -14,7 +14,6 @@ Rules:
 
 from __future__ import annotations
 
-import dataclasses
 from typing import Any, Type, TypeVar
 
 import jax
@@ -22,25 +21,35 @@ import jax.numpy as jnp
 import numpy as np
 from jax import lax
 
-from xtructure.core.field_descriptors import FieldDescriptor, get_field_descriptors
-from xtructure.core.type_utils import is_xtructure_dataclass_type
+from xtructure.core.field_descriptors import FieldDescriptor
+from xtructure.core.layout import get_type_layout
+from xtructure.core.layout.bitpack import ceil_div
+from xtructure.core.layout.traversal import (
+    build_instance_from_leaf_values,
+    get_path_value,
+    iter_leaf_values,
+)
+from xtructure.core.layout.types import AggregateBitpackReason, AggregateLeafLayout
 
 from .bits import _extract_bits, _insert_bits
-from .spec import (
-    _AggLeafSpec,
-    _build_agg_spec,
-    _ceil_div,
-    _compute_word_tail_layout,
-    _default_unpack_dtype,
-)
+from .generated import GENERATED_PACKED_ROLE, register_generated_class
 from .view import build_unpacked_view_cls
 
 T = TypeVar("T")
 
 
 def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
-    specs, total_bits = _build_agg_spec(cls)
-    words_all_len, stored_words_len, tail_bytes = _compute_word_tail_layout(total_bits)
+    aggregate = get_type_layout(cls).aggregate_bitpack
+    if not aggregate.eligible:
+        reason = aggregate.reason or "aggregate_bitpack is not eligible for this type."
+        if aggregate.reason_kind is AggregateBitpackReason.SCALAR_NESTED:
+            raise NotImplementedError(reason)
+        raise ValueError(reason)
+    specs = list(aggregate.leaves)
+    total_bits = int(aggregate.total_bits)
+    words_all_len = aggregate.words_all_len
+    stored_words_len = aggregate.stored_words_len
+    tail_bytes = aggregate.tail_bytes
 
     # Build a Packed class with a uint32 word-stream plus optional uint8 tail.
     packed_name = f"{cls.__name__}Packed"
@@ -61,20 +70,11 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
 
     Packed = _xtructure_dataclass(Packed)  # type: ignore[assignment]
 
-    # Store spec on class (static python data)
-    setattr(Packed, "__agg_specs__", specs)
-    setattr(Packed, "__agg_total_bits__", total_bits)
-    setattr(Packed, "__agg_words_all_len__", words_all_len)
-    setattr(Packed, "__agg_words_len__", stored_words_len)
-    setattr(Packed, "__agg_tail_bytes__", tail_bytes)
-    setattr(Packed, "__agg_unpacked_cls__", cls)
+    register_generated_class(Packed, role=GENERATED_PACKED_ROLE)
 
     # Build nested logical-view unpacked classes mirroring the original structure,
     # but using default unpack dtypes (bool/uint8/uint32) and with validate=False.
-    UnpackedView, _view_cache = build_unpacked_view_cls(
-        cls, default_unpack_dtype=_default_unpack_dtype
-    )
-    setattr(Packed, "__agg_unpacked_view_cls__", UnpackedView)
+    UnpackedView, _view_cache = build_unpacked_view_cls(cls)
 
     def _pack_instance(instance: Any) -> tuple[jax.Array, jax.Array]:
         # Determine batch shape from the first field (xtructure invariant already implies consistent batching)
@@ -85,16 +85,10 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
         # Flatten batch dims
         flat_n = int(np.prod(np.array(batch, dtype=np.int64))) if batch else 1
 
-        def _get_path(obj: Any, path: tuple[str, ...]) -> Any:
-            out = obj
-            for p in path:
-                out = getattr(out, p)
-            return out
-
         # Prepare per-leaf flattened arrays of shape (flat_n, nvalues)
         field_rows = []
         for s in specs:
-            arr = jnp.asarray(_get_path(instance, s.path))
+            arr = jnp.asarray(get_path_value(instance, s.path))
             arr_flat = arr.reshape((flat_n, s.nvalues))
             field_rows.append(arr_flat)
 
@@ -147,7 +141,7 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
     def bitpack_schema(cls_):
         """Return a plain-Python description of the aggregate bitpacking layout."""
         storage_bytes = int(stored_words_len * 4 + tail_bytes)
-        payload_bytes = int(_ceil_div(total_bits, 8))
+        payload_bytes = int(ceil_div(total_bits, 8))
         return {
             "mode": "aggregate",
             "class": f"{cls.__module__}.{cls.__name__}",
@@ -205,7 +199,7 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
             return jnp.asarray(indices, dtype=jnp.int32).reshape((-1,))
         return jnp.asarray(indices, dtype=jnp.int32).reshape((-1,))
 
-    def _decode_field(row_words: jax.Array, s: _AggLeafSpec, indices: Any) -> jax.Array:
+    def _decode_field(row_words: jax.Array, s: AggregateLeafLayout, indices: Any) -> jax.Array:
         """Decode selected flattened indices for one field from a single row of words."""
         idxs = _normalize_indices(indices, nvalues=s.nvalues)
         # Convert to bit positions and extract bits per index.
@@ -234,25 +228,19 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
             decoded = decoded.reshape(batch + s.unpacked_shape)
             decoded_by_path[s.path] = decoded
 
-        def _build_view_instance(orig: type, view: type, prefix: tuple[str, ...]) -> Any:
-            descs = get_field_descriptors(orig)
-            kwargs = {}
-            for field in dataclasses.fields(orig):
-                name = field.name
-                fd = descs.get(name)
-                if fd is None:
-                    continue
-                if is_xtructure_dataclass_type(fd.dtype):
-                    nested_view = _view_cache[fd.dtype]
-                    kwargs[name] = _build_view_instance(fd.dtype, nested_view, prefix + (name,))
-                else:
-                    kwargs[name] = decoded_by_path[prefix + (name,)]
-            return view(**kwargs)
-
-        return _build_view_instance(cls, UnpackedView, ())
+        return build_instance_from_leaf_values(
+            cls,
+            decoded_by_path,
+            type_map=_view_cache,
+        )
 
     setattr(Packed, "unpacked", property(unpacked_prop))
-    setattr(Packed, "bitpack_schema", classmethod(lambda cls_: cls.bitpack_schema()))  # type: ignore[misc]
+
+    def packed_bitpack_schema(_packed_cls):
+        # Delegate to the original (unpacked) class so the schema is authored once.
+        return cls.bitpack_schema()
+
+    setattr(Packed, "bitpack_schema", classmethod(packed_bitpack_schema))
 
     def unpack_field(
         self,
@@ -330,27 +318,8 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
         if dtype_policy == "default":
             return self.unpacked
 
-        u = self.unpacked
-
-        def _to_declared(orig: type, view_obj: Any) -> Any:
-            descs = get_field_descriptors(orig)
-            kwargs = {}
-            for field in dataclasses.fields(orig):
-                name = field.name
-                fd = descs.get(name)
-                if fd is None:
-                    continue
-                val = getattr(view_obj, name)
-                if is_xtructure_dataclass_type(fd.dtype):
-                    kwargs[name] = _to_declared(fd.dtype, val)
-                else:
-                    try:
-                        kwargs[name] = jnp.asarray(val).astype(fd.dtype)
-                    except TypeError:
-                        kwargs[name] = val
-            return orig(**kwargs)
-
-        return _to_declared(cls, u)
+        view_values = {leaf.path: value for leaf, value in iter_leaf_values(self.unpacked)}
+        return build_instance_from_leaf_values(cls, view_values, cast_declared=True)
 
     def as_original(self):
         """Backward-compatible alias for `unpack(dtype_policy="declared")`."""

@@ -3,14 +3,9 @@ from __future__ import annotations
 from typing import Any, Iterable, Tuple
 
 from .field_descriptors import FieldDescriptor
+from .shape_utils import normalize_shape
 
 _UNSET = object()
-
-
-def _normalize_shape(shape: Iterable[int] | Tuple[int, ...]) -> Tuple[int, ...]:
-    if isinstance(shape, tuple):
-        return shape
-    return tuple(shape)
 
 
 def clone_field_descriptor(
@@ -35,7 +30,7 @@ def clone_field_descriptor(
     if intrinsic_shape is _UNSET:
         next_intrinsic_shape = descriptor.intrinsic_shape
     else:
-        next_intrinsic_shape = _normalize_shape(intrinsic_shape)
+        next_intrinsic_shape = normalize_shape(intrinsic_shape)
 
     if fill_value is _UNSET and fill_value_factory is _UNSET:
         next_fill_value = descriptor.fill_value
@@ -76,7 +71,7 @@ def broadcast_intrinsic_shape(
     Prepend ``batch_shape`` to the intrinsic shape, useful when scripting batched
     variants of an existing descriptor.
     """
-    batch = _normalize_shape(batch_shape)
+    batch = normalize_shape(batch_shape)
     new_shape = batch + descriptor.intrinsic_shape
     return clone_field_descriptor(descriptor, intrinsic_shape=new_shape)
 

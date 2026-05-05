@@ -1,3 +1,4 @@
+import os
 import random
 
 import jax
@@ -6,6 +7,17 @@ import pytest
 
 from tests.testdata import HeapValueABC
 from xtructure import BGPQ
+
+pytestmark = [
+    pytest.mark.pallas_heap,
+    pytest.mark.skipif(
+        os.environ.get("XTRUCTURE_RUN_PALLAS_HEAP_TESTS") != "1",
+        reason=(
+            "BGPQ heap tests exercise hardware-specific Pallas kernels; "
+            "set XTRUCTURE_RUN_PALLAS_HEAP_TESTS=1 to run this stress lane."
+        ),
+    ),
+]
 
 
 @jax.jit

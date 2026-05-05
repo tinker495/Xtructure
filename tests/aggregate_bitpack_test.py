@@ -1,5 +1,8 @@
+import sys
+
 import chex
 import jax.numpy as jnp
+import pytest
 
 from xtructure import FieldDescriptor, xtructure_dataclass
 
@@ -37,6 +40,88 @@ def test_aggregate_pack_roundtrip_single():
     o = p.as_original()
     assert o.codes.dtype == jnp.uint16
     chex.assert_trees_all_equal(o, s)
+
+
+def test_aggregate_packed_save_load_roundtrip(tmp_path):
+    s = AggState.default().replace(
+        flags=jnp.array([True] * 17, dtype=jnp.bool_),
+        faces=(jnp.arange(54, dtype=jnp.uint8).reshape((6, 9)) & jnp.uint8(7)),
+        codes=jnp.array([1, 2, 4095, 17, 1234], dtype=jnp.uint16),
+    )
+    p = s.packed
+
+    assert getattr(sys.modules[AggState.__module__], "AggStatePacked") is AggState.Packed
+
+    file_path = tmp_path / "agg_packed.npz"
+    p.save(str(file_path))
+    loaded = AggState.Packed.load(str(file_path))
+
+    assert isinstance(loaded, AggState.Packed)
+    chex.assert_trees_all_equal(loaded.words, p.words)
+    chex.assert_trees_all_equal(loaded.tail, p.tail)
+    chex.assert_trees_all_equal(loaded.as_original(), s)
+
+
+def test_aggregate_generated_packed_allows_class_redefinition():
+    @xtructure_dataclass(aggregate_bitpack=True)
+    class ReloadableAgg:
+        flags: FieldDescriptor.tensor(dtype=jnp.bool_, shape=(3,), bits=1, fill_value=False)
+
+    first_packed = ReloadableAgg.Packed
+
+    @xtructure_dataclass(aggregate_bitpack=True)
+    class ReloadableAgg:
+        flags: FieldDescriptor.tensor(dtype=jnp.bool_, shape=(3,), bits=1, fill_value=False)
+
+    assert ReloadableAgg.Packed is not first_packed
+    assert (
+        getattr(sys.modules[ReloadableAgg.__module__], "ReloadableAggPacked")
+        is ReloadableAgg.Packed
+    )
+
+
+def test_aggregate_generated_packed_rejects_user_name_collision():
+    module = sys.modules[__name__]
+    old = getattr(module, "CollidingAggPacked", None)
+    had_old = hasattr(module, "CollidingAggPacked")
+    setattr(module, "CollidingAggPacked", object())
+    try:
+        with pytest.raises(TypeError, match="non-generated object"):
+
+            @xtructure_dataclass(aggregate_bitpack=True)
+            class CollidingAgg:
+                flags: FieldDescriptor.tensor(
+                    dtype=jnp.bool_,
+                    shape=(3,),
+                    bits=1,
+                    fill_value=False,
+                )
+
+    finally:
+        if had_old:
+            setattr(module, "CollidingAggPacked", old)
+        else:
+            delattr(module, "CollidingAggPacked")
+
+
+def test_aggregate_unpacked_view_save_load_roundtrip(tmp_path):
+    s = AggState.default().replace(
+        flags=jnp.array([True] * 17, dtype=jnp.bool_),
+        faces=(jnp.arange(54, dtype=jnp.uint8).reshape((6, 9)) & jnp.uint8(7)),
+        codes=jnp.array([1, 2, 4095, 17, 1234], dtype=jnp.uint16),
+    )
+    u = s.packed.unpacked
+
+    assert getattr(sys.modules[AggState.__module__], "AggStateUnpacked") is u.__class__
+
+    file_path = tmp_path / "agg_unpacked.npz"
+    u.save(str(file_path))
+    loaded = u.__class__.load(str(file_path))
+
+    assert isinstance(loaded, u.__class__)
+    chex.assert_trees_all_equal(loaded.flags, u.flags)
+    chex.assert_trees_all_equal(loaded.faces, u.faces)
+    chex.assert_trees_all_equal(loaded.codes, u.codes)
 
 
 def test_aggregate_pack_roundtrip_batched():
@@ -165,3 +250,28 @@ def test_aggregate_nested_roundtrip_and_partial():
     # Partial decode for nested leaf via dotted path.
     codes_subset = p.unpack_field("inner.codes", indices=[0, 2, 4])
     chex.assert_trees_all_equal(codes_subset, s.inner.codes.astype(jnp.uint32)[:, [0, 2, 4]])
+
+
+def test_aggregate_nested_unpacked_view_save_load_roundtrip(tmp_path):
+    s = OuterState.default(shape=(2,))
+    s = s.replace(
+        inner=InnerState(
+            a=jnp.array([[1, 2, 3, 4, 5, 6], [7, 0, 1, 2, 3, 4]], dtype=jnp.uint8),
+            codes=jnp.array([[1, 2, 3, 4, 5], [4095, 0, 17, 32, 999]], dtype=jnp.uint16),
+        ),
+        flags=jnp.array([[True] * 7, [False] * 7], dtype=jnp.bool_),
+    )
+    u = s.packed.unpacked
+    module = sys.modules[OuterState.__module__]
+
+    assert getattr(module, "OuterStateUnpacked") is u.__class__
+    assert getattr(module, "InnerStateUnpacked") is u.inner.__class__
+
+    file_path = tmp_path / "nested_unpacked.npz"
+    u.save(str(file_path))
+    loaded = u.__class__.load(str(file_path))
+
+    assert isinstance(loaded, u.__class__)
+    chex.assert_trees_all_equal(loaded.flags, u.flags)
+    chex.assert_trees_all_equal(loaded.inner.a, u.inner.a)
+    chex.assert_trees_all_equal(loaded.inner.codes, u.inner.codes)

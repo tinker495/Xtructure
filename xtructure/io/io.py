@@ -1,6 +1,5 @@
 """Module for saving and loading xtructure dataclasses."""
 
-import dataclasses
 import importlib
 import os
 from typing import Any, Dict, Tuple
@@ -8,9 +7,13 @@ from typing import Any, Dict, Tuple
 import jax.numpy as jnp
 import numpy as np
 
-from xtructure.core.field_descriptors import get_field_descriptors
+from xtructure.core.layout import get_type_layout
+from xtructure.core.layout.traversal import (
+    build_instance_from_leaf_values,
+    iter_leaf_values,
+)
+from xtructure.core.layout.types import LeafLayout
 from xtructure.core.protocol import Xtructurable
-from xtructure.core.type_utils import is_xtructure_dataclass_type
 from xtructure.io.bitpack import from_uint8, to_uint8
 
 METADATA_MODULE_KEY = "__xtructure_class_module__"
@@ -19,55 +22,43 @@ METADATA_CLASS_NAME_KEY = "__xtructure_class_name__"
 _BITPACK_PREFIX = "__xtructure_bitpack__"
 
 
-def _bitpack_keys(full_key: str) -> Tuple[str, str, str, str]:
-    # Use separate arrays so we can keep npz backward compatible and inspectable.
+def _bitpack_keys(full_key: str) -> Tuple[str, str, str]:
+    # Three separate arrays so .npz files stay inspectable and backward compatible.
     data_key = f"{full_key}.{_BITPACK_PREFIX}.data"
     shape_key = f"{full_key}.{_BITPACK_PREFIX}.shape"
     bits_key = f"{full_key}.{_BITPACK_PREFIX}.bits"
-    dtype_key = f"{full_key}.{_BITPACK_PREFIX}.dtype"
-    return data_key, shape_key, bits_key, dtype_key
+    return data_key, shape_key, bits_key
+
+
+def _flatten_leaf_for_save(
+    value: Any, leaf: LeafLayout, full_key: str, *, packed: bool
+) -> Dict[str, np.ndarray]:
+    if hasattr(value, "shape") and hasattr(value, "dtype"):
+        # Layout owns the IO double-pack policy: packed field byte streams expose
+        # `io_pack_bits=None`, while ordinary bit-width-constrained leaves expose
+        # the bit count that should be applied to the file representation.
+        io_pack_bits = leaf.io_pack_bits
+        if packed and io_pack_bits is not None:
+            data_key, shape_key, bits_key = _bitpack_keys(full_key)
+            packed_bytes = to_uint8(jnp.asarray(value), active_bits=int(io_pack_bits))
+            return {
+                data_key: np.asarray(packed_bytes, dtype=np.uint8),
+                shape_key: np.array(value.shape, dtype=np.int32),
+                bits_key: np.array([int(io_pack_bits)], dtype=np.uint8),
+            }
+        return {full_key: np.asarray(value)}
+
+    # For non-array-like fields, save as 0-dim array.
+    return {full_key: np.array(value)}
 
 
 def _flatten_instance_for_save(
-    instance: Xtructurable, prefix: str = "", *, packed: bool = True
+    instance: Xtructurable, *, packed: bool = True
 ) -> Dict[str, np.ndarray]:
-    """Recursively flattens an xtructure instance into a dict for saving."""
-    flat_data = {}
-    descriptors = get_field_descriptors(instance.__class__)
-    for field in dataclasses.fields(instance):
-        field_name = field.name
-        value = getattr(instance, field_name)
-        full_key = f"{prefix}{field_name}"
-        descriptor = descriptors.get(field_name)
-
-        if is_xtructure_dataclass_type(type(value)):
-            flat_data.update(
-                _flatten_instance_for_save(value, prefix=f"{full_key}.", packed=packed)
-            )
-        elif hasattr(value, "shape") and hasattr(value, "dtype"):
-            bits = getattr(descriptor, "bits", None) if descriptor is not None else None
-            # If the field is already stored as packed bytes in-memory (descriptor.packed_bits),
-            # do NOT apply additional IO bitpacking on top of it.
-            if (
-                packed
-                and bits is not None
-                and not (
-                    descriptor is not None and getattr(descriptor, "packed_bits", None) is not None
-                )
-            ):
-                data_key, shape_key, bits_key, dtype_key = _bitpack_keys(full_key)
-                packed_bytes = to_uint8(jnp.asarray(value), active_bits=int(bits))
-                flat_data[data_key] = np.asarray(packed_bytes, dtype=np.uint8)
-                flat_data[shape_key] = np.asarray(np.array(value.shape, dtype=np.int32))
-                flat_data[bits_key] = np.asarray(np.array([int(bits)], dtype=np.uint8))
-                flat_data[dtype_key] = np.asarray(
-                    np.array(str(jnp.asarray(value).dtype), dtype=np.str_)
-                )
-            else:
-                flat_data[full_key] = np.asarray(value)
-        else:
-            # For non-array-like fields, save as 0-dim array
-            flat_data[full_key] = np.array(value)
+    """Flatten an xtructure instance into a dict for saving."""
+    flat_data: Dict[str, np.ndarray] = {}
+    for leaf, value in iter_leaf_values(instance):
+        flat_data.update(_flatten_leaf_for_save(value, leaf, leaf.dotted_path, packed=packed))
     return flat_data
 
 
@@ -78,67 +69,50 @@ def save(path: str, instance: Xtructurable, *, packed: bool = True):
     This function serializes the instance by flattening its structure and
     saving each field as a NumPy array. It also stores metadata to enable
     reconstruction of the original dataclass type upon loading.
-
-    Args:
-        path: The file path (e.g., '/path/to/my_instance.npz').
-        instance: The xtructure dataclass instance to save.
     """
     if not hasattr(instance, "is_xtructed"):
         raise TypeError("The provided instance is not a valid xtructure dataclass.")
 
-    # Flatten the instance data
     data_to_save = _flatten_instance_for_save(instance, packed=packed)
 
-    # Add metadata for reconstruction
     cls = instance.__class__
     data_to_save[METADATA_MODULE_KEY] = np.array(cls.__module__)
     data_to_save[METADATA_CLASS_NAME_KEY] = np.array(cls.__name__)
 
-    # Ensure the directory exists
     directory = os.path.dirname(path)
     if directory:
         os.makedirs(directory, exist_ok=True)
 
-    # Save to a compressed .npz file
     np.savez_compressed(path, **data_to_save)
 
 
-def _unflatten_data_for_load(cls: type, data: Dict[str, Any], prefix: str = "") -> Dict[str, Any]:
-    """Recursively reconstructs field values from flattened data."""
-    field_values = {}
-    descriptors = get_field_descriptors(cls)
-    for field in dataclasses.fields(cls):
-        field_name = field.name
-        full_key = f"{prefix}{field_name}"
+def _load_leaf_value(leaf: LeafLayout, data: Dict[str, Any], owner_name: str) -> Any:
+    full_key = leaf.dotted_path
+    data_key, shape_key, bits_key = _bitpack_keys(full_key)
+    if data_key in data and shape_key in data and bits_key in data:
+        bits = int(np.asarray(data[bits_key]).reshape(-1)[0])
+        shape = tuple(int(x) for x in np.asarray(data[shape_key]).reshape(-1))
+        packed_bytes = jnp.array(data[data_key], dtype=jnp.uint8)
+        unpacked = from_uint8(packed_bytes, target_shape=shape, active_bits=bits)
+        try:
+            unpacked = unpacked.astype(leaf.declared_dtype)
+        except TypeError:
+            pass
+        return unpacked
 
-        field_descriptor = descriptors.get(field_name)
-        if field_descriptor and is_xtructure_dataclass_type(field_descriptor.dtype):
-            nested_class_type = field_descriptor.dtype  # type: ignore[assignment]
-            # Recursively load nested xtructure dataclass
-            nested_instance_data = _unflatten_data_for_load(
-                nested_class_type, data, prefix=f"{full_key}."
-            )
-            field_values[field_name] = nested_class_type(**nested_instance_data)
-        else:
-            data_key, shape_key, bits_key, dtype_key = _bitpack_keys(full_key)
-            if data_key in data and shape_key in data and bits_key in data:
-                bits = int(np.asarray(data[bits_key]).reshape(-1)[0])
-                shape = tuple(int(x) for x in np.asarray(data[shape_key]).reshape(-1))
-                packed_bytes = jnp.array(data[data_key], dtype=jnp.uint8)
-                unpacked = from_uint8(packed_bytes, target_shape=shape, active_bits=bits)
-                # Cast back to declared dtype when possible.
-                if field_descriptor is not None and not is_xtructure_dataclass_type(
-                    field_descriptor.dtype
-                ):
-                    try:
-                        unpacked = unpacked.astype(field_descriptor.dtype)
-                    except TypeError:
-                        pass
-                field_values[field_name] = unpacked
-            elif full_key in data:
-                # Load JAX array from NumPy array
-                field_values[field_name] = jnp.array(data[full_key])
-    return field_values
+    if full_key in data:
+        return jnp.array(data[full_key])
+
+    raise KeyError(f"Missing field '{full_key}' while loading {owner_name}.")
+
+
+def _unflatten_data_for_load(cls: type, data: Dict[str, Any]) -> Xtructurable:
+    """Reconstruct an xtructure instance from flattened data."""
+    type_layout = get_type_layout(cls)
+    leaf_values = {
+        leaf.path: _load_leaf_value(leaf, data, cls.__name__) for leaf in type_layout.leaves
+    }
+    return build_instance_from_leaf_values(cls, leaf_values)
 
 
 def load(path: str) -> Xtructurable:
@@ -147,22 +121,14 @@ def load(path: str) -> Xtructurable:
 
     This function reads the .npz file, reconstructs the dataclass type from
     metadata, and populates a new instance with the saved data.
-
-    Args:
-        path: The file path of the .npz file to load.
-
-    Returns:
-        A new instance of the saved xtructure dataclass.
     """
     with np.load(path, allow_pickle=False) as data:
-        # Extract metadata
         if METADATA_MODULE_KEY not in data or METADATA_CLASS_NAME_KEY not in data:
             raise ValueError("File is missing necessary xtructure metadata for loading.")
 
         module_name = str(data[METADATA_MODULE_KEY])
         class_name = str(data[METADATA_CLASS_NAME_KEY])
 
-        # Dynamically import the class
         try:
             module = importlib.import_module(module_name)
             cls = getattr(module, class_name)
@@ -172,6 +138,4 @@ def load(path: str) -> Xtructurable:
                 f"Ensure the class definition is available. Original error: {e}"
             )
 
-        # Reconstruct the instance from flattened data
-        instance_data = _unflatten_data_for_load(cls, data)
-        return cls(**instance_data)
+        return _unflatten_data_for_load(cls, data)
