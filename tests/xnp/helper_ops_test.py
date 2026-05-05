@@ -1,9 +1,11 @@
 """Tests for newer helper operations like expand_dims, repeat, split, and zeros_like."""
 
 import jax.numpy as jnp
+import pytest
 
 from tests.xnp.shared_data import SimpleData, VectorData
 from xtructure import numpy as xnp
+from xtructure.core import xtructure_numpy as xnp_impl
 
 
 def test_expand_dims_single_dataclass():
@@ -125,3 +127,25 @@ def test_zeros_ones_full_like_helpers():
     assert jnp.array_equal(full.position, jnp.full_like(data.position, 7.5))
     assert zeros.position.dtype == data.position.dtype
     assert ones.velocity.dtype == data.velocity.dtype
+
+
+def test_zeros_ones_like_do_not_forward_default_out_sharding(monkeypatch):
+    """Default out_sharding should not be sent to older JAX *_like callables."""
+    original_zeros_like = xnp_impl.jnp.zeros_like
+    original_ones_like = xnp_impl.jnp.ones_like
+
+    def legacy_zeros_like(a, dtype=None, shape=None, *, device=None):
+        return original_zeros_like(a, dtype=dtype, shape=shape, device=device)
+
+    def legacy_ones_like(a, dtype=None, shape=None, *, device=None):
+        return original_ones_like(a, dtype=dtype, shape=shape, device=device)
+
+    monkeypatch.setattr(xnp_impl.jnp, "zeros_like", legacy_zeros_like)
+    monkeypatch.setattr(xnp_impl.jnp, "ones_like", legacy_ones_like)
+
+    arr = jnp.arange(3, dtype=jnp.float32)
+    assert jnp.array_equal(xnp.zeros_like(arr), original_zeros_like(arr))
+    assert jnp.array_equal(xnp.ones_like(arr), original_ones_like(arr))
+
+    with pytest.raises(TypeError, match="out_sharding requires"):
+        xnp.zeros_like(arr, out_sharding=object())
