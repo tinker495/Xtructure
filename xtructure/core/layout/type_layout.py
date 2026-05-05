@@ -5,12 +5,18 @@ from __future__ import annotations
 import dataclasses
 import functools
 from collections import namedtuple
-from types import MappingProxyType
 
 import jax.numpy as jnp
 import numpy as np
 
 from xtructure.core.bitpack_math import packed_num_bytes
+from xtructure.core.dtype_facts import (
+    DTypeKind,
+    default_fill_value_for_dtype,
+    dtype_kind,
+    is_supported_primitive_dtype,
+    unsigned_integer_dtype_for,
+)
 from xtructure.core.field_descriptors import FieldDescriptor, get_field_descriptors
 from xtructure.core.shape_utils import normalize_shape
 from xtructure.core.type_utils import is_xtructure_dataclass_type
@@ -27,6 +33,7 @@ from .types import (
 
 def _field_layout(name: str, descriptor: FieldDescriptor, path: tuple[str, ...]) -> FieldLayout:
     is_nested = is_xtructure_dataclass_type(descriptor.dtype)
+    fill_value = _layout_fill_value(descriptor, is_nested=is_nested)
     return FieldLayout(
         name=name,
         path=path,
@@ -42,10 +49,22 @@ def _field_layout(name: str, descriptor: FieldDescriptor, path: tuple[str, ...])
             if descriptor.unpacked_intrinsic_shape is not None
             else None
         ),
-        fill_value=descriptor.fill_value,
+        fill_value=fill_value,
         fill_value_factory=descriptor.fill_value_factory,
         validator=descriptor.validator,
     )
+
+
+def _layout_fill_value(descriptor: FieldDescriptor, *, is_nested: bool) -> object | None:
+    """Resolve the FieldLayout-authoritative fill value."""
+
+    if descriptor.fill_value_factory is not None:
+        return None
+    if descriptor.fill_value is not None:
+        return descriptor.fill_value
+    if is_nested:
+        return None
+    return default_fill_value_for_dtype(descriptor.dtype)
 
 
 def _build_fields(cls: type) -> tuple[FieldLayout, ...]:
@@ -96,29 +115,18 @@ def _build_leaves(
     return tuple(leaves)
 
 
-def _is_primitive_jax_dtype(dtype) -> bool:
-    try:
-        return bool(jnp.issubdtype(dtype, jnp.number) or jnp.issubdtype(dtype, jnp.bool_))
-    except TypeError:
-        return False
-
-
 def _random_facts(dtype) -> tuple[str, object | None, bool, object | None]:
-    try:
-        dtype_obj = jnp.dtype(dtype)
-    except TypeError:
-        return "other", None, False, dtype
-
-    if jnp.issubdtype(dtype_obj, jnp.bool_):
+    dtype_obj = jnp.dtype(dtype)
+    kind = dtype_kind(dtype_obj)
+    if kind is DTypeKind.BOOL:
         return "bool", None, False, dtype_obj
-    if jnp.issubdtype(dtype_obj, jnp.unsignedinteger):
+    if kind is DTypeKind.UINT:
         return "bits_int", dtype_obj, False, dtype_obj
-    if jnp.issubdtype(dtype_obj, jnp.integer):
-        unsigned_equivalent = jnp.dtype(f"uint{np.dtype(dtype_obj).itemsize * 8}")
-        return "bits_int", unsigned_equivalent, True, dtype_obj
-    if jnp.issubdtype(dtype_obj, jnp.floating):
+    if kind is DTypeKind.INT:
+        return "bits_int", unsigned_integer_dtype_for(dtype_obj), True, dtype_obj
+    if kind is DTypeKind.FLOAT:
         return "float", None, False, dtype_obj
-    return "other", None, False, dtype_obj
+    raise AssertionError(f"Unhandled DType Kind: {kind!r}")
 
 
 def _build_adapter_field_plan(field: FieldLayout) -> AdapterFieldPlan:
@@ -156,7 +164,7 @@ def _build_adapter_field_plan(field: FieldLayout) -> AdapterFieldPlan:
         random_bits_dtype=random_bits_dtype,
         random_view_as_signed=random_view_as_signed,
         random_gen_dtype=random_gen_dtype,
-        is_primitive_jax_dtype=_is_primitive_jax_dtype(field.dtype),
+        is_primitive_jax_dtype=is_supported_primitive_dtype(field.dtype),
     )
 
 
@@ -198,9 +206,9 @@ def get_type_layout(cls: type) -> TypeLayout:
     default_dtype = namedtuple("default_dtype", field_names)(*[field.dtype for field in fields])
     leaves = _build_leaves(fields)
     adapter_field_plans = tuple(_build_adapter_field_plan(field) for field in fields)
-    adapter_field_plan_by_name = MappingProxyType({plan.name: plan for plan in adapter_field_plans})
-    field_by_name = MappingProxyType({field.name: field for field in fields})
-    leaf_by_path = MappingProxyType({leaf.path: leaf for leaf in leaves})
+    adapter_field_plan_by_name = tuple((plan.name, plan) for plan in adapter_field_plans)
+    field_by_name = tuple((field.name, field) for field in fields)
+    leaf_by_path = tuple((leaf.path, leaf) for leaf in leaves)
     packed_fields = tuple(field for field in fields if field.is_packed)
     packed_field_layouts = tuple(
         packed_layout
@@ -208,8 +216,8 @@ def get_type_layout(cls: type) -> TypeLayout:
         for packed_layout in (_build_packed_field_layout(field),)
         if packed_layout is not None
     )
-    packed_field_layout_by_name = MappingProxyType(
-        {packed_layout.name: packed_layout for packed_layout in packed_field_layouts}
+    packed_field_layout_by_name = tuple(
+        (packed_layout.name, packed_layout) for packed_layout in packed_field_layouts
     )
     aggregate_bitpack = build_aggregate_bitpack_layout(cls, fields)
     return TypeLayout(

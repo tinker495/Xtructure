@@ -16,6 +16,8 @@ import jax.numpy as jnp
 import numpy as np
 
 from xtructure.core.bitpack_math import packed_num_bytes
+from xtructure.core.dtype_facts import DTypeKind, dtype_kind
+from xtructure.core.layout.bitpack import default_unpack_dtype
 
 __all__ = ["from_uint8", "packed_num_bytes", "to_uint8"]
 
@@ -32,16 +34,22 @@ def to_uint8(values: chex.Array, active_bits: int = 1) -> chex.Array:
         A 1D uint8 array of packed bytes.
     """
     assert 1 <= active_bits <= 32, f"active_bits must be 1-32, got {active_bits}"
+    value_kind = dtype_kind(values.dtype)
 
     if active_bits == 1:
         flatten_input = values.reshape((-1,))
-        if flatten_input.dtype != jnp.bool_:
+        if value_kind not in (DTypeKind.BOOL, DTypeKind.UINT, DTypeKind.INT):
+            raise TypeError(
+                f"values must be bool or integer array for active_bits=1, got DType Kind {value_kind.value!r}"
+            )
+        if value_kind is not DTypeKind.BOOL:
             flatten_input = flatten_input != 0
         return jnp.packbits(flatten_input, axis=-1, bitorder="little")
 
-    assert jnp.issubdtype(
-        values.dtype, jnp.integer
-    ), f"values must be integer array for active_bits={active_bits}, got dtype={values.dtype}"
+    if value_kind not in (DTypeKind.UINT, DTypeKind.INT):
+        raise TypeError(
+            f"values must be integer array for active_bits={active_bits}, got DType Kind {value_kind.value!r}"
+        )
 
     values_flat = values.reshape((-1,))
 
@@ -132,10 +140,7 @@ def from_uint8(
     num_target_elements = int(np.prod(target_shape))
     assert num_target_elements >= 0, "target_shape must have non-negative product"
     if num_target_elements == 0:
-        # Preserve dtype semantics even for empty tensors.
-        if active_bits == 1:
-            return jnp.zeros(target_shape, dtype=jnp.bool_)
-        return jnp.zeros(target_shape, dtype=jnp.uint8)
+        return jnp.zeros(target_shape, dtype=default_unpack_dtype(active_bits))
 
     if active_bits == 1:
         bits = jnp.unpackbits(packed_bytes, count=num_target_elements, bitorder="little")
@@ -179,16 +184,14 @@ def from_uint8(
             vals = [
                 (acc >> jnp.uint32(i * active_bits)) & mask for i in range(num_values_per_block)
             ]
-            dtype_out = jnp.uint8 if active_bits <= 8 else jnp.uint32
-            return jnp.array(vals, dtype=dtype_out)
+            return jnp.array(vals, dtype=default_unpack_dtype(active_bits))
 
         blocks = jax.vmap(unpack_block)(grouped)
         all_values = blocks.reshape((-1,))
         return all_values[:num_target_elements].reshape(target_shape)
 
     def unpack_block(byte_group):
-        # For bits > 8, values won't fit in uint8. We'll emit uint32 and let caller cast if desired.
-        out_dtype = jnp.uint8 if active_bits <= 8 else jnp.uint32
+        out_dtype = default_unpack_dtype(active_bits)
         vals = jnp.zeros((num_values_per_block,), dtype=out_dtype)
         acc = jnp.uint32(0)
         bits_in_acc = 0

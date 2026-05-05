@@ -2,6 +2,12 @@ import jax.numpy as jnp
 import pytest
 
 from xtructure import FieldDescriptor, clone_field_descriptor, descriptor_metadata
+from xtructure.core.dtype_facts import (
+    DTypeKind,
+    default_fill_value_for_dtype,
+    dtype_kind,
+)
+from xtructure.core.layout import get_type_layout
 from xtructure.io.bitpack import packed_num_bytes
 
 
@@ -32,6 +38,48 @@ def test_packed_tensor_accepts_equivalent_normalized_shape_aliases():
 def test_packed_tensor_rejects_mismatched_normalized_shape_aliases():
     with pytest.raises(ValueError):
         FieldDescriptor.packed_tensor(shape=3, unpacked_shape=(4,), packed_bits=1)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "expected_kind", "expected_fill"),
+    [
+        (jnp.bool_, DTypeKind.BOOL, False),
+        (jnp.uint8, DTypeKind.UINT, jnp.iinfo(jnp.uint8).max),
+        (jnp.int32, DTypeKind.INT, 0),
+        (jnp.float32, DTypeKind.FLOAT, jnp.inf),
+    ],
+)
+def test_dtype_kind_classifier_owns_default_fill_values(dtype, expected_kind, expected_fill):
+    assert dtype_kind(dtype) is expected_kind
+    assert default_fill_value_for_dtype(dtype) == expected_fill
+
+
+def test_dtype_kind_rejects_unsupported_primitive_dtype():
+    with pytest.raises(TypeError, match="DType Kind"):
+        dtype_kind(jnp.complex64)
+
+
+def test_implicit_field_descriptor_fill_value_comes_from_field_layout():
+    descriptor = FieldDescriptor.scalar(dtype=jnp.uint8)
+
+    assert descriptor.fill_value is None
+
+    from xtructure import xtructure_dataclass
+
+    @xtructure_dataclass(bitpack="off")
+    class LayoutAuthoritativeFill:
+        value: descriptor
+
+    layout = get_type_layout(LayoutAuthoritativeFill)
+
+    assert layout.field_for("value").fill_value == jnp.iinfo(jnp.uint8).max
+    assert LayoutAuthoritativeFill.default().value == jnp.iinfo(jnp.uint8).max
+
+
+def test_packed_tensor_uses_packed_data_kind_default_unpack_dtype():
+    assert FieldDescriptor.packed_tensor(shape=(3,), packed_bits=1).unpacked_dtype is jnp.bool_
+    assert FieldDescriptor.packed_tensor(shape=(3,), packed_bits=8).unpacked_dtype is jnp.uint8
+    assert FieldDescriptor.packed_tensor(shape=(3,), packed_bits=12).unpacked_dtype is jnp.uint32
 
 
 def test_field_descriptor_scalar_factory():

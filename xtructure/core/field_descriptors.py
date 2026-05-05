@@ -4,6 +4,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from xtructure.core.bitpack_math import packed_num_bytes
+from xtructure.core.dtype_facts import default_fill_value_for_dtype
 
 from .shape_utils import normalize_shape
 from .type_utils import is_xtructure_dataclass_type
@@ -106,13 +107,9 @@ class FieldDescriptor:
         )
         self.fill_value_factory = fill_value_factory
         self.validator = validator
-        # Set default fill values based on dtype
-        if fill_value is not None:
-            self.fill_value = fill_value
-        elif fill_value_factory is not None:
-            self.fill_value = None
-        else:
-            self.fill_value = _default_fill_value_for_dtype(dtype)
+        # Explicit descriptor fill values remain available for tooling, but
+        # implicit dtype-derived defaults are authored by FieldLayout.
+        self.fill_value = fill_value
         self.intrinsic_shape: Tuple[int, ...] = normalize_shape(intrinsic_shape)
 
     def __repr__(self) -> str:
@@ -220,13 +217,9 @@ class FieldDescriptor:
 
         unpacked_shape_final = shape_final
         if unpacked_dtype is None:
-            # Default: bool for 1-bit, uint8 for <=8 bits, uint32 for >8 bits.
-            if packed_bits == 1:
-                unpacked_dtype = jnp.bool_
-            elif packed_bits <= 8:
-                unpacked_dtype = jnp.uint8
-            else:
-                unpacked_dtype = jnp.uint32
+            from xtructure.core.layout.bitpack import default_unpack_dtype
+
+            unpacked_dtype = default_unpack_dtype(packed_bits)
         num_values = int(np.prod(np.array(unpacked_shape_final, dtype=np.int64)))
         packed_len = packed_num_bytes(num_values, packed_bits)
         return cls(
@@ -273,21 +266,7 @@ def _default_fill_value_for_dtype(dtype: DType) -> Any:
     """Return a dtype-aware sentinel that plays nicely with jnp.full."""
     if is_xtructure_dataclass_type(dtype):
         return None
-
-    try:
-        dtype_obj = jnp.dtype(dtype)
-    except TypeError:
-        return None
-
-    if jnp.issubdtype(dtype_obj, jnp.bool_):
-        return False
-    if jnp.issubdtype(dtype_obj, jnp.unsignedinteger):
-        return jnp.iinfo(dtype_obj).max
-    if jnp.issubdtype(dtype_obj, jnp.integer):
-        return 0
-    if jnp.issubdtype(dtype_obj, jnp.floating):
-        return jnp.inf
-    return None
+    return default_fill_value_for_dtype(dtype)
 
 
 # Example usage (to be placed in your class definitions later):

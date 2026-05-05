@@ -1,4 +1,5 @@
 """Hash helpers for bucketed double hashing."""
+
 from __future__ import annotations
 
 import chex
@@ -6,7 +7,7 @@ import jax
 import jax.numpy as jnp
 
 from ..core import Xtructurable
-from ..core.xtructure_decorators.hash import uint32ed_to_hash
+from ..core.xtructure_decorators.pytree_adapters.hash import uint32ed_to_hash
 from .constants import (
     DOUBLE_HASH_SECONDARY_DELTA,
     FINGERPRINT_MIX_CONSTANT_A,
@@ -124,7 +125,9 @@ def get_new_idx_from_uint32ed(
     mask = modulus_u32 - SIZE_DTYPE(1)
     is_pow2 = jnp.logical_and(modulus_u32 > 0, (modulus_u32 & mask) == 0)
     index = jax.lax.select(
-        is_pow2, jnp.asarray(primary_hash, dtype=SIZE_DTYPE) & mask, primary_hash % modulus_u32
+        is_pow2,
+        jnp.asarray(primary_hash, dtype=SIZE_DTYPE) & mask,
+        primary_hash % modulus_u32,
     )
     step = _normalize_probe_step(secondary_hash, modulus)
     length = jnp.uint32(input_uint32ed.size)
@@ -147,7 +150,9 @@ def get_new_idx_byterized(
     mask = modulus_u32 - SIZE_DTYPE(1)
     is_pow2 = jnp.logical_and(modulus_u32 > 0, (modulus_u32 & mask) == 0)
     idx = jax.lax.select(
-        is_pow2, jnp.asarray(hash_value, dtype=SIZE_DTYPE) & mask, hash_value % modulus_u32
+        is_pow2,
+        jnp.asarray(hash_value, dtype=SIZE_DTYPE) & mask,
+        hash_value % modulus_u32,
     )
     step = _normalize_probe_step(secondary_hash, modulus)
     length = jnp.uint32(uint32ed.size)
