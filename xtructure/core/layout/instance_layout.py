@@ -31,10 +31,11 @@ def _interpret_field_shape(
     """Interpret a value's shape against the field's intrinsic shape.
 
     `nested_shape_cls` is the layout-canonical shape namedtuple for the field's
-    nested xtructure type (or None for primitive fields). We dispatch on the
-    exact class identity to avoid matching unrelated user-defined namedtuples.
+    nested xtructure type (or None for primitive fields). Compatible shape
+    namedtuples are accepted so equivalent xtructure class objects created by
+    reload/redefinition still infer the same layout.
     """
-    if nested_shape_cls is not None and type(value_shape) is nested_shape_cls:
+    if nested_shape_cls is not None and _is_compatible_nested_shape(value_shape, nested_shape_cls):
         if value_shape.batch == -1:
             return (
                 value_shape,
@@ -62,6 +63,24 @@ def _interpret_field_shape(
         shape,
         -1,
         f"{field_name} shape {shape} does not end with intrinsic shape {intrinsic_shape}.",
+    )
+
+
+def _is_compatible_nested_shape(value_shape: Any, nested_shape_cls: type) -> bool:
+    """Return true for canonical or structurally equivalent nested shape tuples."""
+    if type(value_shape) is nested_shape_cls:
+        return True
+
+    expected_fields = getattr(nested_shape_cls, "_fields", None)
+    value_fields = getattr(value_shape, "_fields", None)
+    if expected_fields is None or value_fields is None:
+        return False
+
+    return (
+        nested_shape_cls.__name__ == value_shape.__class__.__name__ == "shape"
+        and tuple(value_fields) == tuple(expected_fields)
+        and hasattr(value_shape, "batch")
+        and len(value_shape) == len(expected_fields)
     )
 
 

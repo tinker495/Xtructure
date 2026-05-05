@@ -23,6 +23,11 @@ class LayoutInner:
 
 
 @xtructure_dataclass(bitpack="off")
+class LayoutInnerEquivalent:
+    val: FieldDescriptor.scalar(dtype=jnp.int32)
+
+
+@xtructure_dataclass(bitpack="off")
 class LayoutNestedScalar:
     inner: FieldDescriptor.scalar(dtype=LayoutInner)
 
@@ -248,6 +253,18 @@ def test_instance_layout_nested_scalar_and_tensor_shapes():
     assert tensor_layout.batch_shape == ()
     assert tensor_layout.shape_tuple == tensor.shape
     assert tensor_layout.shape_tuple.inner_array.batch == (2,)
+
+
+def test_instance_layout_accepts_compatible_nested_shape_tuple():
+    equivalent_inner = LayoutInnerEquivalent.default(shape=(5,))
+    outer = LayoutNestedScalar(inner=equivalent_inner)
+
+    layout = get_instance_layout(outer)
+
+    assert layout.structured_type == StructuredType.BATCHED
+    assert layout.batch_shape == (5,)
+    assert layout.shape_tuple.inner.batch == ()
+    assert layout.mismatch_reason is None
 
 
 def test_instance_layout_reports_nested_unstructured_tensor_field():
