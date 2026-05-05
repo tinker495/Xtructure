@@ -3,8 +3,9 @@ from typing import Any, Callable, Dict, Tuple, Type
 import jax.numpy as jnp
 import numpy as np
 
-from xtructure.io.bitpack import packed_num_bytes
+from xtructure.core.bitpack_math import packed_num_bytes
 
+from .shape_utils import normalize_shape
 from .type_utils import is_xtructure_dataclass_type
 
 # Represents a JAX dtype, can be a specific type like jnp.int32 or a more generic jnp.dtype
@@ -98,7 +99,11 @@ class FieldDescriptor:
                 raise ValueError(f"packed_bits must be in [1, 32], got {packed_bits}")
         self.packed_bits: int | None = packed_bits
         self.unpacked_dtype: DType | None = unpacked_dtype
-        self.unpacked_intrinsic_shape: Tuple[int, ...] | None = unpacked_intrinsic_shape
+        self.unpacked_intrinsic_shape: Tuple[int, ...] | None = (
+            normalize_shape(unpacked_intrinsic_shape)
+            if unpacked_intrinsic_shape is not None
+            else None
+        )
         self.fill_value_factory = fill_value_factory
         self.validator = validator
         # Set default fill values based on dtype
@@ -108,7 +113,7 @@ class FieldDescriptor:
             self.fill_value = None
         else:
             self.fill_value = _default_fill_value_for_dtype(dtype)
-        self.intrinsic_shape: Tuple[int, ...] = intrinsic_shape
+        self.intrinsic_shape: Tuple[int, ...] = normalize_shape(intrinsic_shape)
 
     def __repr__(self) -> str:
         return (
@@ -185,8 +190,8 @@ class FieldDescriptor:
         cls,
         *,
         unpacked_dtype: DType | None = None,
-        shape: Tuple[int, ...] | None = None,
-        unpacked_shape: Tuple[int, ...] | None = None,
+        shape: Any = None,
+        unpacked_shape: Any = None,
         packed_bits: int,
         storage_dtype: DType = jnp.uint8,
         fill_value: Any = 0,
@@ -206,13 +211,14 @@ class FieldDescriptor:
             raise TypeError("packed_tensor requires `shape` (preferred) or `unpacked_shape`.")
         if shape is None:
             shape = unpacked_shape
-        if unpacked_shape is not None and tuple(unpacked_shape) != tuple(shape):  # type: ignore[arg-type]
+        shape_final = normalize_shape(shape)
+        if unpacked_shape is not None and normalize_shape(unpacked_shape) != shape_final:
             raise ValueError(
                 f"Provide only one of shape/unpacked_shape, or make them equal. "
                 f"Got shape={shape}, unpacked_shape={unpacked_shape}."
             )
 
-        unpacked_shape_final = tuple(shape)  # type: ignore[arg-type]
+        unpacked_shape_final = shape_final
         if unpacked_dtype is None:
             # Default: bool for 1-bit, uint8 for <=8 bits, uint32 for >8 bits.
             if packed_bits == 1:

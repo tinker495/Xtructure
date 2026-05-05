@@ -4,9 +4,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from xtructure.core.field_descriptors import FieldDescriptor, get_field_descriptors
+from xtructure.core.layout import get_type_layout
 from xtructure.core.structuredtype import StructuredType
-from xtructure.core.type_utils import is_xtructure_dataclass_type
 
 T = TypeVar("T")
 
@@ -39,53 +38,8 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
     """
     assert hasattr(cls, "default"), "There is no default method."
 
-    field_descriptors: dict[str, FieldDescriptor] = get_field_descriptors(cls)
-
-    # Pre-calculate generation configurations for the random method
-    _field_generation_configs = []
-    # Ensure consistent order for key splitting, matching __annotations__
-    _field_names_for_random = list(field_descriptors.keys())
-
-    for field_name_cfg in _field_names_for_random:
-        descriptor = field_descriptors[field_name_cfg]
-        # Retrieve the dtype (or nested xtructure class type) for the current field.
-        actual_dtype_or_nested_dtype_tuple = descriptor.dtype
-        cfg = {
-            "name": field_name_cfg,
-            # Keep as-is to preserve historical behavior; normalize to tuple at use sites.
-            "default_field_shape": descriptor.intrinsic_shape,
-        }
-
-        if is_xtructure_dataclass_type(actual_dtype_or_nested_dtype_tuple):
-            # This field is a nested xtructure_data instance
-            cfg["type"] = "xtructure"
-            # Store the actual nested class type (e.g., Parent, Current)
-            cfg["nested_class_type"] = actual_dtype_or_nested_dtype_tuple
-        else:
-            # This field is a regular JAX array
-            actual_dtype = actual_dtype_or_nested_dtype_tuple  # It's a single JAX dtype here
-            cfg["actual_dtype"] = actual_dtype  # Store the single JAX dtype
-
-            if jnp.issubdtype(actual_dtype, jnp.integer):
-                cfg["type"] = "bits_int"  # Unified type for all full-range integers via bits
-                if jnp.issubdtype(actual_dtype, jnp.unsignedinteger):
-                    cfg["bits_gen_dtype"] = actual_dtype  # Generate bits of this same unsigned type
-                    cfg["view_as_signed"] = False
-                else:  # It's a signed integer
-                    unsigned_equivalent_str = f"uint{np.dtype(actual_dtype).itemsize * 8}"
-                    cfg["bits_gen_dtype"] = jnp.dtype(
-                        unsigned_equivalent_str
-                    )  # Generate bits of corresponding unsigned type
-                    cfg["view_as_signed"] = True  # And then view them as the actual signed type
-            elif jnp.issubdtype(actual_dtype, jnp.floating):
-                cfg["type"] = "float"
-                cfg["gen_dtype"] = actual_dtype
-            elif actual_dtype == jnp.bool_:
-                cfg["type"] = "bool"
-            else:
-                cfg["type"] = "other"  # Fallback
-                cfg["gen_dtype"] = actual_dtype
-        _field_generation_configs.append(cfg)
+    type_layout = get_type_layout(cls)
+    field_plans = type_layout.adapter_field_plans
 
     def reshape(self, *new_shape: int | tuple[int, ...]) -> T:
         if len(new_shape) == 0:
@@ -190,53 +144,39 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
             key = jax.random.PRNGKey(0)
 
         data = {}
-        keys = jax.random.split(key, len(_field_generation_configs))
+        keys = jax.random.split(key, len(field_plans))
 
-        for i, cfg in enumerate(_field_generation_configs):
+        for i, field_plan in enumerate(field_plans):
             field_key = keys[i]
-            field_name = cfg["name"]
+            field_name = field_plan.name
+            target_shape = shape + field_plan.intrinsic_shape
 
-            if cfg["type"] == "xtructure":
-                nested_class = cfg["nested_class_type"]
-                # For nested xtructures, combine batch shape with field shape
-                current_default_shape = cfg["default_field_shape"]
-                target_shape = shape + current_default_shape
+            if field_plan.random_kind == "nested":
+                nested_class = field_plan.nested_type
                 # Recursively call random for the nested xtructure_data class.
                 data[field_name] = nested_class.random(shape=target_shape, key=field_key)
+            elif field_plan.random_kind == "bits_int":
+                generated_bits = jax.random.bits(
+                    field_key, shape=target_shape, dtype=field_plan.random_bits_dtype
+                )
+                if field_plan.random_view_as_signed:
+                    data[field_name] = generated_bits.view(field_plan.declared_dtype)
+                else:
+                    data[field_name] = generated_bits
+            elif field_plan.random_kind == "float":
+                data[field_name] = jax.random.uniform(
+                    field_key, target_shape, dtype=field_plan.random_gen_dtype
+                )
+            elif field_plan.random_kind == "bool":
+                data[field_name] = jax.random.bernoulli(field_key, shape=target_shape)
             else:
-                # This branch handles primitive JAX array fields.
-                current_default_shape = cfg["default_field_shape"]
-                if not isinstance(current_default_shape, tuple):
-                    current_default_shape = (
-                        current_default_shape,
-                    )  # Ensure it's a tuple for concatenation
-
-                target_shape = shape + current_default_shape
-
-                if cfg["type"] == "bits_int":
-                    generated_bits = jax.random.bits(
-                        field_key, shape=target_shape, dtype=cfg["bits_gen_dtype"]
+                try:
+                    data[field_name] = jnp.zeros(target_shape, dtype=field_plan.random_gen_dtype)
+                except TypeError:
+                    raise NotImplementedError(
+                        f"Random generation for dtype {field_plan.random_gen_dtype} "
+                        f"(field: {field_name}) is not implemented robustly."
                     )
-                    if cfg["view_as_signed"]:
-                        data[field_name] = generated_bits.view(cfg["actual_dtype"])
-                    else:
-                        data[field_name] = generated_bits
-                elif cfg["type"] == "float":
-                    data[field_name] = jax.random.uniform(
-                        field_key, target_shape, dtype=cfg["gen_dtype"]
-                    )
-                elif cfg["type"] == "bool":
-                    data[field_name] = jax.random.bernoulli(
-                        field_key, shape=target_shape  # p=0.5 by default
-                    )
-                else:  # Fallback for 'other' dtypes (cfg['type'] == 'other')
-                    try:
-                        data[field_name] = jnp.zeros(target_shape, dtype=cfg["gen_dtype"])
-                    except TypeError:
-                        raise NotImplementedError(
-                            f"Random generation for dtype {cfg['gen_dtype']} "
-                            f"(field: {field_name}) is not implemented robustly."
-                        )
         return cls(**data)
 
     def padding_as_batch(self, batch_shape: tuple[int, ...]):

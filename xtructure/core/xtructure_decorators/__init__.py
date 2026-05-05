@@ -1,9 +1,8 @@
 from typing import Callable, Optional, Type, TypeVar
 
 from xtructure.core.dataclass import base_dataclass
-from xtructure.core.field_descriptors import get_field_descriptors
+from xtructure.core.layout import get_type_layout
 from xtructure.core.protocol import Xtructurable
-from xtructure.core.type_utils import is_xtructure_dataclass_type
 
 from .aggregate_bitpack import add_aggregate_bitpack
 from .bitpack_accessors import add_bitpack_accessors
@@ -86,25 +85,12 @@ def xtructure_dataclass(
         # - field: only packed_tensor accessors
         # - aggregate: force aggregate packing for the whole dataclass
         # - auto: enable aggregate if all primitive leaves declare bits (nested supported for scalar nesting)
-        descriptors = get_field_descriptors(cls)
-        auto_aggregate = False
-        if descriptors and effective_bitpack in ("auto",):
-            # Auto aggregate if every *primitive leaf* has bits.
-            def _all_bits_no_nested_arrays(t: type) -> bool:
-                descs = get_field_descriptors(t)
-                for fd in descs.values():
-                    if is_xtructure_dataclass_type(fd.dtype):
-                        # Only scalar nested supported in aggregate for now.
-                        if tuple(fd.intrinsic_shape) not in ((),):
-                            return False
-                        if not _all_bits_no_nested_arrays(fd.dtype):
-                            return False
-                    else:
-                        if fd.bits is None:
-                            return False
-                return True
-
-            auto_aggregate = _all_bits_no_nested_arrays(cls)
+        type_layout = get_type_layout(cls)
+        auto_aggregate = (
+            bool(type_layout.fields)
+            and effective_bitpack == "auto"
+            and type_layout.aggregate_bitpack.eligible
+        )
 
         if effective_bitpack == "aggregate" or auto_aggregate:
             cls = add_aggregate_bitpack(cls)
