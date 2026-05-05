@@ -92,6 +92,18 @@ def unique_mask(
     if key is not None and len(key) != batch_len:
         raise ValueError(f"key length {len(key)} must match batch_len {batch_len}")
 
+    if batch_len == 0:
+        final_mask = jnp.zeros((0,), dtype=jnp.bool_)
+        if not return_index and not return_inverse:
+            return final_mask
+
+        returns = (final_mask,)
+        if return_index:
+            returns += (jnp.zeros((0,), dtype=jnp.int32),)
+        if return_inverse:
+            returns += (jnp.zeros((0,), dtype=jnp.int32),)
+        return returns
+
     keys_flat = unique_keys.reshape(batch_len, -1)
 
     # 2. Wide Hashing to reduce sort columns (128-bit)

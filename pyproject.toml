@@ -6,3 +6,6 @@ build-backend = "setuptools.build_meta"
 testpaths = ["tests", "."]
 pythonpath = ["."]
 addopts = "-v --tb=short"
+markers = [
+    "pallas_heap: hardware-specific BGPQ/Pallas heap stress tests; opt in with XTRUCTURE_RUN_PALLAS_HEAP_TESTS=1",
+]

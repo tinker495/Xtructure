@@ -261,18 +261,36 @@ def full_like(a, fill_value, dtype: Any | None = None, shape: Any = None, *, dev
     return jnp.full_like(a, fill_value, dtype=dtype, shape=shape, device=device)
 
 
-def zeros_like(a, dtype: Any | None = None, shape: Any = None, *, device=None):
+def zeros_like(
+    a,
+    dtype: Any | None = None,
+    shape: Any = None,
+    *,
+    device=None,
+    out_sharding=None,
+):
     if _is_xtructurable(a):
-        _reject_dataclass_kwargs("zeros_like", dtype=dtype, shape=shape, device=device)
+        _reject_dataclass_kwargs(
+            "zeros_like", dtype=dtype, shape=shape, device=device, out_sharding=out_sharding
+        )
         return _dc.zeros_like(a)
-    return jnp.zeros_like(a, dtype=dtype, shape=shape, device=device)
+    return jnp.zeros_like(a, dtype=dtype, shape=shape, device=device, out_sharding=out_sharding)
 
 
-def ones_like(a, dtype: Any | None = None, shape: Any = None, *, device=None):
+def ones_like(
+    a,
+    dtype: Any | None = None,
+    shape: Any = None,
+    *,
+    device=None,
+    out_sharding=None,
+):
     if _is_xtructurable(a):
-        _reject_dataclass_kwargs("ones_like", dtype=dtype, shape=shape, device=device)
+        _reject_dataclass_kwargs(
+            "ones_like", dtype=dtype, shape=shape, device=device, out_sharding=out_sharding
+        )
         return _dc.ones_like(a)
-    return jnp.ones_like(a, dtype=dtype, shape=shape, device=device)
+    return jnp.ones_like(a, dtype=dtype, shape=shape, device=device, out_sharding=out_sharding)
 
 
 __all__ = [
