@@ -1,12 +1,12 @@
-import dataclasses
 import unittest
 
 import jax
 import jax.numpy as jnp
 import numpy as np
+import pytest
 
 from tests.dataclass.fixtures import NestedData, SimpleData, VectorData
-from xtructure.core.xtructure_decorators.indexing import add_indexing_methods
+from xtructure import FieldDescriptor, xtructure_dataclass
 
 
 def test_at_set_simple_data():
@@ -80,7 +80,8 @@ def test_at_set_nested_data():
             id=jnp.array(10, dtype=jnp.uint32), value=jnp.array(1.1, dtype=jnp.float32)
         ),
         vector=VectorData(
-            position=jnp.ones(3, dtype=jnp.float32), velocity=jnp.ones(3, dtype=jnp.float32) * 2
+            position=jnp.ones(3, dtype=jnp.float32),
+            velocity=jnp.ones(3, dtype=jnp.float32) * 2,
         ),
     )
 
@@ -103,13 +104,25 @@ def test_at_set_nested_data():
     assert original_data.simple.id[0] != data_to_set_single_nested.simple.id
 
 
-@dataclasses.dataclass
+@xtructure_dataclass(bitpack="off")
 class IndexedData:
-    x: jnp.ndarray
-    y: jnp.ndarray
+    x: FieldDescriptor.tensor(dtype=jnp.float32, shape=())
+    y: FieldDescriptor.tensor(dtype=jnp.float32, shape=())
 
 
-IndexedData = add_indexing_methods(IndexedData)
+@xtructure_dataclass(bitpack="off")
+class DeepLeaf:
+    value: FieldDescriptor.scalar(dtype=jnp.int32)
+
+
+@xtructure_dataclass(bitpack="off")
+class DeepMiddle:
+    leaf: FieldDescriptor.scalar(dtype=DeepLeaf)
+
+
+@xtructure_dataclass(bitpack="off")
+class DeepOuter:
+    middle: FieldDescriptor.scalar(dtype=DeepMiddle)
 
 
 class TestIndexingDecorator(unittest.TestCase):
@@ -239,3 +252,34 @@ class TestIndexingDecorator(unittest.TestCase):
             jnp.array_equal(updated_instance.y, jnp.array(expected_x)),
             "Randomized test with scalar value failed for field 'y'",
         )
+
+
+def test_at_set_invalid_index_raises():
+    data = SimpleData.default(shape=(3,))
+
+    with pytest.raises(TypeError, match="string indexing"):
+        data.at["bad"].set(SimpleData.default())
+
+
+def test_at_set_invalid_value_type_raises():
+    data = SimpleData.default(shape=(3,))
+
+    with pytest.raises(TypeError, match="valid JAX array type"):
+        data.at[0].set("not-an-array")
+
+
+def test_at_set_nested_type_mismatch_raises():
+    data = NestedData.default(shape=(2,))
+
+    with pytest.raises((AttributeError, TypeError, ValueError)):
+        data.at[0].set(SimpleData.default())
+
+
+def test_at_set_deeply_nested_dataclass():
+    data = DeepOuter.default(shape=(2,))
+    replacement = DeepOuter(middle=DeepMiddle(leaf=DeepLeaf(value=jnp.array(42, dtype=jnp.int32))))
+
+    updated = data.at[1].set(replacement)
+
+    assert int(updated.middle.leaf.value[0]) == int(data.middle.leaf.value[0])
+    assert int(updated.middle.leaf.value[1]) == 42
