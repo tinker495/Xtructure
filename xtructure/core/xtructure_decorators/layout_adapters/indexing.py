@@ -51,41 +51,44 @@ def _compile_field_setter(
 
     field_names = tuple(plan.name for plan in field_plans)
     field_count = len(field_names)
-    field_getter = attrgetter(*field_names) if field_names else None
+
+    if field_count == 0:
+        # Empty dataclass: return a no-arg constructor wrapper directly.
+        if mode == "set":
+
+            def _compiled_set(obj_instance, indices, values_to_set):
+                return cls()
+
+            return _compiled_set
+
+        def _compiled_condition_set(obj_instance, indices, condition, value_to_conditionally_set):
+            return cls()
+
+        return _compiled_condition_set
+
+    field_getter = attrgetter(*field_names)
+
+    def _per_field_assignment(i: int, plan: AdapterFieldPlan) -> str:
+        if mode == "set":
+            return f"current_{i}.at[indices].set(value_{i})"
+        if plan.field_kind == "nested":
+            return f"current_{i}.at[indices].set_as_condition(condition, value_{i})"
+        return f"_UOC(current_{i}, indices, condition, value_{i})"
 
     lines = [
         signature,
-        "    if _FIELD_COUNT == 0:",
-        "        return _CLS()",
-        "    new_field_data = {}",
         f"    is_value_instance = isinstance({value_var}, _CLS)",
-        "    values_tuple = None",
         "    if is_value_instance:",
         f"        values_tuple = _TUPLE_GETTER_VALUES("
         f"_FIELD_GETTER, {value_var}, _FIELD_COUNT)",
+        "    else:",
+        f"        values_tuple = ({value_var},) * _FIELD_COUNT",
+        "    new_field_data = {}",
     ]
     for i, plan in enumerate(field_plans):
-        lines.extend(
-            [
-                f"    current_{i} = getattr(obj_instance, {plan.name!r})",
-                f"    value_{i} = values_tuple[{i}] if values_tuple is not None "
-                f"else {value_var}",
-            ]
-        )
-        if mode == "set":
-            lines.append(
-                f"    new_field_data[{plan.name!r}] = " f"current_{i}.at[indices].set(value_{i})"
-            )
-        elif plan.field_kind == "nested":
-            lines.append(
-                f"    new_field_data[{plan.name!r}] = "
-                f"current_{i}.at[indices].set_as_condition(condition, value_{i})"
-            )
-        else:
-            lines.append(
-                f"    new_field_data[{plan.name!r}] = "
-                f"_UOC(current_{i}, indices, condition, value_{i})"
-            )
+        lines.append(f"    current_{i} = getattr(obj_instance, {plan.name!r})")
+        lines.append(f"    value_{i} = values_tuple[{i}]")
+        lines.append(f"    new_field_data[{plan.name!r}] = {_per_field_assignment(i, plan)}")
     lines.append("    return _CLS(**new_field_data)")
 
     namespace = {
@@ -100,15 +103,16 @@ def _compile_field_setter(
 
 
 class _Updater:
-    def __init__(self, obj_instance, index):
+    __slots__ = ("obj_instance", "indices", "_set", "_set_as_condition")
+
+    def __init__(self, obj_instance, index, compiled_set, compiled_set_as_condition):
         self.obj_instance = obj_instance
         self.indices = index
-        self.cls = obj_instance.__class__
+        self._set = compiled_set
+        self._set_as_condition = compiled_set_as_condition
 
     def set(self, values_to_set):
-        return self.cls.__xtructure_compiled_setter__(
-            self.obj_instance, self.indices, values_to_set
-        )
+        return self._set(self.obj_instance, self.indices, values_to_set)
 
     def set_as_condition(self, condition: jnp.ndarray, value_to_conditionally_set: Any):
         """
@@ -129,7 +133,7 @@ class _Updater:
         Returns:
             A new instance of the dataclass with updated fields.
         """
-        return self.cls.__xtructure_compiled_condition_setter__(
+        return self._set_as_condition(
             self.obj_instance,
             self.indices,
             condition,
@@ -137,12 +141,23 @@ class _Updater:
         )
 
 
-class AtIndexer:
-    def __init__(self, obj_instance):
+class _AtIndexer:
+    __slots__ = ("obj_instance", "_compiled_set", "_compiled_set_as_condition")
+
+    def __init__(self, obj_instance, compiled_set, compiled_set_as_condition):
         self.obj_instance = obj_instance
+        self._compiled_set = compiled_set
+        self._compiled_set_as_condition = compiled_set_as_condition
 
     def __getitem__(self, index):
-        return _Updater(self.obj_instance, index)
+        return _Updater(
+            self.obj_instance, index, self._compiled_set, self._compiled_set_as_condition
+        )
+
+
+# Backwards-compatible alias used by tests / external callers that imported the
+# previous indexer type by name.
+AtIndexer = _AtIndexer
 
 
 def add_indexing_methods(cls: Type[T]) -> Type[T]:
@@ -177,9 +192,10 @@ def add_indexing_methods(cls: Type[T]) -> Type[T]:
                 new_values[field_name] = field_value
         return cls(**new_values)
 
+    def at(self):
+        return _AtIndexer(self, compiled_setter, compiled_condition_setter)
+
     setattr(cls, "__getitem__", getitem)
-    setattr(cls, "__xtructure_compiled_setter__", compiled_setter)
-    setattr(cls, "__xtructure_compiled_condition_setter__", compiled_condition_setter)
-    setattr(cls, "at", property(AtIndexer))
+    setattr(cls, "at", property(at))
 
     return cls
