@@ -89,21 +89,6 @@ def _install_layout_cache_replace(cls: Type[T], *, validate: bool) -> Type[T]:
             raise TypeError(f"{cls.__name__}.replace got unexpected field(s): {unexpected_names}")
 
         old_layout = getattr(self, "_layout_cache", None)
-        if user_post_init is None and old_layout is not None:
-            same_identity_update = True
-            for name, value in kwargs.items():
-                if value is not getattr(self, name):
-                    same_identity_update = False
-                    break
-            if same_identity_update:
-                replacement = cls.__new__(cls)
-                for name in field_names:
-                    object.__setattr__(replacement, name, getattr(self, name))
-                for name, value in kwargs.items():
-                    object.__setattr__(replacement, name, value)
-                object.__setattr__(replacement, "_layout_cache", old_layout)
-                return replacement
-
         changed_names = set(kwargs)
         replacement = cls.__new__(cls)
         for name in field_names:
