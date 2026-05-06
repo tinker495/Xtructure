@@ -19,7 +19,6 @@ if TYPE_CHECKING:
 def _hashtable_lookup_internal(
     table: "HashTable",
     input: Xtructurable,
-    input_uint32ed: chex.Array,
     idx: BucketIdx,
     probe_step: chex.Array,
     input_fingerprint: chex.Array,
@@ -30,7 +29,6 @@ def _hashtable_lookup_internal(
     max_probes_u32 = SIZE_DTYPE(int(table.max_probes))
     capacity = jnp.asarray(table._capacity, dtype=SIZE_DTYPE)
     mask = capacity - SIZE_DTYPE(1)
-    del input_uint32ed
 
     slot_offsets = jnp.arange(bucket_size, dtype=SLOT_IDX_DTYPE)
     slot_offsets_u32 = slot_offsets.astype(SIZE_DTYPE)
@@ -111,13 +109,9 @@ def _hashtable_lookup_internal(
 def _hashtable_lookup_bucket_jit(
     table: "HashTable", input: Xtructurable
 ) -> tuple[BucketIdx, bool, chex.Array]:
-    index, step, input_uint32ed, fingerprint = get_new_idx_byterized(
-        input, table._capacity, table.seed
-    )
+    index, step, _uint32ed, fingerprint = get_new_idx_byterized(input, table._capacity, table.seed)
     idx = BucketIdx(index=index, slot_index=SLOT_IDX_DTYPE(0))
-    idx, found = _hashtable_lookup_internal(
-        table, input, input_uint32ed, idx, step, fingerprint, False
-    )
+    idx, found = _hashtable_lookup_internal(table, input, idx, step, fingerprint, False)
     return idx, found, fingerprint
 
 
@@ -131,7 +125,6 @@ def _hashtable_lookup_jit(table: "HashTable", input: Xtructurable) -> tuple[Hash
 def _hashtable_lookup_parallel_internal(
     table: "HashTable",
     inputs: Xtructurable,
-    input_uint32eds: chex.Array,
     idxs: BucketIdx,
     probe_steps: chex.Array,
     fingerprints: chex.Array,
@@ -140,8 +133,6 @@ def _hashtable_lookup_parallel_internal(
 ) -> tuple[BucketIdx, chex.Array]:
     if active is None:
         active = jnp.ones(inputs.shape.batch, dtype=jnp.bool_)
-
-    del input_uint32eds
 
     bucket_size = int(table.bucket_size)
     max_probes_u32 = SIZE_DTYPE(int(table.max_probes))
@@ -265,7 +256,7 @@ def _hashtable_lookup_parallel_jit(
     batch_size = inputs.shape.batch
 
     def _process_batch(filled_mask):
-        initial_idx, steps, input_uint32eds, fingerprints = jax.vmap(
+        initial_idx, steps, _uint32eds, fingerprints = jax.vmap(
             get_new_idx_byterized, in_axes=(0, None, None)
         )(inputs, table._capacity, table.seed)
 
@@ -273,7 +264,7 @@ def _hashtable_lookup_parallel_jit(
         founds = jnp.zeros(batch_size, dtype=jnp.bool_)
 
         idx, found = _hashtable_lookup_parallel_internal(
-            table, inputs, input_uint32eds, idxs, steps, fingerprints, founds, filled_mask
+            table, inputs, idxs, steps, fingerprints, founds, filled_mask
         )
         bucket_size_u32 = SIZE_DTYPE(table.bucket_size)
         return HashIdx(index=idx.index * bucket_size_u32 + idx.slot_index), found

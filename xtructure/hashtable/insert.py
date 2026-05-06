@@ -81,7 +81,6 @@ def _hashtable_insert_jit(
 def _hashtable_parallel_insert_internal(
     table: "HashTable",
     inputs: Xtructurable,
-    inputs_uint32ed: chex.Array,
     probe_steps: chex.Array,
     index: BucketIdx,
     updatable: chex.Array,
@@ -211,7 +210,6 @@ def _hashtable_parallel_insert_jit(
         idx, found = _hashtable_lookup_parallel_internal(
             table,
             inputs,
-            uint32eds,
             idx,
             steps,
             fingerprints,
@@ -222,7 +220,7 @@ def _hashtable_parallel_insert_jit(
         updatable = jnp.logical_and(~found, unique_filled)
 
         updated_table, inserted_idx = _hashtable_parallel_insert_internal(
-            table, inputs, uint32eds, steps, idx, updatable, fingerprints
+            table, inputs, steps, idx, updatable, fingerprints
         )
 
         cond_found = jnp.asarray(found, dtype=jnp.bool_)

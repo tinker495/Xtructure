@@ -98,41 +98,21 @@ def _compute_unique_mask_from_uint32eds(
     return unique_mask, representative_indices
 
 
-def _normalize_probe_step(step: chex.Array, modulus: int) -> chex.Array:
-    step = jnp.asarray(step, dtype=SIZE_DTYPE)
+def _modulus_reduce(value: chex.Array, modulus: int) -> chex.Array:
+    """Reduce ``value`` modulo ``modulus`` using a bitmask fast path for powers of two."""
     modulus_u32 = jnp.asarray(modulus, dtype=SIZE_DTYPE)
     modulus_u32 = jnp.maximum(modulus_u32, SIZE_DTYPE(1))
     mask = modulus_u32 - SIZE_DTYPE(1)
     is_pow2 = jnp.logical_and(modulus_u32 > 0, (modulus_u32 & mask) == 0)
-    step = jax.lax.select(is_pow2, step & mask, step % modulus_u32)
+    value_u32 = jnp.asarray(value, dtype=SIZE_DTYPE)
+    return jax.lax.select(is_pow2, value_u32 & mask, value_u32 % modulus_u32)
+
+
+def _normalize_probe_step(step: chex.Array, modulus: int) -> chex.Array:
+    step = _modulus_reduce(step, modulus)
     step = jnp.where(step == 0, SIZE_DTYPE(1), step)
     step = jnp.bitwise_or(step, SIZE_DTYPE(1))
     return step
-
-
-def get_new_idx_from_uint32ed(
-    input_uint32ed: chex.Array,
-    modulus: int,
-    seed: int,
-) -> tuple[chex.Array, chex.Array, chex.Array]:
-    """Calculate a new hash bucket index, probe step, and fingerprint from a uint32d representation."""
-    seed_u32 = jnp.asarray(seed, dtype=jnp.uint32)
-    primary_hash = uint32ed_to_hash(input_uint32ed, seed_u32)
-    secondary_seed = jnp.bitwise_xor(seed_u32, DOUBLE_HASH_SECONDARY_DELTA)
-    secondary_hash = uint32ed_to_hash(input_uint32ed, secondary_seed)
-    modulus_u32 = jnp.asarray(modulus, dtype=SIZE_DTYPE)
-    modulus_u32 = jnp.maximum(modulus_u32, SIZE_DTYPE(1))
-    mask = modulus_u32 - SIZE_DTYPE(1)
-    is_pow2 = jnp.logical_and(modulus_u32 > 0, (modulus_u32 & mask) == 0)
-    index = jax.lax.select(
-        is_pow2,
-        jnp.asarray(primary_hash, dtype=SIZE_DTYPE) & mask,
-        primary_hash % modulus_u32,
-    )
-    step = _normalize_probe_step(secondary_hash, modulus)
-    length = jnp.uint32(input_uint32ed.size)
-    fingerprint = _mix_fingerprint(primary_hash, secondary_hash, length)
-    return index, step, fingerprint
 
 
 def get_new_idx_byterized(
@@ -145,15 +125,7 @@ def get_new_idx_byterized(
     seed_u32 = jnp.asarray(seed, dtype=jnp.uint32)
     secondary_seed = jnp.bitwise_xor(seed_u32, DOUBLE_HASH_SECONDARY_DELTA)
     secondary_hash = uint32ed_to_hash(uint32ed, secondary_seed)
-    modulus_u32 = jnp.asarray(modulus, dtype=SIZE_DTYPE)
-    modulus_u32 = jnp.maximum(modulus_u32, SIZE_DTYPE(1))
-    mask = modulus_u32 - SIZE_DTYPE(1)
-    is_pow2 = jnp.logical_and(modulus_u32 > 0, (modulus_u32 & mask) == 0)
-    idx = jax.lax.select(
-        is_pow2,
-        jnp.asarray(hash_value, dtype=SIZE_DTYPE) & mask,
-        hash_value % modulus_u32,
-    )
+    idx = _modulus_reduce(hash_value, modulus)
     step = _normalize_probe_step(secondary_hash, modulus)
     length = jnp.uint32(uint32ed.size)
     fingerprint = _mix_fingerprint(hash_value, secondary_hash, length)
