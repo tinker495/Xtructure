@@ -1,4 +1,5 @@
 import functools
+import sys
 from typing import Callable, Optional, Type, TypeVar
 
 from xtructure.core.dataclass import base_dataclass
@@ -9,19 +10,59 @@ from xtructure.core.layout.instance_layout import (
 )
 from xtructure.core.protocol import Xtructurable
 
+from .layout_adapters import aggregate_bitpack as _aggregate_bitpack_adapter
+from .layout_adapters import bitpack_accessors as _bitpack_accessors_adapter
+from .layout_adapters import default as _default_adapter
+from .layout_adapters import indexing as _indexing_adapter
+from .layout_adapters import shape as _shape_adapter
+from .layout_adapters import structure_util as _structure_util_adapter
+from .layout_adapters import validation as _validation_adapter
 from .layout_adapters.aggregate_bitpack import add_aggregate_bitpack
+from .layout_adapters.aggregate_bitpack import bits as _aggregate_bitpack_bits
+from .layout_adapters.aggregate_bitpack import generated as _aggregate_bitpack_generated
+from .layout_adapters.aggregate_bitpack import view as _aggregate_bitpack_view
 from .layout_adapters.bitpack_accessors import add_bitpack_accessors
 from .layout_adapters.default import add_default_method
 from .layout_adapters.indexing import add_indexing_methods
 from .layout_adapters.shape import add_shape_dtype_len
 from .layout_adapters.structure_util import add_structure_utilities
 from .layout_adapters.validation import add_runtime_validation
+from .pytree_adapters import hash as _hash_adapter
+from .pytree_adapters import io as _io_adapter
+from .pytree_adapters import ops as _ops_adapter
+from .pytree_adapters import string_format as _string_format_adapter
 from .pytree_adapters.hash import hash_function_decorator
 from .pytree_adapters.io import add_io_methods
 from .pytree_adapters.ops import add_comparison_operators
 from .pytree_adapters.string_format import add_string_representation_methods
 
 T = TypeVar("T")
+
+
+def _install_legacy_module_aliases() -> None:
+    """Keep documented pre-reorganization decorator module imports working."""
+
+    aliases = {
+        "aggregate_bitpack": _aggregate_bitpack_adapter,
+        "aggregate_bitpack.bits": _aggregate_bitpack_bits,
+        "aggregate_bitpack.generated": _aggregate_bitpack_generated,
+        "aggregate_bitpack.view": _aggregate_bitpack_view,
+        "bitpack_accessors": _bitpack_accessors_adapter,
+        "default": _default_adapter,
+        "hash": _hash_adapter,
+        "indexing": _indexing_adapter,
+        "io": _io_adapter,
+        "ops": _ops_adapter,
+        "shape": _shape_adapter,
+        "string_format": _string_format_adapter,
+        "structure_util": _structure_util_adapter,
+        "validation": _validation_adapter,
+    }
+    for name, module in aliases.items():
+        sys.modules.setdefault(f"{__name__}.{name}", module)
+
+
+_install_legacy_module_aliases()
 
 
 def _inject_layout_cache_post_init(target_cls: Type[T]) -> Type[T]:
@@ -131,6 +172,8 @@ def xtructure_dataclass(
              classmethod for some functionalities.
         validate: When True, injects a runtime validator that checks field
             dtypes and trailing shapes after every instantiation.
+        bitpack: Bitpacking policy: ``"auto"``, ``"aggregate"``, ``"field"``,
+            or ``"off"``.
 
     Returns:
         The decorated class with the aforementioned additional functionalities.
