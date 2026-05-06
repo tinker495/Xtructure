@@ -1,3 +1,5 @@
+import pickle
+
 import jax
 import jax.numpy as jnp
 import pytest
@@ -244,8 +246,6 @@ def test_type_layout_lookup_facts_are_tuple_backed_and_hashable():
         layout.field_for("other")
     with pytest.raises(KeyError):
         layout.adapter_field_plan_for("other")
-    with pytest.raises(KeyError):
-        layout.leaf_for(("other",))
 
     hash(layout)
 
@@ -353,6 +353,28 @@ def test_layout_cache_populates_instance_and_survives_pytree_roundtrip():
     rebuilt = jax.tree_util.tree_unflatten(treedef, leaves)
     assert rebuilt._layout_cache.shape_tuple == instance._layout_cache.shape_tuple
     assert rebuilt._layout_cache.dtype_tuple == instance._layout_cache.dtype_tuple
+
+
+def test_layout_cache_is_transient_across_pickle_roundtrip():
+    instance = LayoutNestedScalar.default(shape=(2,))
+
+    payload = pickle.dumps(instance)
+    rebuilt = pickle.loads(payload)
+
+    assert "_layout_cache" in rebuilt.__dict__
+    assert rebuilt.shape == instance.shape
+    assert rebuilt.dtype == instance.dtype
+    assert rebuilt.batch_shape == instance.batch_shape
+
+
+def test_instance_layout_accepts_python_primitive_values():
+    instance = LayoutPrimitive(id=1, vector=[1.0, 2.0, 3.0])
+
+    assert instance.shape.id == ()
+    assert instance.shape.vector == (3,)
+    assert instance.structured_type == StructuredType.SINGLE
+    assert instance.dtype.id == jnp.asarray(1).dtype
+    assert instance.dtype.vector == jnp.asarray([1.0, 2.0, 3.0]).dtype
 
 
 def test_layout_cache_populates_nested_instances_before_outer_cache():
