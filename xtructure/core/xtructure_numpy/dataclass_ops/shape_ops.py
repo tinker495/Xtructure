@@ -60,13 +60,9 @@ def swapaxes(dataclass_instance: T, axis1: int, axis2: int) -> T:
     if axis2_norm < 0 or axis2_norm >= batch_ndim:
         raise ValueError(f"Axis {axis2} is out of bounds for batch dimensions {batch_shape}")
 
-    def swap_batch_axes_only(field: jnp.ndarray) -> jnp.ndarray:
-        field_ndim = field.ndim
-        if field_ndim <= batch_ndim:
-            return jnp.swapaxes(field, axis1_norm, axis2_norm)
-        return jnp.swapaxes(field, axis1_norm, axis2_norm)
-
-    return jax.tree_util.tree_map(swap_batch_axes_only, dataclass_instance)
+    return jax.tree_util.tree_map(
+        lambda field: jnp.swapaxes(field, axis1_norm, axis2_norm), dataclass_instance
+    )
 
 
 def expand_dims(dataclass_instance: T, axis: int) -> T:
