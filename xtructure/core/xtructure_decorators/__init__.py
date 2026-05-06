@@ -4,17 +4,17 @@ from xtructure.core.dataclass import base_dataclass
 from xtructure.core.layout import get_type_layout
 from xtructure.core.protocol import Xtructurable
 
-from .aggregate_bitpack import add_aggregate_bitpack
-from .bitpack_accessors import add_bitpack_accessors
-from .default import add_default_method
-from .hash import hash_function_decorator
-from .indexing import add_indexing_methods
-from .io import add_io_methods
-from .ops import add_comparison_operators
-from .shape import add_shape_dtype_len
-from .string_format import add_string_representation_methods
-from .structure_util import add_structure_utilities
-from .validation import add_runtime_validation
+from .layout_adapters.aggregate_bitpack import add_aggregate_bitpack
+from .layout_adapters.bitpack_accessors import add_bitpack_accessors
+from .layout_adapters.default import add_default_method
+from .layout_adapters.indexing import add_indexing_methods
+from .layout_adapters.shape import add_shape_dtype_len
+from .layout_adapters.structure_util import add_structure_utilities
+from .layout_adapters.validation import add_runtime_validation
+from .pytree_adapters.hash import hash_function_decorator
+from .pytree_adapters.io import add_io_methods
+from .pytree_adapters.ops import add_comparison_operators
+from .pytree_adapters.string_format import add_string_representation_methods
 
 T = TypeVar("T")
 
@@ -23,7 +23,6 @@ def xtructure_dataclass(
     cls: Optional[Type[T]] = None,
     *,
     validate: bool = False,
-    aggregate_bitpack: bool = False,
     bitpack: str = "auto",
 ) -> Callable[[Type[T]], Type[Xtructurable[T]]] | Type[Xtructurable[T]]:
     """
@@ -49,19 +48,8 @@ def xtructure_dataclass(
     def _decorate(target_cls: Type[T]) -> Type[Xtructurable[T]]:
         if bitpack not in ("auto", "aggregate", "field", "off"):
             raise ValueError(
-                f"bitpack must be one of 'auto','aggregate','field','off', got {bitpack!r}"
+                f"bitpack must be one of 'auto', 'aggregate', 'field', 'off', got {bitpack!r}"
             )
-
-        # Backward-compatible alias:
-        # aggregate_bitpack=True implies at least aggregate mode.
-        effective_bitpack = bitpack
-        if aggregate_bitpack and bitpack == "auto":
-            effective_bitpack = "aggregate"
-        elif aggregate_bitpack and bitpack == "field":
-            # field-only conflicts with forcing aggregate.
-            raise ValueError("aggregate_bitpack=True conflicts with bitpack='field'.")
-        elif aggregate_bitpack and bitpack == "off":
-            raise ValueError("aggregate_bitpack=True conflicts with bitpack='off'.")
 
         cls = base_dataclass(target_cls)
 
@@ -88,15 +76,15 @@ def xtructure_dataclass(
         type_layout = get_type_layout(cls)
         auto_aggregate = (
             bool(type_layout.fields)
-            and effective_bitpack == "auto"
+            and bitpack == "auto"
             and type_layout.aggregate_bitpack.eligible
         )
 
-        if effective_bitpack == "aggregate" or auto_aggregate:
+        if bitpack == "aggregate" or auto_aggregate:
             cls = add_aggregate_bitpack(cls)
 
         # add unpacked accessors / setters for in-memory packed fields
-        if effective_bitpack in ("auto", "aggregate", "field"):
+        if bitpack in ("auto", "aggregate", "field"):
             cls = add_bitpack_accessors(cls)
 
         # add string representation methods
