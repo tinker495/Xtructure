@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 from operator import attrgetter
 from typing import Any
 
@@ -13,13 +14,34 @@ from .type_layout import get_type_layout
 from .types import InstanceFieldLayout, InstanceLayout
 
 
-def _value_shape(value: Any) -> Any:
-    if hasattr(value, "is_xtructed"):
-        return value.shape
+def primitive_value_shape(value: Any) -> tuple[int, ...]:
+    """Raw shape of a primitive (non-nested) xtructure field value.
+
+    Internal Layout Adapter Interface helper: shared between Instance Layout
+    construction and the Layout Cache replace fast path.
+    """
     shape = getattr(value, "shape", None)
     if shape is None:
         shape = jnp.asarray(value).shape
-    return shape
+    return tuple(shape)
+
+
+def primitive_value_dtype(value: Any):
+    """Raw dtype of a primitive (non-nested) xtructure field value.
+
+    Internal Layout Adapter Interface helper: shared between Instance Layout
+    construction and the Layout Cache replace fast path.
+    """
+    dtype = getattr(value, "dtype", None)
+    if dtype is None:
+        dtype = jnp.asarray(value).dtype
+    return dtype
+
+
+def _value_shape_for_field(field_is_nested: bool, value: Any) -> Any:
+    if field_is_nested:
+        return value.shape
+    return primitive_value_shape(value)
 
 
 def _interpret_field_shape(
@@ -86,22 +108,43 @@ def _is_compatible_nested_shape(value_shape: Any, nested_shape_cls: type) -> boo
 
 def get_instance_layout(instance: Any) -> InstanceLayout:
     """Return Instance Layout facts for a concrete xtructure instance."""
-    type_layout = get_type_layout(instance.__class__)
+    type_layout, getter = _type_layout_and_getter(instance.__class__)
     if type_layout.field_names:
-        getter = attrgetter(*type_layout.field_names)
         values = getter(instance)
         if len(type_layout.field_names) == 1:
             values = (values,)
     else:
         values = ()
 
+    value_shapes = tuple(
+        _value_shape_for_field(field.is_nested, value)
+        for field, value in zip(type_layout.fields, values)
+    )
+    value_dtypes = tuple(value.dtype for value in values)
+    return _build_instance_layout_from_signatures(instance.__class__, value_shapes, value_dtypes)
+
+
+@functools.cache
+def _type_layout_and_getter(cls: type):
+    type_layout = get_type_layout(cls)
+    getter = attrgetter(*type_layout.field_names) if type_layout.field_names else None
+    return type_layout, getter
+
+
+@functools.cache
+def _build_instance_layout_from_signatures(
+    cls: type,
+    value_shapes: tuple[Any, ...],
+    value_dtypes: tuple[Any, ...],
+) -> InstanceLayout:
+    """Build Instance Layout from hashable shape/dtype signatures."""
+    type_layout = get_type_layout(cls)
     field_shapes: list[Any] = []
     batch_shapes: list[tuple[int, ...] | int] = []
     instance_fields: list[InstanceFieldLayout] = []
     mismatch_reasons: list[str] = []
 
-    for field, value in zip(type_layout.fields, values):
-        raw_shape = _value_shape(value)
+    for field, raw_shape in zip(type_layout.fields, value_shapes):
         nested_shape_cls = (
             get_type_layout(field.nested_type).shape_tuple_cls if field.is_nested else None
         )
@@ -130,7 +173,7 @@ def get_instance_layout(instance: Any) -> InstanceLayout:
             break
 
     shape_tuple = type_layout.shape_tuple_cls(final_batch_shape, *field_shapes)
-    dtype_tuple = type_layout.dtype_tuple_cls(*(value.dtype for value in values))
+    dtype_tuple = type_layout.dtype_tuple_cls(*value_dtypes)
 
     if final_batch_shape == ():
         structured_type = StructuredType.SINGLE
@@ -140,12 +183,14 @@ def get_instance_layout(instance: Any) -> InstanceLayout:
         structured_type = StructuredType.BATCHED
 
     return InstanceLayout(
-        type_layout=type_layout,
+        cls=cls,
         shape_tuple=shape_tuple,
         dtype_tuple=dtype_tuple,
         batch_shape=final_batch_shape,
         structured_type=structured_type,
-        field_shapes={field.name: shape for field, shape in zip(type_layout.fields, field_shapes)},
+        field_shapes=tuple(
+            (field.name, shape) for field, shape in zip(type_layout.fields, field_shapes)
+        ),
         fields=tuple(instance_fields),
         mismatch_reason="; ".join(mismatch_reasons) if mismatch_reasons else None,
     )
