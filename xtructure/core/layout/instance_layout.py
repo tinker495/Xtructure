@@ -120,7 +120,10 @@ def get_instance_layout(instance: Any) -> InstanceLayout:
         _value_shape_for_field(field.is_nested, value)
         for field, value in zip(type_layout.fields, values)
     )
-    value_dtypes = tuple(value.dtype for value in values)
+    value_dtypes = tuple(
+        value.dtype if field.is_nested else primitive_value_dtype(value)
+        for field, value in zip(type_layout.fields, values)
+    )
     return _build_instance_layout_from_signatures(instance.__class__, value_shapes, value_dtypes)
 
 

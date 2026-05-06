@@ -22,8 +22,8 @@ class FieldDescriptor:
     @xtructure_dataclass. It specifies the JAX dtype, shape, and default fill value
     for each field.
 
-    Example usage:
-        ```python
+    Example usage::
+
         @xtructure_dataclass
         class MyData:
             # A scalar uint8 field
@@ -37,7 +37,6 @@ class FieldDescriptor:
 
             # A nested xtructure_dataclass field
             d: FieldDescriptor.scalar(dtype=AnotherDataClass)
-        ```
 
     The FieldDescriptor can be used with type annotation syntax using square brackets
     or instantiated directly with the constructor for more explicit parameter naming.

@@ -130,7 +130,11 @@ class _Dataclass:
             return dataclasses.replace(self, **kwargs)
 
         def _getstate(self):
-            return self.__dict__
+            return {
+                key: value
+                for key, value in self.__dict__.items()
+                if key not in _TRANSIENT_STATIC_FIELDS
+            }
 
         # Register the dataclass at definition. As long as the dataclass is defined
         # outside __main__, this is sufficient to make JAX's PyTree registry
@@ -157,7 +161,13 @@ class _Dataclass:
         # Patch __setstate__ to register the dataclass on deserialization.
         def _setstate(self, state):
             register_dataclass_type_with_jax_tree_util(dcls, static_fields)
-            self.__dict__.update(state)
+            self.__dict__.update(
+                {key: value for key, value in state.items() if key not in _TRANSIENT_STATIC_FIELDS}
+            )
+            if _TRANSIENT_STATIC_FIELDS.intersection(static_fields) and getattr(
+                self, "__post_init__", None
+            ):
+                self.__post_init__()
 
         orig_init = dcls.__init__
 
