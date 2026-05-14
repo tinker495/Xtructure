@@ -11,7 +11,7 @@ from rich.text import Text
 
 from xtructure.core.structuredtype import StructuredType
 
-from .annotate import MAX_PRINT_BATCH_SIZE, SHOW_BATCH_SIZE
+from ..annotate import MAX_PRINT_BATCH_SIZE, SHOW_BATCH_SIZE
 
 T = TypeVar("T")
 

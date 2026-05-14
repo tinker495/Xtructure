@@ -14,7 +14,6 @@ def build_unpacked_view_cls(root_cls: type) -> tuple[type, dict[type, type]]:
     """Return the logical view type for the aggregate-packed class and a cache."""
     view_cache: dict[type, type] = {}
     root_aggregate = get_type_layout(root_cls).aggregate_bitpack
-    view_fields_by_owner = root_aggregate.view_fields_by_owner
 
     def _build_view_type(orig: type) -> type:
         cached = view_cache.get(orig)
@@ -24,7 +23,7 @@ def build_unpacked_view_cls(root_cls: type) -> tuple[type, dict[type, type]]:
         view_name = f"{orig.__name__}Unpacked"
         View = type(view_name, (), {"__module__": orig.__module__})
         annotations: dict[str, Any] = {}
-        for field in view_fields_by_owner.get(orig, ()):
+        for field in root_aggregate.view_fields_for(orig):
             if field.is_nested:
                 nested_view = _build_view_type(field.nested_type)  # type: ignore[arg-type]
                 annotations[field.name] = FieldDescriptor.scalar(dtype=nested_view)
@@ -44,7 +43,6 @@ def build_unpacked_view_cls(root_cls: type) -> tuple[type, dict[type, type]]:
         View = _xtructure_dataclass(  # type: ignore[assignment]
             View,
             validate=False,
-            aggregate_bitpack=False,
             bitpack="off",
         )
         register_generated_class(View, role=GENERATED_UNPACKED_VIEW_ROLE)

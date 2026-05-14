@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import dataclasses
 import enum
-from typing import Any, Literal, Mapping
+from typing import Any, Literal
 
 from xtructure.core.structuredtype import StructuredType
 
@@ -141,7 +141,10 @@ class AggregateBitpackLayout:
     words_all_len: int
     stored_words_len: int
     tail_bytes: int
-    view_fields_by_owner: Mapping[type, tuple[AggregateViewFieldLayout, ...]]
+    view_fields_by_owner: tuple[tuple[type, tuple[AggregateViewFieldLayout, ...]], ...]
+
+    def view_fields_for(self, owner_type: type) -> tuple[AggregateViewFieldLayout, ...]:
+        return _lookup_or_default(self.view_fields_by_owner, owner_type, ())
 
 
 @dataclasses.dataclass(frozen=True)
@@ -166,9 +169,9 @@ class TypeLayout:
 
     cls: type
     fields: tuple[FieldLayout, ...]
-    field_by_name: Mapping[str, FieldLayout]
+    field_by_name: tuple[tuple[str, FieldLayout], ...]
     adapter_field_plans: tuple[AdapterFieldPlan, ...]
-    adapter_field_plan_by_name: Mapping[str, AdapterFieldPlan]
+    adapter_field_plan_by_name: tuple[tuple[str, AdapterFieldPlan], ...]
     field_names: tuple[str, ...]
     intrinsic_shapes: tuple[tuple[int, ...], ...]
     default_shape: Any
@@ -176,11 +179,29 @@ class TypeLayout:
     dtype_tuple_cls: type
     shape_tuple_cls: type
     leaves: tuple[LeafLayout, ...]
-    leaf_by_path: Mapping[tuple[str, ...], LeafLayout]
+    leaf_by_path: tuple[tuple[tuple[str, ...], LeafLayout], ...]
     packed_fields: tuple[FieldLayout, ...]
     packed_field_layouts: tuple[PackedFieldLayout, ...]
-    packed_field_layout_by_name: Mapping[str, PackedFieldLayout]
+    packed_field_layout_by_name: tuple[tuple[str, PackedFieldLayout], ...]
     aggregate_bitpack: AggregateBitpackLayout
+
+    def field_for(self, name: str) -> FieldLayout:
+        return _lookup_required(self.field_by_name, name)
+
+    def has_field(self, name: str) -> bool:
+        return _contains_key(self.field_by_name, name)
+
+    def adapter_field_plan_for(self, name: str) -> AdapterFieldPlan:
+        return _lookup_required(self.adapter_field_plan_by_name, name)
+
+    def leaf_for(self, path: tuple[str, ...]) -> LeafLayout:
+        return _lookup_required(self.leaf_by_path, path)
+
+    def packed_field_layout_for(self, name: str) -> PackedFieldLayout:
+        return _lookup_required(self.packed_field_layout_by_name, name)
+
+    def maybe_packed_field_layout_for(self, name: str) -> PackedFieldLayout | None:
+        return _lookup_or_default(self.packed_field_layout_by_name, name, None)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -198,11 +219,32 @@ class InstanceFieldLayout:
 class InstanceLayout:
     """Instance-level layout facts interpreted against a Type Layout."""
 
-    type_layout: TypeLayout
+    cls: type
     shape_tuple: Any
     dtype_tuple: Any
     batch_shape: tuple[int, ...] | int
     structured_type: StructuredType
-    field_shapes: dict[str, Any]
+    field_shapes: tuple[tuple[str, Any], ...]
     fields: tuple[InstanceFieldLayout, ...]
     mismatch_reason: str | None
+
+    def field_shape_for(self, name: str) -> Any:
+        return _lookup_required(self.field_shapes, name)
+
+
+def _lookup_required(pairs: tuple[tuple[Any, Any], ...], key: Any) -> Any:
+    for pair_key, value in pairs:
+        if pair_key == key:
+            return value
+    raise KeyError(key)
+
+
+def _lookup_or_default(pairs: tuple[tuple[Any, Any], ...], key: Any, default: Any) -> Any:
+    for pair_key, value in pairs:
+        if pair_key == key:
+            return value
+    return default
+
+
+def _contains_key(pairs: tuple[tuple[Any, Any], ...], key: Any) -> bool:
+    return any(pair_key == key for pair_key, _ in pairs)

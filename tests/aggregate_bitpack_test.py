@@ -7,7 +7,7 @@ import pytest
 from xtructure import FieldDescriptor, xtructure_dataclass
 
 
-@xtructure_dataclass(validate=True, aggregate_bitpack=True)
+@xtructure_dataclass(validate=True, bitpack="aggregate")
 class AggState:
     # 1-bit flags
     flags: FieldDescriptor.tensor(dtype=jnp.bool_, shape=(17,), bits=1, fill_value=False)
@@ -63,13 +63,13 @@ def test_aggregate_packed_save_load_roundtrip(tmp_path):
 
 
 def test_aggregate_generated_packed_allows_class_redefinition():
-    @xtructure_dataclass(aggregate_bitpack=True)
+    @xtructure_dataclass(bitpack="aggregate")
     class ReloadableAgg:
         flags: FieldDescriptor.tensor(dtype=jnp.bool_, shape=(3,), bits=1, fill_value=False)
 
     first_packed = ReloadableAgg.Packed
 
-    @xtructure_dataclass(aggregate_bitpack=True)
+    @xtructure_dataclass(bitpack="aggregate")
     class ReloadableAgg:
         flags: FieldDescriptor.tensor(dtype=jnp.bool_, shape=(3,), bits=1, fill_value=False)
 
@@ -80,6 +80,11 @@ def test_aggregate_generated_packed_allows_class_redefinition():
     )
 
 
+def test_aggregate_bitpack_legacy_kwarg_removed():
+    with pytest.raises(TypeError, match="aggregate_bitpack"):
+        xtructure_dataclass(aggregate_bitpack=True)
+
+
 def test_aggregate_generated_packed_rejects_user_name_collision():
     module = sys.modules[__name__]
     old = getattr(module, "CollidingAggPacked", None)
@@ -88,7 +93,7 @@ def test_aggregate_generated_packed_rejects_user_name_collision():
     try:
         with pytest.raises(TypeError, match="non-generated object"):
 
-            @xtructure_dataclass(aggregate_bitpack=True)
+            @xtructure_dataclass(bitpack="aggregate")
             class CollidingAgg:
                 flags: FieldDescriptor.tensor(
                     dtype=jnp.bool_,
@@ -218,7 +223,7 @@ class InnerState:
     codes: FieldDescriptor.tensor(dtype=jnp.uint16, shape=(5,), bits=12, fill_value=0)
 
 
-@xtructure_dataclass(validate=True, aggregate_bitpack=True)
+@xtructure_dataclass(validate=True, bitpack="aggregate")
 class OuterState:
     inner: FieldDescriptor.scalar(dtype=InnerState)
     flags: FieldDescriptor.tensor(dtype=jnp.bool_, shape=(7,), bits=1, fill_value=False)

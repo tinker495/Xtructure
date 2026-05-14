@@ -87,9 +87,7 @@ def _pack_value(
 def add_bitpack_accessors(cls: Type[T]) -> Type[T]:
     """Attach unpacked accessors for any packed fields defined on the class."""
     type_layout = get_type_layout(cls)
-    field_by_name = type_layout.field_by_name
     packed_field_layouts = type_layout.packed_field_layouts
-    packed_field_layout_by_name = type_layout.packed_field_layout_by_name
     if not packed_field_layouts:
         return cls
 
@@ -98,29 +96,33 @@ def add_bitpack_accessors(cls: Type[T]) -> Type[T]:
             batch = getattr(self.shape, "batch", ())
             if batch == -1:
                 raise TypeError(
-                    f"{cls.__name__} is UNSTRUCTURED (shape.batch == -1); "
-                    f"cannot infer batch for unpacking '{packed_layout.name}'."
+                    f"{cls.__name__} is UNSTRUCTURED (shape.batch == -1)."
+                    f" Cannot infer batch for unpacking '{packed_layout.name}'."
                 )
             return _unpack_value(getattr(self, packed_layout.name), packed_layout, batch)
 
         return property(_prop)
 
     for packed_layout in packed_field_layouts:
-        setattr(cls, f"{packed_layout.name}_unpacked", _make_unpacked_property(packed_layout))
+        setattr(
+            cls,
+            f"{packed_layout.name}_unpacked",
+            _make_unpacked_property(packed_layout),
+        )
 
     def set_unpacked(self, **kwargs):
         """Return a new instance with provided packed fields updated from unpacked arrays."""
         batch = getattr(self.shape, "batch", ())
         if batch == -1:
             raise TypeError(
-                f"{cls.__name__} is UNSTRUCTURED (shape.batch == -1); cannot set_unpacked."
+                f"{cls.__name__} is UNSTRUCTURED (shape.batch == -1). Cannot call set_unpacked."
             )
 
         updates = {}
         for name, value in kwargs.items():
-            if name not in field_by_name:
+            if not type_layout.has_field(name):
                 raise KeyError(f"Unknown field '{name}' for {cls.__name__}.")
-            packed_layout = packed_field_layout_by_name.get(name)
+            packed_layout = type_layout.maybe_packed_field_layout_for(name)
             if packed_layout is None:
                 raise TypeError(
                     f"Field '{name}' is not a packed field (missing packed_bits/unpacked metadata)."
@@ -133,7 +135,7 @@ def add_bitpack_accessors(cls: Type[T]) -> Type[T]:
     setattr(cls, "set_unpacked", set_unpacked)
 
     def _maybe_pack(name: str, value: Any, batch_shape: tuple[int, ...]) -> Any:
-        packed_layout = packed_field_layout_by_name.get(name)
+        packed_layout = type_layout.maybe_packed_field_layout_for(name)
         return _pack_value(value, packed_layout, batch_shape) if packed_layout else value
 
     @classmethod
@@ -146,7 +148,7 @@ def add_bitpack_accessors(cls: Type[T]) -> Type[T]:
         If all fields are provided we build the instance directly; otherwise we
         start from `cls.default(shape=shape)` and apply updates.
         """
-        unknown = next((name for name in kwargs if name not in field_by_name), None)
+        unknown = next((name for name in kwargs if not type_layout.has_field(name)), None)
         if unknown is not None:
             raise KeyError(f"Unknown field '{unknown}' for {cls.__name__}.")
 

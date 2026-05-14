@@ -91,7 +91,7 @@ def test_compute_word_tail_layout_rejects_negative():
 # ----- Bit-width sweep fixture for G1 / G3 --------------------------------
 
 
-@xtructure_dataclass(aggregate_bitpack=True)
+@xtructure_dataclass(bitpack="aggregate")
 class BitWidthSweep:
     bits1: FieldDescriptor.tensor(dtype=jnp.bool_, shape=(2,), bits=1, fill_value=False)
     bits8: FieldDescriptor.tensor(dtype=jnp.uint8, shape=(2,), bits=8, fill_value=0)
@@ -102,7 +102,14 @@ class BitWidthSweep:
 
 
 _SWEEP_ORDER = ("bits1", "bits8", "bits9", "bits12", "bits16", "bits32")
-_SWEEP_BITS = {"bits1": 1, "bits8": 8, "bits9": 9, "bits12": 12, "bits16": 16, "bits32": 32}
+_SWEEP_BITS = {
+    "bits1": 1,
+    "bits8": 8,
+    "bits9": 9,
+    "bits12": 12,
+    "bits16": 16,
+    "bits32": 32,
+}
 _SWEEP_DECLARED = {
     "bits1": jnp.bool_,
     "bits8": jnp.uint8,
@@ -173,7 +180,7 @@ def test_aggregate_storage_facts_match_compute_word_tail_layout():
 
 def test_aggregate_view_field_layout_facts_flat():
     layout = get_type_layout(BitWidthSweep)
-    view_fields = layout.aggregate_bitpack.view_fields_by_owner[BitWidthSweep]
+    view_fields = layout.aggregate_bitpack.view_fields_for(BitWidthSweep)
     by_name = {field.name: field for field in view_fields}
 
     assert tuple(field.name for field in view_fields) == _SWEEP_ORDER
@@ -193,13 +200,13 @@ def test_aggregate_view_field_layout_facts_flat():
 # ----- G3: AggregateViewFieldLayout for scalar-nested aggregate -----------
 
 
-@xtructure_dataclass(aggregate_bitpack=True)
+@xtructure_dataclass(bitpack="aggregate")
 class _NestedInner:
     flag: FieldDescriptor.tensor(dtype=jnp.bool_, shape=(3,), bits=1, fill_value=False)
     code: FieldDescriptor.tensor(dtype=jnp.uint16, shape=(2,), bits=12, fill_value=0)
 
 
-@xtructure_dataclass(aggregate_bitpack=True)
+@xtructure_dataclass(bitpack="aggregate")
 class _NestedOuter:
     inner: FieldDescriptor.scalar(dtype=_NestedInner)
     tag: FieldDescriptor.tensor(dtype=jnp.uint8, shape=(1,), bits=8, fill_value=0)
@@ -207,7 +214,7 @@ class _NestedOuter:
 
 def test_aggregate_view_field_layout_scalar_nested_marks_nested_field():
     layout = get_type_layout(_NestedOuter)
-    outer_view_fields = layout.aggregate_bitpack.view_fields_by_owner[_NestedOuter]
+    outer_view_fields = layout.aggregate_bitpack.view_fields_for(_NestedOuter)
     by_name = {field.name: field for field in outer_view_fields}
 
     nested = by_name["inner"]
@@ -226,7 +233,7 @@ def test_aggregate_view_field_layout_scalar_nested_marks_nested_field():
 def test_aggregate_view_field_layout_scalar_nested_inner_owner_present():
     """Nested owner has its own view-field tuple keyed by the inner type."""
     layout = get_type_layout(_NestedOuter)
-    inner_view_fields = layout.aggregate_bitpack.view_fields_by_owner[_NestedInner]
+    inner_view_fields = layout.aggregate_bitpack.view_fields_for(_NestedInner)
     by_name = {field.name: field for field in inner_view_fields}
 
     flag = by_name["flag"]

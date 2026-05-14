@@ -1,5 +1,6 @@
 import chex
 import jax.numpy as jnp
+import pytest
 
 from xtructure.io.bitpack import from_uint8, to_uint8
 
@@ -18,3 +19,8 @@ def test_bitpack_16bit_roundtrip_small():
     out = from_uint8(packed, target_shape=x.shape, active_bits=16)
     assert out.dtype == jnp.uint32
     chex.assert_trees_all_equal(out, x)
+
+
+def test_io_bitpack_rejects_unknown_dtype_kind():
+    with pytest.raises(TypeError, match="DType Kind"):
+        to_uint8(jnp.asarray([1 + 2j], dtype=jnp.complex64), active_bits=1)

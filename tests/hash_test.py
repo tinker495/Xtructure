@@ -1,8 +1,10 @@
 import jax
 import jax.numpy as jnp
+import pytest
 
 from tests.testdata import HashValueAB, OddBytesValue47
 from xtructure import HashTable
+from xtructure.core.xtructure_decorators.pytree_adapters import hash as hash_adapter
 
 
 def test_hash_table_lookup():
@@ -181,3 +183,21 @@ def test_uint32ed_padding_for_non_multiple_of_four_bytes():
     expected_words = (47 + 3) // 4
     assert uint32ed.shape == (expected_words,)
     assert uint32ed.dtype == jnp.uint32
+
+
+def test_hash_byte_encoding_rejects_unknown_dtype_kind():
+    with pytest.raises(TypeError, match="DType Kind"):
+        hash_adapter._to_uint32(jnp.asarray([1 + 2j], dtype=jnp.complex64))
+
+
+def test_hash_decorator_attaches_module_level_functions():
+    sample = OddBytesValue47(payload=jnp.asarray(jnp.arange(47, dtype=jnp.uint8)))
+
+    assert OddBytesValue47.bytes.fget is hash_adapter._byterize
+    assert OddBytesValue47.uint32ed.fget is hash_adapter._to_uint32
+    assert OddBytesValue47.hash is hash_adapter._h
+    assert OddBytesValue47.hash_with_uint32ed is hash_adapter._h_with_uint32ed
+
+    assert jnp.array_equal(sample.bytes, hash_adapter._byterize(sample))
+    assert jnp.array_equal(sample.uint32ed, hash_adapter._to_uint32(sample))
+    assert sample.hash(0) == hash_adapter._h(sample, 0)

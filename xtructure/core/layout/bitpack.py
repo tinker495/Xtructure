@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from types import MappingProxyType
 from typing import Any
 
 import jax.numpy as jnp
@@ -63,7 +62,7 @@ def build_aggregate_bitpack_layout(
             words_all_len=0,
             stored_words_len=0,
             tail_bytes=0,
-            view_fields_by_owner=MappingProxyType({}),
+            view_fields_by_owner=(),
         )
 
     def walk(
@@ -161,7 +160,7 @@ def build_aggregate_bitpack_layout(
         words_all_len=words_all_len,
         stored_words_len=stored_words_len,
         tail_bytes=tail_bytes,
-        view_fields_by_owner=MappingProxyType(
-            {owner: tuple(owner_fields) for owner, owner_fields in view_fields_by_owner.items()}
+        view_fields_by_owner=tuple(
+            (owner, tuple(owner_fields)) for owner, owner_fields in view_fields_by_owner.items()
         ),
     )

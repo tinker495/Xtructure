@@ -1,6 +1,6 @@
 from typing import Type, TypeVar
 
-from xtructure.core.layout import get_instance_layout, get_type_layout
+from xtructure.core.layout import get_type_layout
 from xtructure.core.protocol import StructuredType
 
 T = TypeVar("T")
@@ -14,12 +14,12 @@ def add_shape_dtype_len(cls: Type[T]) -> Type[T]:
     cls.default_dtype = type_layout.default_dtype
 
     def get_shape(self):
-        return get_instance_layout(self).shape_tuple
+        return self._layout_cache.shape_tuple
 
     setattr(cls, "shape", property(get_shape))
 
     def get_type(self):
-        return get_instance_layout(self).dtype_tuple
+        return self._layout_cache.dtype_tuple
 
     setattr(cls, "dtype", property(get_type))
 
@@ -31,7 +31,7 @@ def add_shape_dtype_len(cls: Type[T]) -> Type[T]:
         - BATCHED: returns the first batch dimension (shape.batch[0])
         - UNSTRUCTURED: raises TypeError (batch size is ill-defined)
         """
-        layout = get_instance_layout(self)
+        layout = self._layout_cache
         batch = layout.batch_shape
         if batch == ():
             return 1
@@ -45,18 +45,18 @@ def add_shape_dtype_len(cls: Type[T]) -> Type[T]:
     setattr(cls, "__len__", get_len)
 
     def get_structured_type(self) -> StructuredType:
-        return get_instance_layout(self).structured_type
+        return self._layout_cache.structured_type
 
     setattr(cls, "structured_type", property(get_structured_type))
 
     def get_batch_shape(self):
-        return get_instance_layout(self).batch_shape
+        return self._layout_cache.batch_shape
 
     setattr(cls, "batch_shape", property(get_batch_shape))
 
     def get_ndim(self) -> int:
         """Return number of batch dimensions for structured instances."""
-        layout = get_instance_layout(self)
+        layout = self._layout_cache
         batch = layout.batch_shape
         if batch == ():
             return 0

@@ -10,6 +10,7 @@ from typing_extensions import dataclass_transform  # pytype: disable=not-support
 
 FrozenInstanceError = dataclasses.FrozenInstanceError
 _RESERVED_DCLS_FIELD_NAMES = frozenset(("from_tuple", "replace", "to_tuple"))
+_TRANSIENT_STATIC_FIELDS = frozenset(("_layout_cache",))
 
 
 @dataclass_transform()
@@ -129,7 +130,11 @@ class _Dataclass:
             return dataclasses.replace(self, **kwargs)
 
         def _getstate(self):
-            return self.__dict__
+            return {
+                key: value
+                for key, value in self.__dict__.items()
+                if key not in _TRANSIENT_STATIC_FIELDS
+            }
 
         # Register the dataclass at definition. As long as the dataclass is defined
         # outside __main__, this is sufficient to make JAX's PyTree registry
@@ -156,7 +161,13 @@ class _Dataclass:
         # Patch __setstate__ to register the dataclass on deserialization.
         def _setstate(self, state):
             register_dataclass_type_with_jax_tree_util(dcls, static_fields)
-            self.__dict__.update(state)
+            self.__dict__.update(
+                {key: value for key, value in state.items() if key not in _TRANSIENT_STATIC_FIELDS}
+            )
+            if _TRANSIENT_STATIC_FIELDS.intersection(static_fields) and getattr(
+                self, "__post_init__", None
+            ):
+                self.__post_init__()
 
         orig_init = dcls.__init__
 
@@ -193,33 +204,53 @@ def _dataclass_unflatten(dcls, keys, values):
     return dcls_object
 
 
-def _flatten_with_path(dcls):
-    """Flatten dataclass to (path, aux_keys) with deterministic field order.
+@functools.cache
+def _declared_field_names(data_class) -> tuple[str, ...]:
+    return tuple(getattr(data_class, "__dataclass_fields__", {}).keys())
 
-    We prefer declared dataclass field order (stable, avoids sorting cost) and
-    only sort "extra" attributes that may have been attached to the instance
-    dynamically, preserving deterministic behavior across runs.
+
+def _ordered_attribute_keys(dcls) -> tuple[dict, tuple[str, ...]]:
+    """Return deterministic PyTree keys without treating transient cache as data.
+
+    Common xtructure instances only contain declared dataclass fields plus the
+    transient `_layout_cache`. Avoid the previous set construction and full
+    extra-key scan for that hot path; still preserve deterministic sorted extras
+    when callers attach dynamic attributes.
     """
     dct = getattr(dcls, "__dict__", {})
     if not dct:
+        return dct, ()
+
+    declared_names = _declared_field_names(dcls.__class__)
+    if not declared_names:
+        return dct, tuple(sorted(k for k in dct.keys() if k not in _TRANSIENT_STATIC_FIELDS))
+
+    ordered_keys = tuple(
+        name for name in declared_names if name in dct and name not in _TRANSIENT_STATIC_FIELDS
+    )
+
+    transient_count = sum(1 for name in _TRANSIENT_STATIC_FIELDS if name in dct)
+    if len(dct) == len(ordered_keys) + transient_count:
+        return dct, ordered_keys
+
+    declared_set = set(declared_names)
+    extra_keys = [
+        key for key in dct.keys() if key not in declared_set and key not in _TRANSIENT_STATIC_FIELDS
+    ]
+    extra_keys.sort()
+    if extra_keys:
+        ordered_keys = ordered_keys + tuple(extra_keys)
+    return dct, ordered_keys
+
+
+def _flatten_with_path(dcls):
+    """Flatten dataclass to (path, aux_keys) with deterministic field order."""
+    dct, ordered_keys = _ordered_attribute_keys(dcls)
+    if not ordered_keys:
         return [], ()
 
-    field_dict = getattr(dcls, "__dataclass_fields__", None)
-    ordered_keys: list[str] = []
-    seen = set()
-
-    if field_dict:
-        for name in field_dict.keys():
-            if name in dct:
-                ordered_keys.append(name)
-                seen.add(name)
-
-    extra_keys = [k for k in dct.keys() if k not in seen]
-    extra_keys.sort()
-    ordered_keys.extend(extra_keys)
-
     path = [(jax.tree_util.GetAttrKey(k), dct[k]) for k in ordered_keys]
-    return path, tuple(ordered_keys)
+    return path, ordered_keys
 
 
 def _is_hashable_static(value) -> bool:
@@ -245,7 +276,11 @@ def register_dataclass_type_with_jax_tree_util(data_class, static_fields: tuple[
             in instance.__dict__.
         static_fields: Field names to treat as static aux_data (not JAX leaves).
     """
-    static_fields = tuple(static_fields)
+    # `_layout_cache` is a transient static field: it must never be a JAX leaf,
+    # but storing it in aux_data would make otherwise-compatible batched and
+    # unbatched instances have incompatible PyTreeDefs. Drop it from the
+    # persistent static set and recompute it during unflatten/post-init.
+    static_fields = tuple(k for k in static_fields if k not in _TRANSIENT_STATIC_FIELDS)
 
     def flatten_with_keys(dcls):
         # Must be consistent with `flatten`: return (children_with_keys, aux_data).
@@ -255,26 +290,18 @@ def register_dataclass_type_with_jax_tree_util(data_class, static_fields: tuple[
                 return [], ()
             return [], ((), ())
 
-        field_dict = getattr(dcls, "__dataclass_fields__", None)
-        ordered_keys: list[str] = []
-        seen = set()
-
-        if field_dict:
-            for name in field_dict.keys():
-                if name in dct:
-                    ordered_keys.append(name)
-                    seen.add(name)
-
-        extra_keys = [k for k in dct.keys() if k not in seen]
-        extra_keys.sort()
-        ordered_keys.extend(extra_keys)
+        _, ordered_keys = _ordered_attribute_keys(dcls)
 
         if not static_fields:
             path = [(jax.tree_util.GetAttrKey(k), dct[k]) for k in ordered_keys]
             return path, tuple(ordered_keys)
 
         child_keys = tuple(k for k in ordered_keys if k not in static_fields)
-        static_items = tuple((k, dct[k]) for k in ordered_keys if k in static_fields)
+        static_items = tuple(
+            (k, dct[k])
+            for k in ordered_keys
+            if k in static_fields and k not in _TRANSIENT_STATIC_FIELDS
+        )
         for k, v in static_items:
             if not _is_hashable_static(v):
                 raise TypeError(
@@ -296,26 +323,18 @@ def register_dataclass_type_with_jax_tree_util(data_class, static_fields: tuple[
                 return (), ()
             return (), ((), ())
 
-        field_dict = getattr(d, "__dataclass_fields__", None)
-        ordered_keys: list[str] = []
-        seen = set()
-
-        if field_dict:
-            for name in field_dict.keys():
-                if name in dct:
-                    ordered_keys.append(name)
-                    seen.add(name)
-
-        extra_keys = [k for k in dct.keys() if k not in seen]
-        extra_keys.sort()
-        ordered_keys.extend(extra_keys)
+        _, ordered_keys = _ordered_attribute_keys(d)
 
         if not static_fields:
             values = tuple(dct[k] for k in ordered_keys)
             return values, tuple(ordered_keys)
 
         child_keys = tuple(k for k in ordered_keys if k not in static_fields)
-        static_items = tuple((k, dct[k]) for k in ordered_keys if k in static_fields)
+        static_items = tuple(
+            (k, dct[k])
+            for k in ordered_keys
+            if k in static_fields and k not in _TRANSIENT_STATIC_FIELDS
+        )
         for k, v in static_items:
             if not _is_hashable_static(v):
                 raise TypeError(

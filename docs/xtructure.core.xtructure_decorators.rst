@@ -1,105 +1,6 @@
 xtructure.core.xtructure\_decorators package
 ============================================
 
-Submodules
-----------
-
-xtructure.core.xtructure\_decorators.annotate module
-----------------------------------------------------
-
-.. automodule:: xtructure.core.xtructure_decorators.annotate
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
-xtructure.core.xtructure\_decorators.default module
----------------------------------------------------
-
-.. automodule:: xtructure.core.xtructure_decorators.default
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
-xtructure.core.xtructure\_decorators.hash module
-------------------------------------------------
-
-.. automodule:: xtructure.core.xtructure_decorators.hash
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
-xtructure.core.xtructure\_decorators.indexing module
-----------------------------------------------------
-
-.. automodule:: xtructure.core.xtructure_decorators.indexing
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
-xtructure.core.xtructure\_decorators.bitpack\_accessors module
--------------------------------------------------------------
-
-.. automodule:: xtructure.core.xtructure_decorators.bitpack_accessors
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
-xtructure.core.xtructure\_decorators.aggregate\_bitpack module
--------------------------------------------------------------
-
-.. automodule:: xtructure.core.xtructure_decorators.aggregate_bitpack
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
-xtructure.core.xtructure\_decorators.io module
-----------------------------------------------
-
-.. automodule:: xtructure.core.xtructure_decorators.io
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
-xtructure.core.xtructure\_decorators.ops module
------------------------------------------------
-
-.. automodule:: xtructure.core.xtructure_decorators.ops
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
-xtructure.core.xtructure\_decorators.shape module
--------------------------------------------------
-
-.. automodule:: xtructure.core.xtructure_decorators.shape
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
-xtructure.core.xtructure\_decorators.string\_format module
-----------------------------------------------------------
-
-.. automodule:: xtructure.core.xtructure_decorators.string_format
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
-xtructure.core.xtructure\_decorators.structure\_util module
------------------------------------------------------------
-
-.. automodule:: xtructure.core.xtructure_decorators.structure_util
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
-xtructure.core.xtructure\_decorators.validation module
-------------------------------------------------------
-
-.. automodule:: xtructure.core.xtructure_decorators.validation
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
 Module contents
 ---------------
 
@@ -107,3 +8,21 @@ Module contents
    :members:
    :show-inheritance:
    :undoc-members:
+
+Adapter module layout
+---------------------
+
+Decorator implementation modules are organized by adapter role:
+
+- ``layout_adapters`` owns layout-derived behavior such as defaults, shape
+  properties, indexing, structure utilities, validation, bitpack accessors, and
+  aggregate bitpack views.
+- ``pytree_adapters`` owns PyTree-level behavior such as hashing, IO method
+  attachment, comparison operators, and string formatting.
+
+Compatibility import aliases
+----------------------------
+
+The pre-reorganization module paths under
+``xtructure.core.xtructure_decorators`` remain import-compatible aliases for
+the corresponding ``layout_adapters`` and ``pytree_adapters`` modules.
