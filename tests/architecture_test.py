@@ -780,3 +780,57 @@ def test_architecture_guard_excludes_layout_for_r1() -> None:
     rule = next(r for r in _ALL_RULES if r.name.startswith("R1_"))
     files = [f.relative_to(PACKAGE_DIR).as_posix() for f in _iter_in_scope_files(rule)]
     assert all(not f.startswith("core/layout/") for f in files), files
+
+
+def test_size_dtype_has_single_definition_in_container_facts() -> None:
+    """``SIZE_DTYPE`` is a Container Family fact: every container (BGPQ /
+    HashTable / Queue / Stack) shares the same JAX dtype for size counters.
+    The single source of truth is ``xtructure/core/container_facts.py``.
+    Per-container ``constants`` modules must not redeclare it.
+    """
+    definitions: list[Path] = []
+    for path in PACKAGE_DIR.rglob("*.py"):
+        if "__pycache__" in path.parts:
+            continue
+        for raw_line in path.read_text().splitlines():
+            stripped = raw_line.lstrip()
+            if stripped.startswith("SIZE_DTYPE = "):
+                definitions.append(path)
+                break
+    assert len(definitions) == 1, (
+        "SIZE_DTYPE must be defined exactly once (in container_facts.py); "
+        f"found definitions in: {[d.relative_to(PROJECT_DIR).as_posix() for d in definitions]}"
+    )
+    assert definitions[0].name == "container_facts.py", (
+        "SIZE_DTYPE must live in xtructure/core/container_facts.py; "
+        f"found in: {definitions[0].relative_to(PROJECT_DIR).as_posix()}"
+    )
+
+
+@pytest.mark.parametrize(
+    "container_path",
+    [
+        "xtructure/stack/stack.py",
+        "xtructure/queue/queue.py",
+        "xtructure/hashtable/table.py",
+        "xtructure/bgpq/bgpq.py",
+    ],
+)
+def test_container_build_factory_consumes_container_facts(container_path: str) -> None:
+    """Each container's ``build()`` factory must consume the Container Family
+    facts (`init_counter` and/or `init_value_store`) instead of inlining
+    ``jnp.uint32(0)`` or ``value_class.default((shape,))``.
+    """
+    source = (PROJECT_DIR / container_path).read_text()
+    assert (
+        "from ..core.container_facts import" in source
+    ), f"{container_path} must import Container Family facts from container_facts."
+    assert (
+        "init_counter(" in source
+    ), f"{container_path} must call init_counter() for its size/head/tail/heap_size init."
+    assert (
+        "init_value_store(" in source
+    ), f"{container_path} must call init_value_store(...) for its value-store allocation."
+    assert (
+        "jnp.uint32(0)" not in source
+    ), f"{container_path} contains a raw jnp.uint32(0) counter init; use init_counter() instead."

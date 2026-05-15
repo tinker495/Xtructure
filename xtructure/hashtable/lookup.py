@@ -8,7 +8,8 @@ import jax
 import jax.numpy as jnp
 
 from ..core import Xtructurable
-from .constants import SIZE_DTYPE, SLOT_IDX_DTYPE
+from ..core.container_facts import SIZE_DTYPE
+from .constants import SLOT_IDX_DTYPE
 from .hash_utils import get_new_idx_byterized
 from .types import BucketIdx, HashIdx
 

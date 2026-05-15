@@ -8,11 +8,12 @@ import jax
 import jax.numpy as jnp
 
 from ..core import Xtructurable
+from ..core.container_facts import SIZE_DTYPE
 from ..core.xtructure_numpy.array_ops import (
     _update_array_on_condition,
     _where_no_broadcast,
 )
-from .constants import SIZE_DTYPE, SLOT_IDX_DTYPE
+from .constants import SLOT_IDX_DTYPE
 from .hash_utils import _compute_unique_mask_from_uint32eds, get_new_idx_byterized
 from .lookup import _hashtable_lookup_bucket_jit, _hashtable_lookup_parallel_internal
 from .types import BucketIdx, HashIdx

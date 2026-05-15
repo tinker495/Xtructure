@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 
 from ..core import xtructure_numpy as xnp
-from ._constants import SIZE_DTYPE
+from ..core.container_facts import SIZE_DTYPE
 from ._merge import merge_sort_split
 
 if TYPE_CHECKING:

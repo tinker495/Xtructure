@@ -1,6 +1,5 @@
 import jax.numpy as jnp
 
-SIZE_DTYPE = jnp.uint32
 SLOT_IDX_DTYPE = jnp.uint8
 DOUBLE_HASH_SECONDARY_DELTA = jnp.uint32(0x9E3779B1)
 FINGERPRINT_MIX_CONSTANT_A = jnp.uint32(0x85EBCA6B)

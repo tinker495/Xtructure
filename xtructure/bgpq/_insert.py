@@ -9,7 +9,8 @@ import jax.numpy as jnp
 
 from ..core import Xtructurable
 from ..core import xtructure_numpy as xnp
-from ._constants import SIZE_DTYPE, merge_array_backend
+from ..core.container_facts import SIZE_DTYPE
+from ._constants import merge_array_backend
 from ._merge import merge_sort_split
 from ._utils import _next, sort_arrays
 

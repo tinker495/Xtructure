@@ -7,12 +7,12 @@ import jax
 import jax.numpy as jnp
 
 from ..core import Xtructurable
+from ..core.container_facts import SIZE_DTYPE
 from ..core.xtructure_decorators.pytree_adapters.hash import uint32ed_to_hash
 from .constants import (
     DOUBLE_HASH_SECONDARY_DELTA,
     FINGERPRINT_MIX_CONSTANT_A,
     FINGERPRINT_MIX_CONSTANT_B,
-    SIZE_DTYPE,
 )
 
 

@@ -1,5 +1,6 @@
 from ..core import FieldDescriptor, xtructure_dataclass
-from .constants import SIZE_DTYPE, SLOT_IDX_DTYPE
+from ..core.container_facts import SIZE_DTYPE
+from .constants import SLOT_IDX_DTYPE
 
 
 @xtructure_dataclass

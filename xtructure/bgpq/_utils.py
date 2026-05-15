@@ -5,7 +5,8 @@ import jax
 import jax.numpy as jnp
 
 from ..core import Xtructurable
-from ._constants import SIZE_DTYPE, SORT_STABLE
+from ..core.container_facts import SIZE_DTYPE
+from ._constants import SORT_STABLE
 
 
 def sort_arrays(k: chex.Array, v: Xtructurable):
