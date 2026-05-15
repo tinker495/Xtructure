@@ -3,8 +3,8 @@ from typing import Any, Callable, Dict, Tuple, Type
 import jax.numpy as jnp
 import numpy as np
 
-from xtructure.core.bitpack_math import packed_num_bytes
 from xtructure.core.dtype_facts import default_fill_value_for_dtype
+from xtructure.core.layout.bitpack import packed_num_bytes
 
 from .shape_utils import normalize_shape
 from .type_utils import is_xtructure_dataclass_type

@@ -8,13 +8,13 @@ import jax.numpy as jnp
 import numpy as np
 
 from xtructure.core.layout import get_type_layout
+from xtructure.core.layout.bitpack import from_uint8, to_uint8
 from xtructure.core.layout.traversal import (
     build_instance_from_leaf_values,
     iter_leaf_values,
 )
 from xtructure.core.layout.types import LeafLayout
 from xtructure.core.protocol import Xtructurable
-from xtructure.io.bitpack import from_uint8, to_uint8
 
 METADATA_MODULE_KEY = "__xtructure_class_module__"
 METADATA_CLASS_NAME_KEY = "__xtructure_class_name__"

@@ -9,7 +9,6 @@ from collections import namedtuple
 import jax.numpy as jnp
 import numpy as np
 
-from xtructure.core.bitpack_math import packed_num_bytes
 from xtructure.core.dtype_facts import (
     DTypeKind,
     default_fill_value_for_dtype,
@@ -18,6 +17,7 @@ from xtructure.core.dtype_facts import (
     unsigned_integer_dtype_for,
 )
 from xtructure.core.field_descriptors import FieldDescriptor, get_field_descriptors
+from xtructure.core.layout.bitpack import packed_num_bytes
 from xtructure.core.shape_utils import normalize_shape
 from xtructure.core.type_utils import is_xtructure_dataclass_type
 

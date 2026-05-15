@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from xtructure import FieldDescriptor, xtructure_dataclass
-from xtructure.io.bitpack import packed_num_bytes
+from xtructure.core.layout.bitpack import packed_num_bytes
 
 
 @xtructure_dataclass(validate=True)

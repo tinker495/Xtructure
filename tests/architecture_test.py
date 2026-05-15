@@ -224,27 +224,28 @@ def _check_r4_dataclasses_fields_call(path: Path, tree: ast.Module) -> Iterator[
             )
 
 
-def _check_r5_bitpack_math_import(path: Path, tree: ast.Module) -> Iterator[_Violation]:
+_BITPACK_LOW_LEVEL_NAMES = frozenset({"to_uint8", "from_uint8"})
+
+
+def _check_r5_bitpack_low_level_import(path: Path, tree: ast.Module) -> Iterator[_Violation]:
+    """Low-level bit-packing primitives (`to_uint8` / `from_uint8`) belong to
+    the leaf-level IO adapter only. Field-level adapters must enter the
+    Bitpack Layout through `pack_field` / `unpack_field`."""
     for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.name.endswith("bitpack_math") or "bitpack_math" in alias.name:
-                    yield _Violation(
-                        path,
-                        node.lineno,
-                        node.col_offset,
-                        f"Import of `{alias.name}` — bitpack_math is restricted "
-                        "to layout, field_descriptors, and io/bitpack.",
-                    )
-        elif isinstance(node, ast.ImportFrom):
-            mod = node.module or ""
-            if mod.endswith("bitpack_math") or "bitpack_math" in mod:
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        mod = node.module or ""
+        if mod != "xtructure.core.layout.bitpack" and not mod.endswith("core.layout.bitpack"):
+            continue
+        for alias in node.names:
+            if alias.name in _BITPACK_LOW_LEVEL_NAMES:
                 yield _Violation(
                     path,
                     node.lineno,
                     node.col_offset,
-                    f"Import from `{mod}` — bitpack_math is restricted to "
-                    "layout, field_descriptors, and io/bitpack.",
+                    f"Import of low-level `{alias.name}` from Bitpack Layout — "
+                    "non-IO adapters must use pack_field / unpack_field (the "
+                    "field-level Bitpack Layout seam).",
                 )
 
 
@@ -603,18 +604,22 @@ _ALL_RULES: tuple[_Rule, ...] = (
         ),
     ),
     _Rule(
-        name="R5_no_bitpack_math_import_outside_allowed",
+        name="R5_no_bitpack_low_level_import_outside_allowed",
         description=(
-            "xtructure.core.bitpack_math is restricted to layout, "
-            "field_descriptors, and io/bitpack."
+            "Low-level `to_uint8` / `from_uint8` from xtructure.core.layout.bitpack "
+            "are restricted to the leaf-level IO adapter (io/io.py). All other "
+            "adapters must consume the field-level seam (pack_field / unpack_field)."
         ),
         excluded_relpaths=(
             "core/layout",
-            "core/field_descriptors.py",
-            "io/bitpack.py",
+            "io/io.py",
         ),
-        check=_check_r5_bitpack_math_import,
-        remediation=("Read packed_byte_count from PackedFieldLayout (Bitpack Layout)."),
+        check=_check_r5_bitpack_low_level_import,
+        remediation=(
+            "Use pack_field(value, packed_layout, batch_shape) / "
+            "unpack_field(packed, packed_layout, batch_shape) from "
+            "xtructure.core.layout.bitpack."
+        ),
     ),
     _Rule(
         name="R6_no_layout_fact_construction_outside_layout",

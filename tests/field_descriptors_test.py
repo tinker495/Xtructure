@@ -8,7 +8,7 @@ from xtructure.core.dtype_facts import (
     dtype_kind,
 )
 from xtructure.core.layout import get_type_layout
-from xtructure.io.bitpack import packed_num_bytes
+from xtructure.core.layout.bitpack import packed_num_bytes
 
 
 def test_field_descriptor_tensor_factory():
