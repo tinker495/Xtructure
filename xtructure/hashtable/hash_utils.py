@@ -64,12 +64,11 @@ def _compute_unique_mask_from_uint32eds(
     sentinel_row = jnp.full_like(uint32eds, jnp.uint32(0xFFFFFFFF))
     safe_uint32eds = jnp.where(filled[:, None], uint32eds, sentinel_row)
     fill_row = jnp.full((uint32eds.shape[1],), jnp.uint32(0xFFFFFFFF))
-    _, unique_indices, inverse = jnp.unique(
+    _, inverse = jnp.unique(
         safe_uint32eds,
         axis=0,
         size=batch_len,
         fill_value=fill_row,
-        return_index=True,
         return_inverse=True,
     )
 

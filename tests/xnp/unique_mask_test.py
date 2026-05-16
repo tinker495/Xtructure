@@ -5,7 +5,22 @@ import jax.numpy as jnp
 import pytest
 
 from tests.xnp.shared_data import HashableData
+from xtructure import FieldDescriptor
 from xtructure import numpy as xnp
+from xtructure import xtructure_dataclass
+from xtructure.core.xtructure_numpy.dataclass_ops.unique_ops.optimized_unique_ops import (
+    _batched_uint32_keys,
+)
+
+
+@xtructure_dataclass
+class MixedWidthHashData:
+    """Dataclass covering sub-32-bit leaves in default unique key generation."""
+
+    flag: FieldDescriptor.scalar(dtype=jnp.bool_)
+    code: FieldDescriptor.tensor(dtype=jnp.uint8, shape=(3,))
+    pair: FieldDescriptor.tensor(dtype=jnp.uint16, shape=(3,))
+    score: FieldDescriptor.scalar(dtype=jnp.float16)
 
 
 def test_unique_mask_basic_uniqueness():
@@ -261,3 +276,26 @@ def test_unique_mask_return_index_with_cost_is_jit_static():
         jnp.sort(indices[indices < 6]),
         jnp.array([1, 3, 5], dtype=indices.dtype),
     )
+
+
+def test_unique_mask_default_key_matches_scalar_uint32ed_for_mixed_width_leaves():
+    """Batched default key generation should match per-row uint32ed semantics."""
+    data = MixedWidthHashData.default(shape=(4,))
+    data = data.replace(
+        flag=jnp.array([True, False, True, False]),
+        code=jnp.array(
+            [[1, 2, 3], [4, 5, 6], [1, 2, 3], [4, 5, 6]],
+            dtype=jnp.uint8,
+        ),
+        pair=jnp.array(
+            [[7, 8, 9], [10, 11, 12], [7, 8, 9], [10, 11, 12]],
+            dtype=jnp.uint16,
+        ),
+        score=jnp.array([1.5, 2.5, 1.5, 2.5], dtype=jnp.float16),
+    )
+
+    batched_keys = _batched_uint32_keys(data, batch_len=4)
+    scalar_keys = jax.vmap(lambda x: x.uint32ed)(data)
+
+    assert jnp.array_equal(batched_keys, scalar_keys)
+    assert jnp.array_equal(xnp.unique_mask(data), jnp.array([True, True, False, False]))
