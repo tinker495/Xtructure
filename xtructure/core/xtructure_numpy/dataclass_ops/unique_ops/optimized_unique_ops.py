@@ -14,6 +14,9 @@ def _hash_to_wide(keys: jnp.ndarray) -> list[jnp.ndarray]:
     """Hash (N, K) uint32 keys into a fixed-width wide hash."""
     n, k = keys.shape
 
+    if k == 0:
+        return [jnp.zeros((n,), dtype=jnp.uint32)]
+
     # Check if x64 is enabled
     use_x64 = jax.config.read("jax_enable_x64")
 
@@ -44,6 +47,97 @@ def _hash_to_wide(keys: jnp.ndarray) -> list[jnp.ndarray]:
         return [h1, h2, h3, h4]
 
 
+def _compact_unique_indices(
+    perm: jnp.ndarray,
+    mask_sorted: jnp.ndarray,
+    batch_len: int,
+) -> jnp.ndarray:
+    """Return fixed-size selected indices, padded with ``batch_len``.
+
+    Boolean indexing would create a dynamic-length result and fail under JIT.
+    This static compaction keeps JAX shapes fixed while preserving the selected
+    index order from the sorted groups.
+    """
+    sentinel = jnp.asarray(batch_len, dtype=perm.dtype)
+    slots = jnp.cumsum(mask_sorted.astype(jnp.int32)) - 1
+    slots = jnp.maximum(slots, 0)
+    values = jnp.where(mask_sorted, perm, sentinel)
+    return jnp.full((batch_len,), sentinel, dtype=perm.dtype).at[slots].min(values)
+
+
+def _unique_indices_from_mask(final_mask: jnp.ndarray, batch_len: int) -> jnp.ndarray:
+    indices = jnp.arange(batch_len, dtype=jnp.int32)
+    return _compact_unique_indices(indices, final_mask, batch_len)
+
+
+def _unique_mask_exact(
+    unique_keys: jnp.ndarray,
+    key: jnp.ndarray | None,
+    filled: jnp.ndarray | None,
+    batch_len: int,
+    return_index: bool,
+    return_inverse: bool,
+) -> Union[jnp.ndarray, tuple]:
+    """Exact small-key path backed by ``jnp.unique``.
+
+    This avoids wide-hash overhead for narrow keys and preserves full precision
+    for custom key functions that return non-uint32 values.
+    """
+    unique_input = unique_keys
+    if filled is not None:
+        flat_keys = unique_keys.reshape(batch_len, -1)
+        filled_col = filled.reshape(batch_len, 1).astype(flat_keys.dtype)
+        unique_input = jnp.concatenate([flat_keys, filled_col], axis=1)
+
+    _, inv = jnp.unique(
+        unique_input,
+        axis=0,
+        size=batch_len,
+        return_inverse=True,
+    )
+
+    batch_idx = jnp.arange(batch_len, dtype=jnp.int32)
+
+    if key is None:
+        candidate_indices = (
+            jnp.where(filled, batch_idx, batch_len) if filled is not None else batch_idx
+        )
+    else:
+        if filled is not None:
+            inf_fill = jnp.array(jnp.inf, dtype=key.dtype)
+            masked_key = jnp.where(filled, key, inf_fill)
+        else:
+            masked_key = key
+
+        min_keys = jnp.full((batch_len,), jnp.inf, dtype=masked_key.dtype).at[inv].min(masked_key)
+        is_min_key = masked_key == min_keys[inv]
+        candidate_mask = jnp.logical_and(is_min_key, filled) if filled is not None else is_min_key
+        candidate_indices = jnp.where(candidate_mask, batch_idx, batch_len)
+
+    representative_per_group = (
+        jnp.full((batch_len,), batch_len, dtype=jnp.int32).at[inv].min(candidate_indices)
+    )
+    representative_per_group = jnp.where(
+        representative_per_group == batch_len, 0, representative_per_group
+    )
+    representative_for_item = representative_per_group[inv]
+    final_mask = batch_idx == representative_for_item
+    if filled is not None:
+        final_mask = jnp.logical_and(final_mask, filled)
+    elif key is not None:
+        final_mask = jnp.logical_and(final_mask, key < jnp.inf)
+
+    if not return_index and not return_inverse:
+        return final_mask
+
+    returns = (final_mask,)
+    if return_index:
+        returns += (_unique_indices_from_mask(final_mask, batch_len),)
+    if return_inverse:
+        returns += (inv,)
+    return returns
+
+
 def unique_mask(
     val: Xtructurable,
     key: jnp.ndarray | None = None,
@@ -55,10 +149,11 @@ def unique_mask(
 ) -> Union[jnp.ndarray, tuple]:
     """Mask or index information for selecting unique states.
 
-    Optimized implementation using wide hashing + Lexsort. This approach
-    reduces any multi-column key into a fixed-width representation (128-bit),
+    Adaptive implementation using exact ``jnp.unique`` for narrow or non-uint32
+    keys, and wide hashing + lexsort for wider uint32 keys. The wide path
+    reduces multi-column keys into a fixed-width representation (128-bit),
     minimizing sorting passes and comparison overhead while maintaining
-    near-zero collision probability.
+    near-zero collision probability for the default uint32 encoding.
 
     Args:
         val: Xtructurable dataclass to deduplicate.
@@ -105,6 +200,16 @@ def unique_mask(
         return returns
 
     keys_flat = unique_keys.reshape(batch_len, -1)
+
+    if keys_flat.shape[1] > 0 and (keys_flat.dtype != jnp.uint32 or keys_flat.shape[1] <= 2):
+        return _unique_mask_exact(
+            unique_keys=unique_keys,
+            key=key,
+            filled=filled,
+            batch_len=batch_len,
+            return_index=return_index,
+            return_inverse=return_inverse,
+        )
 
     # 2. Wide Hashing to reduce sort columns (128-bit)
     hashes = _hash_to_wide(keys_flat)
@@ -162,7 +267,7 @@ def unique_mask(
     returns = (final_mask,)
 
     if return_index:
-        unique_indices = perm[mask_sorted]
+        unique_indices = _compact_unique_indices(perm, mask_sorted, batch_len)
         returns += (unique_indices,)
 
     if return_inverse:

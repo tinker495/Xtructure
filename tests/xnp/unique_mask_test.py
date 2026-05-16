@@ -1,5 +1,6 @@
 """Tests for xnp.unique_mask helper."""
 
+import jax
 import jax.numpy as jnp
 import pytest
 
@@ -195,3 +196,68 @@ def test_unique_mask_with_custom_key_fn():
 
     expected_mask = jnp.array([False, True, False, True, False, True])
     assert jnp.array_equal(mask, expected_mask)
+
+
+def test_unique_mask_custom_float_key_preserves_fractional_values():
+    """Custom float keys must not collide through uint32 truncation."""
+    data = HashableData.default(shape=(4,))
+    data = data.replace(
+        id=jnp.array([1, 2, 3, 4]),
+        value=jnp.array([1.25, 1.75, 1.25, 2.5]),
+    )
+    costs = jnp.array([3.0, 1.0, 2.0, 4.0])
+
+    def custom_key_fn(x):
+        return x.value
+
+    mask = xnp.unique_mask(data, key=costs, key_fn=custom_key_fn)
+
+    expected_mask = jnp.array([False, True, True, True])
+    assert jnp.array_equal(mask, expected_mask)
+
+
+def test_unique_mask_return_index_is_jit_static():
+    """return_index should keep a static batch-sized shape under JIT."""
+    data = HashableData.default(shape=(5,))
+    data = data.replace(
+        id=jnp.array([1, 2, 1, 3, 2]),
+        value=jnp.array([1.0, 2.0, 1.0, 3.0, 2.0]),
+    )
+
+    @jax.jit
+    def run(v):
+        return xnp.unique_mask(v, return_index=True)
+
+    mask, indices = run(data)
+
+    expected_mask = jnp.array([True, True, False, True, False])
+    assert jnp.array_equal(mask, expected_mask)
+    assert indices.shape == (5,)
+    assert jnp.array_equal(
+        jnp.sort(indices[indices < 5]),
+        jnp.array([0, 1, 3], dtype=indices.dtype),
+    )
+
+
+def test_unique_mask_return_index_with_cost_is_jit_static():
+    """Cost-based return_index should select winning rows without dynamic indexing."""
+    data = HashableData.default(shape=(6,))
+    data = data.replace(
+        id=jnp.array([1, 2, 1, 3, 2, 1]),
+        value=jnp.array([1.0, 2.0, 1.0, 3.0, 2.0, 1.0]),
+    )
+    costs = jnp.array([5.0, 3.0, 2.0, 4.0, 7.0, 1.0])
+
+    @jax.jit
+    def run(v, k):
+        return xnp.unique_mask(v, key=k, return_index=True)
+
+    mask, indices = run(data, costs)
+
+    expected_mask = jnp.array([False, True, False, True, False, True])
+    assert jnp.array_equal(mask, expected_mask)
+    assert indices.shape == (6,)
+    assert jnp.array_equal(
+        jnp.sort(indices[indices < 6]),
+        jnp.array([1, 3, 5], dtype=indices.dtype),
+    )
