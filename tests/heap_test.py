@@ -1,5 +1,4 @@
 import os
-import random
 
 import jax
 import jax.numpy as jnp
@@ -18,6 +17,8 @@ pytestmark = [
         ),
     ),
 ]
+
+HEAP_STRESS_SIZES = [128, 256, 311, 512, 707, 395, 431, 42, 266, 524]
 
 
 @jax.jit
@@ -45,12 +46,10 @@ def test_heap_initialization(heap_setup):
     assert heap.batch_size == batch_size
 
 
-@pytest.mark.parametrize(
-    "N", [128, 256, 311, 512, 707] + [random.randint(1, 700) for _ in range(5)]
-)
+@pytest.mark.parametrize("N", HEAP_STRESS_SIZES, ids=lambda n: f"N={n}")
 def test_heap_insert_and_delete_batch_size(heap_setup, N):
     heap, batch_size, max_size, _key_gen = heap_setup
-    rnd_key = jax.random.PRNGKey(random.randint(0, 1000000))
+    rnd_key = jax.random.PRNGKey(N)
 
     # Test batch insertion
     total_size = 0
@@ -119,12 +118,10 @@ def test_heap_insert_and_delete_batch_size(heap_setup, N):
     )
 
 
-@pytest.mark.parametrize(
-    "N", [128, 256, 311, 512, 707] + [random.randint(1, 700) for _ in range(5)]
-)
+@pytest.mark.parametrize("N", HEAP_STRESS_SIZES, ids=lambda n: f"N={n}")
 def test_heap_insert_and_delete_random_size(heap_setup, N):
     heap, batch_size, max_size, _key_gen = heap_setup
-    rnd_key = jax.random.PRNGKey(random.randint(0, 1000000))
+    rnd_key = jax.random.PRNGKey(N + 10_000)
 
     # Test batch insertion
     total_size = 0

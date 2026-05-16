@@ -42,10 +42,13 @@ def benchmark_bgpq_insert(
 ):
     """Benchmarks the batched insertion into the xtructure BGPQ."""
 
+    def default_args_supplier():
+        return keys, values
+
     durations = run_jax_trials(
         lambda batch_keys, batch_values: heap.insert(batch_keys, batch_values),
         trials=trials,
-        args_supplier=args_supplier or (lambda: (keys, values)),
+        args_supplier=args_supplier or default_args_supplier,
     )
     return durations
 
@@ -156,16 +159,14 @@ def run_benchmarks(
         padded_keys_host = jax.device_get(padded_keys)
         padded_values_host = jax.device_get(padded_values)
 
-        insert_args_supplier = (
-            (
-                lambda: (
+        def insert_args_supplier():
+            if mode == "e2e":
+                return (
                     jax.device_put(padded_keys_host),
                     jax.device_put(padded_values_host),
                 )
-            )
-            if mode == "e2e"
-            else (lambda: (padded_keys, padded_values))
-        )
+            return padded_keys, padded_values
+
         insert_durations = benchmark_bgpq_insert(
             bgpq_heap,
             padded_keys,

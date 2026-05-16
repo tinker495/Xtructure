@@ -79,9 +79,9 @@ def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional
             # The key and value are the same in this benchmark
             return xtructure_table.parallel_insert(batch)[0]
 
-        insert_args_supplier = (
-            lambda: (jax.device_put(keys_host),) if mode == "e2e" else (keys_device,)
-        )
+        def insert_args_supplier():
+            return (jax.device_put(keys_host),) if mode == "e2e" else (keys_device,)
+
         insert_durations = run_jax_trials(
             insert_op,
             trials=trials,
@@ -96,9 +96,9 @@ def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional
         def lookup_op(batch):
             return table_with_data.lookup_parallel(batch)
 
-        lookup_args_supplier = (
-            lambda: (jax.device_put(keys_host),) if mode == "e2e" else (keys_device,)
-        )
+        def lookup_args_supplier():
+            return (jax.device_put(keys_host),) if mode == "e2e" else (keys_device,)
+
         lookup_durations = run_jax_trials(
             lookup_op,
             trials=trials,

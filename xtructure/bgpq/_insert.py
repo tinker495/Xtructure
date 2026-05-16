@@ -13,7 +13,28 @@ from ..core.xtructure_numpy import concatenate as xnp_concatenate
 from ..core.xtructure_numpy import pad
 from ._backend import merge_array_backend
 from ._merge import merge_sort_split
-from ._utils import _next, sort_arrays
+
+SORT_STABLE = True  # Use stable sorting to maintain insertion order for equal keys.
+
+
+def sort_arrays(k: chex.Array, v: Xtructurable):
+    sorted_k, sorted_idx = jax.lax.sort_key_val(k, jnp.arange(k.shape[0]), is_stable=SORT_STABLE)
+    sorted_v = v[sorted_idx]
+    return sorted_k, sorted_v
+
+
+@jax.jit
+def _next(current, target):
+    # 0-indexed binary heap navigation via clz on 1-based indices.
+    current_1based = current.astype(SIZE_DTYPE) + 1
+    target_1based = target.astype(SIZE_DTYPE) + 1
+
+    clz_current = jax.lax.clz(current_1based)
+    clz_target = jax.lax.clz(target_1based)
+    shift_amount = clz_current - clz_target - 1
+
+    next_index_1based = target_1based >> shift_amount
+    return next_index_1based - 1
 
 
 @jax.jit
