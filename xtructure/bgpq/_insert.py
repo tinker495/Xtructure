@@ -25,8 +25,7 @@ def _bgpq_merge_buffer_jit(heap: Any, blockk: chex.Array, blockv: Xtructurable):
     val = val[sorted_idx]
 
     # Check for active elements (non-infinity)
-    filled = jnp.isfinite(sorted_key)
-    n_filled = jnp.sum(filled, dtype=SIZE_DTYPE)
+    n_filled = jnp.sum(jnp.isfinite(sorted_key), dtype=SIZE_DTYPE)
     buffer_overflow = n_filled >= n
 
     def overflowed(key, val):
@@ -44,7 +43,7 @@ def _bgpq_merge_buffer_jit(heap: Any, blockk: chex.Array, blockv: Xtructurable):
         val,
     )
 
-    buffer_size = jnp.sum(jnp.isfinite(key_buffer), dtype=SIZE_DTYPE)
+    buffer_size = jnp.where(buffer_overflow, n_filled - n, n_filled).astype(SIZE_DTYPE)
     heap = heap.replace(key_buffer=key_buffer, val_buffer=val_buffer, buffer_size=buffer_size)
     return heap, blockk, blockv, buffer_overflow
 

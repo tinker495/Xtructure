@@ -6,6 +6,7 @@ import jax
 import jax.numpy as jnp
 
 from ..core.container_facts import SIZE_DTYPE
+from ..core.xtructure_numpy import concatenate as xnp_concatenate
 from ..core.xtructure_numpy import stack as xnp_stack
 from ._merge import merge_sort_split
 
@@ -96,20 +97,28 @@ def _bgpq_delete_mins_jit(heap: Any):
 
     def make_empty(heap: Any):
         """Handle case where heap becomes empty"""
-        root_key, root_val, key_buffer, val_buffer = merge_sort_split(
-            jnp.full_like(heap.key_store[0], jnp.inf),
-            heap.val_store[0],
-            heap.key_buffer,
-            heap.val_buffer,
-        )
-        heap = heap.replace(
-            key_store=heap.key_store.at[0].set(root_key),
-            val_store=heap.val_store.at[0].set(root_val),
-            buffer_size=SIZE_DTYPE(0),
-            key_buffer=key_buffer,
-            val_buffer=val_buffer,
-        )
-        return heap
+
+        def clear_root(heap: Any):
+            return heap.replace(
+                key_store=heap.key_store.at[0].set(jnp.full_like(heap.key_store[0], jnp.inf)),
+                buffer_size=SIZE_DTYPE(0),
+                key_buffer=jnp.full_like(heap.key_buffer, jnp.inf),
+            )
+
+        def refill_root_from_buffer(heap: Any):
+            root_key = jnp.concatenate(
+                [heap.key_buffer, jnp.full_like(heap.key_store[0][:1], jnp.inf)],
+                axis=0,
+            )
+            root_val = xnp_concatenate([heap.val_buffer, heap.val_store[0][:1]], axis=0)
+            return heap.replace(
+                key_store=heap.key_store.at[0].set(root_key),
+                val_store=heap.val_store.at[0].set(root_val),
+                buffer_size=SIZE_DTYPE(0),
+                key_buffer=jnp.full_like(heap.key_buffer, jnp.inf),
+            )
+
+        return jax.lax.cond(heap.buffer_size == 0, clear_root, refill_root_from_buffer, heap)
 
     heap = jax.lax.cond(heap.heap_size == 0, make_empty, _bgpq_delete_heapify_internal, heap)
     return heap, min_keys, min_values
