@@ -35,7 +35,7 @@ def add_runtime_validation(cls: Type[T], *, enabled: bool) -> Type[T]:
                 f"got {array.dtype}."
             )
 
-        intrinsic_shape = tuple(field_plan.intrinsic_shape)
+        intrinsic_shape = tuple(field_plan.storage_intrinsic_shape)
         if intrinsic_shape:
             intrinsic_len = len(intrinsic_shape)
             if array.ndim < intrinsic_len:

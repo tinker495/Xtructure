@@ -6,7 +6,7 @@ pytest entry, so a failing rule names itself in the test report.
 
 Coverage notes:
 
-- R1, R3, R4, R5, R6 are AST-detectable and enforced here.
+- R1, R3, R4, R5, R6, R13 are AST-detectable and enforced here.
 - The CONTEXT.md "FieldDescriptor instance attribute read" item has no sound
   AST translation: layout fact types (FieldLayout, AdapterFieldPlan,
   AggregateLeafLayout, PackedFieldLayout, ...) intentionally share attribute
@@ -246,6 +246,78 @@ def _check_r5_bitpack_low_level_import(path: Path, tree: ast.Module) -> Iterator
                     f"Import of low-level `{alias.name}` from Bitpack Layout — "
                     "non-IO adapters must use pack_field / unpack_field (the "
                     "field-level Bitpack Layout seam).",
+                )
+
+
+_FIELD_DESCRIPTOR_FORBIDDEN_BITPACK_NAMES = frozenset({"default_unpack_dtype", "packed_num_bytes"})
+
+
+def _is_layout_import_module(module: str) -> bool:
+    return (
+        module == "xtructure.core.layout"
+        or module.startswith("xtructure.core.layout.")
+        or module == "layout"
+        or module.startswith("layout.")
+    )
+
+
+def _check_r13_field_descriptor_keeps_packed_policy_in_layout(
+    path: Path, tree: ast.Module
+) -> Iterator[_Violation]:
+    """FieldDescriptor carries Xtructure Schema declarations only.
+
+    Packed byte counts and default unpack dtypes are interpreted by Type Layout
+    / Packed Field Layout, not by the descriptor Module.
+    """
+
+    if _rel_to_package(path) != "core/field_descriptors.py":
+        return
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            if node.level and _is_layout_import_module(module):
+                yield _Violation(
+                    path,
+                    node.lineno,
+                    node.col_offset,
+                    "Relative import from core.layout inside field_descriptors.py — "
+                    "FieldDescriptor must not depend on Bitpack Layout policy.",
+                )
+                continue
+            if _is_layout_import_module(module):
+                yield _Violation(
+                    path,
+                    node.lineno,
+                    node.col_offset,
+                    f"Import from `{module}` inside field_descriptors.py — "
+                    "FieldDescriptor must not depend on Bitpack Layout policy.",
+                )
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if _is_layout_import_module(alias.name):
+                    yield _Violation(
+                        path,
+                        node.lineno,
+                        node.col_offset,
+                        f"Import of `{alias.name}` inside field_descriptors.py — "
+                        "FieldDescriptor must not depend on Bitpack Layout policy.",
+                    )
+        elif isinstance(node, ast.Call):
+            func = node.func
+            name = None
+            if isinstance(func, ast.Name):
+                name = func.id
+            elif isinstance(func, ast.Attribute):
+                name = func.attr
+            if name in _FIELD_DESCRIPTOR_FORBIDDEN_BITPACK_NAMES:
+                yield _Violation(
+                    path,
+                    node.lineno,
+                    node.col_offset,
+                    f"Call to `{name}()` inside field_descriptors.py — "
+                    "Packed Data Kind and byte counts belong to Type Layout / "
+                    "Packed Field Layout.",
                 )
 
 
@@ -566,16 +638,14 @@ def _check_r12_shape_properties_use_layout_cache(
 _ALL_RULES: tuple[_Rule, ...] = (
     _Rule(
         name="R1_no_get_field_descriptors_outside_layout",
-        description=(
-            "get_field_descriptors() may only be called from inside the " "Layout module."
-        ),
+        description=("get_field_descriptors() may only be called from inside the Layout module."),
         excluded_relpaths=(
             "core/layout",
             "core/field_descriptors.py",
             "core/field_descriptor_utils.py",
         ),
         check=_check_r1_get_field_descriptors_call,
-        remediation=("Use get_type_layout(cls) and read facts from the returned " "TypeLayout."),
+        remediation=("Use get_type_layout(cls) and read facts from the returned TypeLayout."),
     ),
     _Rule(
         name="R3_no_dataclass_field_metadata_read_outside_layout",
@@ -619,6 +689,20 @@ _ALL_RULES: tuple[_Rule, ...] = (
             "Use pack_field(value, packed_layout, batch_shape) / "
             "unpack_field(packed, packed_layout, batch_shape) from "
             "xtructure.core.layout.bitpack."
+        ),
+    ),
+    _Rule(
+        name="R13_field_descriptor_does_not_own_packed_storage_policy",
+        description=(
+            "FieldDescriptor carries Xtructure Schema declarations only; "
+            "Packed Data Kind and storage byte counts belong to Type Layout / "
+            "Packed Field Layout."
+        ),
+        excluded_relpaths=(),
+        check=_check_r13_field_descriptor_keeps_packed_policy_in_layout,
+        remediation=(
+            "Keep packed_tensor() descriptor-local facts logical, and derive "
+            "default unpack dtype / packed byte count through get_type_layout()."
         ),
     ),
     _Rule(

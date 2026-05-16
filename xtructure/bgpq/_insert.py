@@ -1,29 +1,27 @@
 """Insert path for BGPQ."""
 
 from functools import partial
-from typing import TYPE_CHECKING
+from typing import Any
 
 import chex
 import jax
 import jax.numpy as jnp
 
-from ..core import Xtructurable
-from ..core import xtructure_numpy as xnp
 from ..core.container_facts import SIZE_DTYPE
+from ..core.protocol import Xtructurable
+from ..core.xtructure_numpy import concatenate as xnp_concatenate
+from ..core.xtructure_numpy import pad
 from ._backend import merge_array_backend
 from ._merge import merge_sort_split
 from ._utils import _next, sort_arrays
 
-if TYPE_CHECKING:
-    from .bgpq import BGPQ
-
 
 @jax.jit
-def _bgpq_merge_buffer_jit(heap: "BGPQ", blockk: chex.Array, blockv: Xtructurable):
+def _bgpq_merge_buffer_jit(heap: Any, blockk: chex.Array, blockv: Xtructurable):
     n = int(heap.batch_size)
     # Concatenate block and buffer
     sorted_key, sorted_idx = merge_array_backend(blockk, heap.key_buffer)
-    val = xnp.concatenate([blockv, heap.val_buffer], axis=0)
+    val = xnp_concatenate([blockv, heap.val_buffer], axis=0)
     val = val[sorted_idx]
 
     # Check for active elements (non-infinity)
@@ -56,20 +54,20 @@ def _bgpq_make_batched_jit(key: chex.Array, val: Xtructurable, batch_size: int):
     n = key.shape[0]
     # Pad arrays to match batch size
     key = jnp.pad(key, (0, batch_size - n), mode="constant", constant_values=jnp.inf)
-    val = xnp.pad(val, (0, batch_size - n))
+    val = pad(val, (0, batch_size - n))
     return key, val
 
 
 @jax.jit
-def _bgpq_make_batched_like_jit(heap: "BGPQ", key: chex.Array, val: Xtructurable):
+def _bgpq_make_batched_like_jit(heap: Any, key: chex.Array, val: Xtructurable):
     batch_size = int(heap.batch_size)
     n = key.shape[0]
     key = jnp.pad(key, (0, batch_size - n), mode="constant", constant_values=jnp.inf)
-    val = xnp.pad(val, (0, batch_size - n))
+    val = pad(val, (0, batch_size - n))
     return key, val
 
 
-def _bgpq_insert_heapify_internal(heap: "BGPQ", block_key: chex.Array, block_val: Xtructurable):
+def _bgpq_insert_heapify_internal(heap: Any, block_key: chex.Array, block_val: Xtructurable):
     is_full = heap.heap_size >= (heap.branch_size - 1)
 
     def _get_target_full(h):
@@ -130,7 +128,7 @@ def _bgpq_insert_heapify_internal(heap: "BGPQ", block_key: chex.Array, block_val
 
 
 @jax.jit
-def _bgpq_insert_jit(heap: "BGPQ", block_key: chex.Array, block_val: Xtructurable):
+def _bgpq_insert_jit(heap: Any, block_key: chex.Array, block_val: Xtructurable):
     block_key, block_val = sort_arrays(block_key, block_val)
     # Merge with root node
     root_key, root_val, block_key, block_val = merge_sort_split(

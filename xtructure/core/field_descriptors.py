@@ -1,10 +1,8 @@
 from typing import Any, Callable, Dict, Tuple, Type
 
 import jax.numpy as jnp
-import numpy as np
 
 from xtructure.core.dtype_facts import default_fill_value_for_dtype
-from xtructure.core.layout.bitpack import packed_num_bytes
 
 from .shape_utils import normalize_shape
 from .type_utils import is_xtructure_dataclass_type
@@ -88,8 +86,9 @@ class FieldDescriptor:
         self.bits: int | None = bits
 
         # Optional: in-memory packed representation for this field.
-        # When set, the field is expected to STORE packed uint8 bytes in `dtype`/`intrinsic_shape`,
-        # while `unpacked_*` describe the logical array view.
+        # FieldDescriptor carries the Xtructure Schema declaration only:
+        # `intrinsic_shape` / `unpacked_intrinsic_shape` are the logical shape.
+        # Type Layout / Packed Field Layout interpret the stored byte shape.
         if packed_bits is not None:
             if not isinstance(packed_bits, int):
                 raise TypeError(
@@ -194,11 +193,12 @@ class FieldDescriptor:
         fill_value_factory: Callable[[Tuple[int, ...], DType], Any] | None = None,
         validator: Callable[[Any], None] | None = None,
     ) -> "FieldDescriptor":
-        """Define a field that stores a packed uint8 byte-stream in-memory.
+        """Declare a logically-shaped field stored as a packed byte-stream.
 
-        The field's *stored* dtype/shape are `storage_dtype` and a 1D byte stream.
-        The *logical* view is described by `unpacked_dtype` and `shape` (unpacked shape).
-        Use `packed_bits` in [1, 8] to unpack/pack values.
+        ``FieldDescriptor`` records the Schema declaration only: logical
+        shape, storage dtype, packed bits, and optional logical dtype. The
+        stored byte-stream shape and default logical dtype are interpreted by
+        Type Layout / Bitpack Layout.
         """
         # API note:
         # - Prefer `shape=...` (consistent with FieldDescriptor.tensor).
@@ -215,15 +215,9 @@ class FieldDescriptor:
             )
 
         unpacked_shape_final = shape_final
-        if unpacked_dtype is None:
-            from xtructure.core.layout.bitpack import default_unpack_dtype
-
-            unpacked_dtype = default_unpack_dtype(packed_bits)
-        num_values = int(np.prod(np.array(unpacked_shape_final, dtype=np.int64)))
-        packed_len = packed_num_bytes(num_values, packed_bits)
         return cls(
             dtype=storage_dtype,
-            intrinsic_shape=(packed_len,),
+            intrinsic_shape=unpacked_shape_final,
             fill_value=fill_value,
             fill_value_factory=fill_value_factory,
             packed_bits=packed_bits,
@@ -295,7 +289,7 @@ def _descriptor_from_annotation(annotation: Any) -> FieldDescriptor | None:
 
 
 def extract_field_descriptors_from_annotations(
-    annotations: Dict[str, Any]
+    annotations: Dict[str, Any],
 ) -> Dict[str, FieldDescriptor]:
     field_descriptors: Dict[str, FieldDescriptor] = {}
     invalid_annotations = []

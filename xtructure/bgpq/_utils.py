@@ -4,8 +4,8 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from ..core import Xtructurable
 from ..core.container_facts import SIZE_DTYPE
+from ..core.protocol import Xtructurable
 
 SORT_STABLE = True  # Use stable sorting to maintain insertion order for equal keys.
 

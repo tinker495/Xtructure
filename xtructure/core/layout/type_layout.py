@@ -17,11 +17,11 @@ from xtructure.core.dtype_facts import (
     unsigned_integer_dtype_for,
 )
 from xtructure.core.field_descriptors import FieldDescriptor, get_field_descriptors
-from xtructure.core.layout.bitpack import packed_num_bytes
+from xtructure.core.layout.bitpack_policy import default_unpack_dtype, packed_num_bytes
 from xtructure.core.shape_utils import normalize_shape
 from xtructure.core.type_utils import is_xtructure_dataclass_type
 
-from .bitpack import build_aggregate_bitpack_layout, default_unpack_dtype
+from .bitpack import build_aggregate_bitpack_layout
 from .types import (
     AdapterFieldPlan,
     FieldLayout,
@@ -78,8 +78,21 @@ def _build_fields(cls: type) -> tuple[FieldLayout, ...]:
     return tuple(fields)
 
 
+def _storage_intrinsic_shape_for(
+    field: FieldLayout,
+    packed_field_layout_by_name: dict[str, PackedFieldLayout],
+) -> tuple[int, ...]:
+    packed_layout = packed_field_layout_by_name.get(field.name)
+    return (
+        packed_layout.storage_intrinsic_shape
+        if packed_layout is not None
+        else field.intrinsic_shape
+    )
+
+
 def _build_leaves(
     fields: tuple[FieldLayout, ...],
+    packed_field_layout_by_name: dict[str, PackedFieldLayout],
     *,
     prefix: tuple[str, ...] = (),
     parent_intrinsic_shape: tuple[int, ...] = (),
@@ -93,22 +106,36 @@ def _build_leaves(
             leaves.extend(
                 _build_leaves(
                     nested_layout.fields,
+                    {layout.name: layout for layout in nested_layout.packed_field_layouts},
                     prefix=path,
                     parent_intrinsic_shape=field_parent_shape,
                 )
             )
             continue
+        packed_layout = packed_field_layout_by_name.get(field.name)
+        storage_intrinsic_shape = _storage_intrinsic_shape_for(
+            field,
+            packed_field_layout_by_name,
+        )
         leaves.append(
             LeafLayout(
                 path=path,
                 declared_dtype=field.dtype,
-                intrinsic_shape=field_parent_shape,
-                local_intrinsic_shape=field.intrinsic_shape,
+                intrinsic_shape=parent_intrinsic_shape + storage_intrinsic_shape,
+                local_intrinsic_shape=storage_intrinsic_shape,
                 parent_intrinsic_shape=parent_intrinsic_shape,
                 bits=field.bits,
                 packed_bits=field.packed_bits,
-                unpacked_dtype=field.unpacked_dtype,
-                unpacked_intrinsic_shape=field.unpacked_intrinsic_shape,
+                unpacked_dtype=(
+                    packed_layout.unpacked_dtype
+                    if packed_layout is not None
+                    else field.unpacked_dtype
+                ),
+                unpacked_intrinsic_shape=(
+                    packed_layout.unpacked_intrinsic_shape
+                    if packed_layout is not None
+                    else field.unpacked_intrinsic_shape
+                ),
                 io_pack_bits=None if field.packed_bits is not None else field.bits,
             )
         )
@@ -129,7 +156,12 @@ def _random_facts(dtype) -> tuple[str, object | None, bool, object | None]:
     raise AssertionError(f"Unhandled DType Kind: {kind!r}")
 
 
-def _build_adapter_field_plan(field: FieldLayout) -> AdapterFieldPlan:
+def _build_adapter_field_plan(
+    field: FieldLayout,
+    packed_field_layout_by_name: dict[str, PackedFieldLayout],
+) -> AdapterFieldPlan:
+    storage_intrinsic_shape = _storage_intrinsic_shape_for(field, packed_field_layout_by_name)
+    logical_intrinsic_shape = field.intrinsic_shape
     if field.is_nested:
         return AdapterFieldPlan(
             name=field.name,
@@ -138,7 +170,9 @@ def _build_adapter_field_plan(field: FieldLayout) -> AdapterFieldPlan:
             field_kind="nested",
             declared_dtype=None,
             nested_type=field.nested_type,
-            intrinsic_shape=field.intrinsic_shape,
+            intrinsic_shape=storage_intrinsic_shape,
+            logical_intrinsic_shape=logical_intrinsic_shape,
+            storage_intrinsic_shape=storage_intrinsic_shape,
             fill_value=None,
             fill_value_factory=None,
             validator=field.validator,
@@ -156,7 +190,9 @@ def _build_adapter_field_plan(field: FieldLayout) -> AdapterFieldPlan:
         field_kind="primitive",
         declared_dtype=field.dtype,
         nested_type=None,
-        intrinsic_shape=field.intrinsic_shape,
+        intrinsic_shape=storage_intrinsic_shape,
+        logical_intrinsic_shape=logical_intrinsic_shape,
+        storage_intrinsic_shape=storage_intrinsic_shape,
         fill_value=field.fill_value,
         fill_value_factory=field.fill_value_factory,
         validator=field.validator,
@@ -179,16 +215,18 @@ def _build_packed_field_layout(field: FieldLayout) -> PackedFieldLayout | None:
     unpacked_shape = tuple(field.unpacked_intrinsic_shape)  # type: ignore[arg-type]
     unpack_dtype = field.unpacked_dtype or default_unpack_dtype(packed_bits)
     value_count = _num_values(unpacked_shape)
+    packed_byte_count = packed_num_bytes(value_count, packed_bits)
+    storage_intrinsic_shape = (packed_byte_count,)
     return PackedFieldLayout(
         name=field.name,
         path=field.path,
         storage_dtype=field.dtype,
-        storage_intrinsic_shape=field.intrinsic_shape,
+        storage_intrinsic_shape=storage_intrinsic_shape,
         packed_bits=packed_bits,
         unpacked_dtype=unpack_dtype,
         unpacked_intrinsic_shape=unpacked_shape,
         value_count=value_count,
-        packed_byte_count=packed_num_bytes(value_count, packed_bits),
+        packed_byte_count=packed_byte_count,
         # In-memory packed fields are already byte streams and should not be IO-packed again.
         io_pack_bits=None,
     )
@@ -199,16 +237,6 @@ def get_type_layout(cls: type) -> TypeLayout:
     """Return cached Type Layout facts for an xtructure dataclass type."""
     fields = _build_fields(cls)
     field_names = tuple(field.name for field in fields)
-    intrinsic_shapes = tuple(field.intrinsic_shape for field in fields)
-    shape_tuple_cls = namedtuple("shape", ["batch"] + list(field_names))
-    dtype_tuple_cls = namedtuple("dtype", field_names)
-    default_shape = namedtuple("default_shape", field_names)(*intrinsic_shapes)
-    default_dtype = namedtuple("default_dtype", field_names)(*[field.dtype for field in fields])
-    leaves = _build_leaves(fields)
-    adapter_field_plans = tuple(_build_adapter_field_plan(field) for field in fields)
-    adapter_field_plan_by_name = tuple((plan.name, plan) for plan in adapter_field_plans)
-    field_by_name = tuple((field.name, field) for field in fields)
-    leaf_by_path = tuple((leaf.path, leaf) for leaf in leaves)
     packed_fields = tuple(field for field in fields if field.is_packed)
     packed_field_layouts = tuple(
         packed_layout
@@ -216,10 +244,27 @@ def get_type_layout(cls: type) -> TypeLayout:
         for packed_layout in (_build_packed_field_layout(field),)
         if packed_layout is not None
     )
+    packed_field_layout_by_name_dict = {
+        packed_layout.name: packed_layout for packed_layout in packed_field_layouts
+    }
+    intrinsic_shapes = tuple(
+        _storage_intrinsic_shape_for(field, packed_field_layout_by_name_dict) for field in fields
+    )
+    shape_tuple_cls = namedtuple("shape", ["batch"] + list(field_names))
+    dtype_tuple_cls = namedtuple("dtype", field_names)
+    default_shape = namedtuple("default_shape", field_names)(*intrinsic_shapes)
+    default_dtype = namedtuple("default_dtype", field_names)(*[field.dtype for field in fields])
+    leaves = _build_leaves(fields, packed_field_layout_by_name_dict)
+    adapter_field_plans = tuple(
+        _build_adapter_field_plan(field, packed_field_layout_by_name_dict) for field in fields
+    )
+    adapter_field_plan_by_name = tuple((plan.name, plan) for plan in adapter_field_plans)
+    field_by_name = tuple((field.name, field) for field in fields)
+    leaf_by_path = tuple((leaf.path, leaf) for leaf in leaves)
     packed_field_layout_by_name = tuple(
         (packed_layout.name, packed_layout) for packed_layout in packed_field_layouts
     )
-    aggregate_bitpack = build_aggregate_bitpack_layout(cls, fields)
+    aggregate_bitpack = build_aggregate_bitpack_layout(cls, fields, get_type_layout)
     return TypeLayout(
         cls=cls,
         fields=fields,

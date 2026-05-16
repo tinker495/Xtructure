@@ -38,9 +38,12 @@ class MixedPackedState:
     counter: FieldDescriptor.scalar(dtype=jnp.int32)
 
 
-def test_packed_tensor_descriptor_shape():
+def test_packed_tensor_logical_descriptor_storage_layout_shape():
     num_values = 6 * 9
     expected = packed_num_bytes(num_values, 3)
+    descriptor = FieldDescriptor.packed_tensor(shape=(6, 9), packed_bits=3)
+
+    assert descriptor.intrinsic_shape == (6, 9)
     assert PackedState.default_shape.faces == (expected,)
 
 

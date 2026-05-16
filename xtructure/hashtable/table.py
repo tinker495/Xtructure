@@ -7,8 +7,9 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from ..core import Xtructurable, base_dataclass
 from ..core.container_facts import init_counter, init_value_store
+from ..core.dataclass import base_dataclass
+from ..core.protocol import Xtructurable
 from .insert import _hashtable_insert_jit, _hashtable_parallel_insert_jit
 from .lookup import (
     _hashtable_getitem_jit,

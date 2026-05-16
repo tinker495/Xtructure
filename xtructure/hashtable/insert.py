@@ -1,14 +1,14 @@
 """Insertion helpers for HashTable."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import Any
 
 import chex
 import jax
 import jax.numpy as jnp
 
-from ..core import Xtructurable
 from ..core.container_facts import SIZE_DTYPE
+from ..core.protocol import Xtructurable
 from ..core.xtructure_numpy.array_ops import (
     _update_array_on_condition,
     _where_no_broadcast,
@@ -17,9 +17,6 @@ from .constants import SLOT_IDX_DTYPE
 from .hash_utils import _compute_unique_mask_from_uint32eds, get_new_idx_byterized
 from .lookup import _hashtable_lookup_bucket_jit, _hashtable_lookup_parallel_internal
 from .types import BucketIdx, HashIdx
-
-if TYPE_CHECKING:
-    from .table import HashTable
 
 
 def _resolve_slot_conflicts(flat_indices: chex.Array, active: chex.Array) -> chex.Array:
@@ -46,12 +43,8 @@ def _resolve_slot_conflicts(flat_indices: chex.Array, active: chex.Array) -> che
 
 
 @jax.jit
-def _hashtable_insert_jit(
-    table: "HashTable", input: Xtructurable
-) -> tuple["HashTable", bool, HashIdx]:
-    def _update_table(
-        table: "HashTable", input: Xtructurable, idx: BucketIdx, fingerprint: chex.Array
-    ):
+def _hashtable_insert_jit(table: Any, input: Xtructurable) -> tuple[Any, bool, HashIdx]:
+    def _update_table(table: Any, input: Xtructurable, idx: BucketIdx, fingerprint: chex.Array):
         table = table.replace(
             table=table.table.at[idx.index * table.bucket_size + idx.slot_index].set(input),
             fingerprints=table.fingerprints.at[idx.index * table.bucket_size + idx.slot_index].set(
@@ -80,13 +73,13 @@ def _hashtable_insert_jit(
 
 
 def _hashtable_parallel_insert_internal(
-    table: "HashTable",
+    table: Any,
     inputs: Xtructurable,
     probe_steps: chex.Array,
     index: BucketIdx,
     updatable: chex.Array,
     fingerprints: chex.Array,
-) -> tuple["HashTable", BucketIdx]:
+) -> tuple[Any, BucketIdx]:
     capacity = jnp.asarray(table._capacity, dtype=SIZE_DTYPE)
     probe_steps = jnp.asarray(probe_steps, dtype=SIZE_DTYPE)
 
@@ -182,7 +175,7 @@ def _hashtable_parallel_insert_internal(
 
 @jax.jit
 def _hashtable_parallel_insert_jit(
-    table: "HashTable",
+    table: Any,
     inputs: Xtructurable,
     filled: chex.Array | bool = None,
     unique_key: chex.Array = None,

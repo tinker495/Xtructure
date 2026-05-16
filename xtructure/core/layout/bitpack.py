@@ -13,7 +13,8 @@ This module owns:
 
 from __future__ import annotations
 
-from typing import Any
+import importlib
+from typing import Any, Callable
 
 import chex
 import jax
@@ -21,6 +22,8 @@ import jax.numpy as jnp
 import numpy as np
 
 from xtructure.core.dtype_facts import DTypeKind, dtype_kind
+from xtructure.core.layout.bitpack_policy import default_unpack_dtype
+from xtructure.core.layout.bitpack_policy import packed_num_bytes as _packed_num_bytes
 
 from .types import (
     AggregateBitpackLayout,
@@ -32,48 +35,13 @@ from .types import (
 )
 
 
-def default_unpack_dtype(bits: int) -> Any:
-    if bits == 1:
-        return jnp.bool_
-    if bits <= 8:
-        return jnp.uint8
-    return jnp.uint32
-
-
 def ceil_div(a: int, b: int) -> int:
     return int((a + b - 1) // b)
 
 
 def packed_num_bytes(num_values: int, active_bits: int) -> int:
-    """Return the number of uint8 bytes required to pack `num_values` values.
-
-    Mirrors the block-aligned packing strategy of `to_uint8` for 3/5/6/7 etc.
-    """
-    if not isinstance(num_values, (int, np.integer)):
-        raise TypeError(f"num_values must be an int, got {type(num_values).__name__}")
-    if num_values < 0:
-        raise ValueError(f"num_values must be non-negative, got {num_values}")
-    if not isinstance(active_bits, int):
-        raise TypeError(f"active_bits must be an int, got {type(active_bits).__name__}")
-    if active_bits < 1 or active_bits > 32:
-        raise ValueError(f"active_bits must be 1-32, got {active_bits}")
-
-    if num_values == 0:
-        return 0
-
-    if active_bits == 8:
-        return int(num_values)
-    if active_bits == 1:
-        return int((num_values + 7) // 8)
-    if active_bits in (2, 4):
-        values_per_byte = 8 // active_bits
-        return int((num_values + values_per_byte - 1) // values_per_byte)
-
-    block_bits = int(np.lcm(active_bits, 8))
-    values_per_block = block_bits // active_bits
-    bytes_per_block = block_bits // 8
-    blocks = int((num_values + values_per_block - 1) // values_per_block)
-    return int(blocks * bytes_per_block)
+    """Backward-compatible export for packed byte-count math."""
+    return _packed_num_bytes(num_values, active_bits)
 
 
 def compute_word_tail_layout(total_bits: int) -> tuple[int, int, int]:
@@ -344,9 +312,16 @@ def unpack_field(
 
 
 def build_aggregate_bitpack_layout(
-    root_cls: type, fields: tuple[FieldLayout, ...]
+    root_cls: type,
+    fields: tuple[FieldLayout, ...],
+    get_type_layout_fn: Callable[[type], Any] | None = None,
 ) -> AggregateBitpackLayout:
     """Compute current aggregate bitpack eligibility without changing constraints."""
+    if get_type_layout_fn is None:
+        get_type_layout_fn = importlib.import_module(
+            "xtructure.core.layout.type_layout"
+        ).get_type_layout
+
     leaves: list[AggregateLeafLayout] = []
     view_fields_by_owner: dict[type, list[AggregateViewFieldLayout]] = {}
     bit_offset = 0
@@ -391,9 +366,7 @@ def build_aggregate_bitpack_layout(
                         unpacked_shape=(),
                     )
                 )
-                from .type_layout import get_type_layout
-
-                nested_layout = get_type_layout(field.nested_type)  # type: ignore[arg-type]
+                nested_layout = get_type_layout_fn(field.nested_type)  # type: ignore[arg-type]
                 nested_reason = walk(nested_layout.cls, nested_layout.fields, path)
                 if nested_reason is not None:
                     return nested_reason

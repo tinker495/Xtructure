@@ -12,14 +12,6 @@ xtructure.io.io module
    :show-inheritance:
    :undoc-members:
 
-xtructure.io.bitpack module
----------------------------
-
-.. automodule:: xtructure.io.bitpack
-   :members:
-   :show-inheritance:
-   :undoc-members:
-
 Module contents
 ---------------
 

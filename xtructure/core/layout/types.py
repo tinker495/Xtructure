@@ -50,16 +50,18 @@ class FieldLayout:
 
     @property
     def is_packed(self) -> bool:
-        return (
-            self.packed_bits is not None
-            and self.unpacked_intrinsic_shape is not None
-            and self.unpacked_dtype is not None
-        )
+        return self.packed_bits is not None and self.unpacked_intrinsic_shape is not None
 
 
 @dataclasses.dataclass(frozen=True)
 class AdapterFieldPlan:
-    """Shared per-field facts consumed by first-party Layout Adapters."""
+    """Shared per-field execution facts consumed by first-party Layout Adapters.
+
+    ``logical_intrinsic_shape`` is the Xtructure Schema shape. For packed fields,
+    ``storage_intrinsic_shape`` is the byte-stream shape interpreted by Packed
+    Field Layout. ``intrinsic_shape`` is kept as the adapter execution/storage
+    shape for compatibility with existing Layout Adapters.
+    """
 
     name: str
     path: tuple[str, ...]
@@ -68,6 +70,8 @@ class AdapterFieldPlan:
     declared_dtype: Any | None
     nested_type: type | None
     intrinsic_shape: tuple[int, ...]
+    logical_intrinsic_shape: tuple[int, ...]
+    storage_intrinsic_shape: tuple[int, ...]
     fill_value: Any
     fill_value_factory: Any
     validator: Any
@@ -202,6 +206,24 @@ class TypeLayout:
 
     def maybe_packed_field_layout_for(self, name: str) -> PackedFieldLayout | None:
         return _lookup_or_default(self.packed_field_layout_by_name, name, None)
+
+    def storage_intrinsic_shape_for(self, field_or_name: FieldLayout | str) -> tuple[int, ...]:
+        """Return the stored field shape interpreted by Type Layout.
+
+        For normal fields this is the declared Intrinsic Shape. For packed
+        fields it is the Packed Field Layout byte-stream Intrinsic Shape.
+        """
+
+        if isinstance(field_or_name, FieldLayout):
+            field = field_or_name
+            name = field.name
+        else:
+            name = field_or_name
+            field = self.field_for(name)
+        packed_layout = self.maybe_packed_field_layout_for(name)
+        if packed_layout is not None:
+            return packed_layout.storage_intrinsic_shape
+        return field.intrinsic_shape
 
 
 @dataclasses.dataclass(frozen=True)

@@ -149,7 +149,7 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
         for i, field_plan in enumerate(field_plans):
             field_key = keys[i]
             field_name = field_plan.name
-            target_shape = shape + field_plan.intrinsic_shape
+            target_shape = shape + field_plan.storage_intrinsic_shape
 
             if field_plan.random_kind == "nested":
                 nested_class = field_plan.nested_type

@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Callable
 
 from xtructure.core.field_descriptors import FieldDescriptor
-from xtructure.core.layout import get_type_layout
+from xtructure.core.layout.type_layout import get_type_layout
 
 from .generated import GENERATED_UNPACKED_VIEW_ROLE, register_generated_class
 
 
-def build_unpacked_view_cls(root_cls: type) -> tuple[type, dict[type, type]]:
+def build_unpacked_view_cls(
+    root_cls: type,
+    dataclass_factory: Callable[..., type],
+) -> tuple[type, dict[type, type]]:
     """Return the logical view type for the aggregate-packed class and a cache."""
     view_cache: dict[type, type] = {}
     root_aggregate = get_type_layout(root_cls).aggregate_bitpack
@@ -35,12 +38,7 @@ def build_unpacked_view_cls(root_cls: type) -> tuple[type, dict[type, type]]:
                 )
         View.__annotations__ = annotations
 
-        # Delay import to avoid circular dependency during decorator import graph.
-        from xtructure.core.xtructure_decorators import (
-            xtructure_dataclass as _xtructure_dataclass,
-        )
-
-        View = _xtructure_dataclass(  # type: ignore[assignment]
+        View = dataclass_factory(  # type: ignore[assignment]
             View,
             validate=False,
             bitpack="off",

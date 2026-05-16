@@ -8,7 +8,6 @@ from xtructure.core.dtype_facts import (
     dtype_kind,
 )
 from xtructure.core.layout import get_type_layout
-from xtructure.core.layout.bitpack import packed_num_bytes
 
 
 def test_field_descriptor_tensor_factory():
@@ -26,7 +25,7 @@ def test_field_descriptor_normalizes_int_intrinsic_shape():
 
 def test_packed_tensor_normalizes_int_shape():
     fd = FieldDescriptor.packed_tensor(shape=3, packed_bits=1)
-    assert fd.intrinsic_shape == (packed_num_bytes(3, 1),)
+    assert fd.intrinsic_shape == (3,)
     assert fd.unpacked_intrinsic_shape == (3,)
 
 
@@ -76,10 +75,23 @@ def test_implicit_field_descriptor_fill_value_comes_from_field_layout():
     assert LayoutAuthoritativeFill.default().value == jnp.iinfo(jnp.uint8).max
 
 
-def test_packed_tensor_uses_packed_data_kind_default_unpack_dtype():
-    assert FieldDescriptor.packed_tensor(shape=(3,), packed_bits=1).unpacked_dtype is jnp.bool_
-    assert FieldDescriptor.packed_tensor(shape=(3,), packed_bits=8).unpacked_dtype is jnp.uint8
-    assert FieldDescriptor.packed_tensor(shape=(3,), packed_bits=12).unpacked_dtype is jnp.uint32
+def test_packed_tensor_leaves_packed_data_kind_to_type_layout():
+    assert FieldDescriptor.packed_tensor(shape=(3,), packed_bits=1).unpacked_dtype is None
+    assert FieldDescriptor.packed_tensor(shape=(3,), packed_bits=8).unpacked_dtype is None
+    assert FieldDescriptor.packed_tensor(shape=(3,), packed_bits=12).unpacked_dtype is None
+
+    from xtructure import xtructure_dataclass
+
+    @xtructure_dataclass(bitpack="field")
+    class PackedDataKindLayout:
+        flags: FieldDescriptor.packed_tensor(shape=(3,), packed_bits=1)
+        byteish: FieldDescriptor.packed_tensor(shape=(3,), packed_bits=8)
+        wide: FieldDescriptor.packed_tensor(shape=(3,), packed_bits=12)
+
+    layout = get_type_layout(PackedDataKindLayout)
+    assert layout.packed_field_layout_for("flags").unpacked_dtype is jnp.bool_
+    assert layout.packed_field_layout_for("byteish").unpacked_dtype is jnp.uint8
+    assert layout.packed_field_layout_for("wide").unpacked_dtype is jnp.uint32
 
 
 def test_field_descriptor_scalar_factory():

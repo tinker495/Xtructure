@@ -69,7 +69,11 @@ def _interpret_field_shape(
         if value_shape.batch[-len(intrinsic_shape) :] == intrinsic_shape:
             batch_shape = value_shape.batch[: -len(intrinsic_shape)]
             nested_batch = value_shape.batch[-len(intrinsic_shape) :]
-            return value_shape.__class__(nested_batch, *value_shape[1:]), batch_shape, None
+            return (
+                value_shape.__class__(nested_batch, *value_shape[1:]),
+                batch_shape,
+                None,
+            )
         return (
             value_shape,
             -1,
@@ -151,8 +155,9 @@ def _build_instance_layout_from_signatures(
         nested_shape_cls = (
             get_type_layout(field.nested_type).shape_tuple_cls if field.is_nested else None
         )
+        intrinsic_shape = type_layout.storage_intrinsic_shape_for(field)
         interpreted_shape, batch_shape, reason = _interpret_field_shape(
-            field.name, raw_shape, field.intrinsic_shape, nested_shape_cls
+            field.name, raw_shape, intrinsic_shape, nested_shape_cls
         )
         field_shapes.append(interpreted_shape)
         batch_shapes.append(batch_shape)

@@ -123,10 +123,14 @@ def test_type_layout_flat_primitive_fields():
     assert id_plan.dotted_path == "id"
     assert jnp.dtype(id_plan.declared_dtype) == jnp.dtype(jnp.uint32)
     assert id_plan.intrinsic_shape == ()
+    assert id_plan.logical_intrinsic_shape == ()
+    assert id_plan.storage_intrinsic_shape == ()
     assert id_plan.random_kind == "bits_int"
     assert id_plan.is_primitive_jax_dtype
     assert vector_plan.random_kind == "float"
     assert vector_plan.intrinsic_shape == (3,)
+    assert vector_plan.logical_intrinsic_shape == (3,)
+    assert vector_plan.storage_intrinsic_shape == (3,)
 
 
 def test_type_layout_normalizes_direct_int_intrinsic_shape():
@@ -169,17 +173,26 @@ def test_type_layout_bitpack_eligibility_and_packed_fields():
 
     assert [field.name for field in packed.packed_fields] == ["flags"]
     assert packed.packed_fields[0].packed_bits == 1
+    assert packed.packed_fields[0].intrinsic_shape == (17,)
     assert packed.packed_fields[0].unpacked_intrinsic_shape == (17,)
+    assert packed.storage_intrinsic_shape_for("flags") == (3,)
+    assert packed.storage_intrinsic_shape_for(packed.field_for("flags")) == (3,)
     assert packed.leaf_for(("flags",)).io_pack_bits is None
 
     packed_layout = packed.packed_field_layouts[0]
     assert packed_layout.name == "flags"
     assert packed_layout.path == ("flags",)
+    assert packed_layout.storage_intrinsic_shape == (3,)
     assert packed_layout.packed_bits == 1
     assert packed_layout.unpacked_intrinsic_shape == (17,)
     assert packed_layout.value_count == 17
     assert packed_layout.packed_byte_count == packed.default_shape.flags[0]
     assert packed_layout.io_pack_bits is None
+
+    packed_plan = packed.adapter_field_plan_for("flags")
+    assert packed_plan.logical_intrinsic_shape == (17,)
+    assert packed_plan.storage_intrinsic_shape == (3,)
+    assert packed_plan.intrinsic_shape == packed_plan.storage_intrinsic_shape
 
 
 def test_type_layout_adapter_field_plans_use_dtype_kind_facts():
@@ -409,6 +422,16 @@ def test_layout_cache_refreshes_on_replace():
     assert single._layout_cache.batch_shape == ()
     assert replaced._layout_cache.batch_shape == (3,)
     assert replaced.shape.batch == (3,)
+
+
+def test_layout_cache_replace_reuses_packed_storage_shape():
+    state = LayoutPackedField.default(shape=(2,))
+
+    replaced = state.replace(flags=jnp.zeros_like(state.flags))
+
+    assert replaced._layout_cache is state._layout_cache
+    assert replaced.shape.flags == (3,)
+    assert replaced.shape.batch == (2,)
 
 
 def test_layout_traversal_iterates_and_reads_leaf_values():

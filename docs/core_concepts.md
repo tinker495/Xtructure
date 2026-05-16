@@ -209,11 +209,13 @@ StrictData(vector=jnp.ones((5, 3), dtype=jnp.float32), positive=-1)
 `xtructure` also supports **storing fields as packed `uint8` byte streams in-memory**, while exposing an
 easy-to-use logical view for observations / transitions.
 
-Use `FieldDescriptor.packed_tensor(...)` to declare a packed storage field, then:
+Use `FieldDescriptor.packed_tensor(...)` to declare the logical **Xtructure Schema** shape
+for a field that **Type Layout** stores as packed bytes, then:
 
 - Access `<field>_unpacked` to get the logical array.
 - Use `set_unpacked(field=...)` to update from a logical array (it will be packed automatically).
 - Use `from_unpacked(...)` to construct a packed instance directly from logical arrays (avoids an extra `.default()`).
+- Read storage byte facts from **Packed Field Layout** via `get_type_layout(...)`, not from `FieldDescriptor`.
 
 Example:
 
@@ -224,7 +226,8 @@ from xtructure import FieldDescriptor, xtructure_dataclass
 
 @xtructure_dataclass
 class PuzzleState:
-    # Store 6 faces of size*size values, each value in [0, 7] => 3 bits/value
+    # Logical Schema: 6 faces of size*size values, each value in [0, 7] => 3 bits/value.
+    # Packed Field Layout derives the stored uint8 byte-stream shape.
     faces: FieldDescriptor.packed_tensor(
         shape=(6, 54),
         packed_bits=3,
@@ -245,7 +248,9 @@ packed = PuzzleState.from_unpacked(faces=faces)
 
 Notes:
 - `packed_bits` supports `[1, 32]`.
-- If you omit `unpacked_dtype`, the default is:
+- `shape=` is the logical unpacked **Intrinsic Shape**. The stored field shape is the
+  byte-stream **Intrinsic Shape** derived by **Packed Field Layout**.
+- If you omit `unpacked_dtype`, **Type Layout** interprets the default **Packed Data Kind**:
   - `bool` for `packed_bits == 1`
   - `uint8` for `2 <= packed_bits <= 8`
   - `uint32` for `packed_bits > 8`

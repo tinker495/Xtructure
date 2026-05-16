@@ -1,48 +1,65 @@
-from . import io, xtructure_numpy
-from .bgpq import BGPQ
-from .core import (
-    FieldDescriptor,
-    StructuredType,
-    Xtructurable,
-    base_dataclass,
-    broadcast_intrinsic_shape,
-    clone_field_descriptor,
-    descriptor_metadata,
-    with_intrinsic_shape,
-    xtructure_dataclass,
-)
-from .hashtable import HashIdx, HashTable
-from .queue import Queue
-from .stack import Stack
+"""Public API for xtructure.
 
-# Alias xtructure_numpy as numpy for cleaner imports (e.g., from xtructure import numpy as xnp)
-numpy = xtructure_numpy
+Imports are resolved lazily so internal modules can depend on concrete owners
+without re-entering the top-level facade during package initialization.
+"""
+
+from __future__ import annotations
+
+import importlib
+from typing import Any
 
 __all__ = [
-    # bgpq.py
     "BGPQ",
-    # hash.py
     "HashTable",
     "HashIdx",
-    # queue.py
     "Queue",
-    # stack.py
     "Stack",
-    # core.dataclass.py
     "Xtructurable",
     "base_dataclass",
     "xtructure_dataclass",
     "StructuredType",
-    # core.field_descriptors.py
     "FieldDescriptor",
     "clone_field_descriptor",
     "with_intrinsic_shape",
     "broadcast_intrinsic_shape",
     "descriptor_metadata",
-    # numpy alias
     "numpy",
-    # xtructure_numpy.py (top-level xnp module)
     "xtructure_numpy",
-    # io.py
     "io",
 ]
+
+_EXPORTS: dict[str, tuple[str, str | None]] = {
+    "BGPQ": (".bgpq.bgpq", "BGPQ"),
+    "HashTable": (".hashtable.table", "HashTable"),
+    "HashIdx": (".hashtable.types", "HashIdx"),
+    "Queue": (".queue.queue", "Queue"),
+    "Stack": (".stack.stack", "Stack"),
+    "Xtructurable": (".core.protocol", "Xtructurable"),
+    "base_dataclass": (".core.dataclass", "base_dataclass"),
+    "xtructure_dataclass": (".core.xtructure_decorators", "xtructure_dataclass"),
+    "StructuredType": (".core.structuredtype", "StructuredType"),
+    "FieldDescriptor": (".core.field_descriptors", "FieldDescriptor"),
+    "clone_field_descriptor": (".core.field_descriptor_utils", "clone_field_descriptor"),
+    "with_intrinsic_shape": (".core.field_descriptor_utils", "with_intrinsic_shape"),
+    "broadcast_intrinsic_shape": (".core.field_descriptor_utils", "broadcast_intrinsic_shape"),
+    "descriptor_metadata": (".core.field_descriptor_utils", "descriptor_metadata"),
+    "numpy": (".numpy", None),
+    "xtructure_numpy": (".xtructure_numpy", None),
+    "io": (".io", None),
+}
+
+
+def __getattr__(name: str) -> Any:
+    try:
+        module_name, attr_name = _EXPORTS[name]
+    except KeyError as exc:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from exc
+    module = importlib.import_module(module_name, __name__)
+    value = module if attr_name is None else getattr(module, attr_name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(__all__))

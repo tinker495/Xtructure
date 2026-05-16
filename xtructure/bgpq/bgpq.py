@@ -14,8 +14,9 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from ..core import Xtructurable, base_dataclass
 from ..core.container_facts import init_counter, init_value_store
+from ..core.dataclass import base_dataclass
+from ..core.protocol import Xtructurable
 from ..core.xtructure_numpy.array_ops import _where_no_broadcast
 from ._delete import _bgpq_delete_mins_jit
 from ._insert import (

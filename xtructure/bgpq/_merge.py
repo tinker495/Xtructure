@@ -3,8 +3,8 @@
 import chex
 import jax
 
-from ..core import Xtructurable
-from ..core import xtructure_numpy as xnp
+from ..core.protocol import Xtructurable
+from ..core.xtructure_numpy import concatenate as xnp_concatenate
 from ._backend import merge_array_backend
 
 
@@ -30,7 +30,7 @@ def merge_sort_split(
             - Second half of corresponding values
     """
     n = ak.shape[-1]  # size of group
-    val = xnp.concatenate([av, bv], axis=0)
+    val = xnp_concatenate([av, bv], axis=0)
     sorted_key, sorted_idx = merge_array_backend(ak, bk)
     sorted_val = val[sorted_idx]
     return sorted_key[:n], sorted_val[:n], sorted_key[n:], sorted_val[n:]

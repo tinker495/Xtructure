@@ -1,9 +1,8 @@
 """Decorator that adds in-memory bitpack accessors for packed fields.
 
-Packed fields are those whose FieldDescriptor declares `packed_bits` plus
-`unpacked_dtype` and `unpacked_intrinsic_shape`. The stored leaf is expected
-to be a uint8 byte-stream (typically created via FieldDescriptor.packed_tensor),
-and the decorator adds:
+Packed fields are those whose FieldDescriptor declares `packed_bits` plus a
+logical unpacked shape. Type Layout / Bitpack Layout interpret that Schema
+declaration into stored byte-stream facts, and the decorator adds:
 
 - `<field>_unpacked` property: returns logical array of shape batch + unpacked_shape
 - `set_unpacked(**kwargs)` method: packs provided logical arrays and returns a new instance

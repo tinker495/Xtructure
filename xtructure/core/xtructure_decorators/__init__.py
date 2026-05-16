@@ -1,27 +1,21 @@
 import functools
+import importlib
 from typing import Callable, Optional, Type, TypeVar
 
 from xtructure.core.dataclass import base_dataclass
-from xtructure.core.layout import get_instance_layout, get_type_layout
 from xtructure.core.layout.instance_layout import (
+    get_instance_layout,
     primitive_value_dtype,
     primitive_value_shape,
 )
+from xtructure.core.layout.type_layout import get_type_layout
 from xtructure.core.protocol import Xtructurable
 
-from .layout_adapters.aggregate_bitpack import add_aggregate_bitpack
-from .layout_adapters.bitpack_accessors import add_bitpack_accessors
-from .layout_adapters.default import add_default_method
-from .layout_adapters.indexing import add_indexing_methods
-from .layout_adapters.shape import add_shape_dtype_len
-from .layout_adapters.structure_util import add_structure_utilities
-from .layout_adapters.validation import add_runtime_validation
-from .pytree_adapters.hash import hash_function_decorator
-from .pytree_adapters.io import add_io_methods
-from .pytree_adapters.ops import add_comparison_operators
-from .pytree_adapters.string_format import add_string_representation_methods
-
 T = TypeVar("T")
+
+
+def _adapter(module_name: str, attr_name: str):
+    return getattr(importlib.import_module(module_name, __name__), attr_name)
 
 
 def _inject_layout_cache_post_init(target_cls: Type[T]) -> Type[T]:
@@ -65,7 +59,8 @@ def _can_reuse_layout_cache(old_layout, type_layout, instance, changed_names: se
 
         value = getattr(instance, name)
         if primitive_value_shape(value) != _expected_raw_shape(
-            old_layout.batch_shape, field_layout.intrinsic_shape
+            old_layout.batch_shape,
+            type_layout.storage_intrinsic_shape_for(field_layout),
         ):
             return False
         if primitive_value_dtype(value) != getattr(old_layout.dtype_tuple, name):
@@ -148,19 +143,19 @@ def xtructure_dataclass(
         cls = base_dataclass(target_cls, static_fields=("_layout_cache",))
 
         # Ensure class has a default method for initialization
-        cls = add_default_method(cls)
+        cls = _adapter(".layout_adapters.default", "add_default_method")(cls)
 
         # Ensure class has a default method for initialization
         assert hasattr(cls, "default"), "xtructureclass must have a default method."
 
         # add shape and dtype and len
-        cls = add_shape_dtype_len(cls)
+        cls = _adapter(".layout_adapters.shape", "add_shape_dtype_len")(cls)
 
         # add indexing methods
-        cls = add_indexing_methods(cls)
+        cls = _adapter(".layout_adapters.indexing", "add_indexing_methods")(cls)
 
         # add structure utilities and random
-        cls = add_structure_utilities(cls)
+        cls = _adapter(".layout_adapters.structure_util", "add_structure_utilities")(cls)
 
         # Bitpacking policy:
         # - off: no in-memory bitpack helpers
@@ -175,26 +170,35 @@ def xtructure_dataclass(
         )
 
         if bitpack == "aggregate" or auto_aggregate:
-            cls = add_aggregate_bitpack(cls)
+            cls = _adapter(".layout_adapters.aggregate_bitpack", "add_aggregate_bitpack")(
+                cls,
+                xtructure_dataclass,
+            )
 
         # add unpacked accessors / setters for in-memory packed fields
         if bitpack in ("auto", "aggregate", "field"):
-            cls = add_bitpack_accessors(cls)
+            cls = _adapter(".layout_adapters.bitpack_accessors", "add_bitpack_accessors")(cls)
 
         # add string representation methods
-        cls = add_string_representation_methods(cls)
+        cls = _adapter(
+            ".pytree_adapters.string_format",
+            "add_string_representation_methods",
+        )(cls)
 
         # add hash function
-        cls = hash_function_decorator(cls)
+        cls = _adapter(".pytree_adapters.hash", "hash_function_decorator")(cls)
 
         # add comparison operators
-        cls = add_comparison_operators(cls)
+        cls = _adapter(".pytree_adapters.ops", "add_comparison_operators")(cls)
 
         # add io methods
-        cls = add_io_methods(cls)
+        cls = _adapter(".pytree_adapters.io", "add_io_methods")(cls)
 
         # add runtime validation if requested
-        cls = add_runtime_validation(cls, enabled=validate)
+        cls = _adapter(".layout_adapters.validation", "add_runtime_validation")(
+            cls,
+            enabled=validate,
+        )
 
         # Keep replace() from paying a fresh Layout Cache build when the
         # replacement preserves primitive field shape/dtype signatures.

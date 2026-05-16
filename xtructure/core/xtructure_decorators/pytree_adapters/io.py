@@ -2,8 +2,6 @@
 
 from typing import Type, TypeVar
 
-from xtructure import io
-
 T = TypeVar("T")
 
 
@@ -17,12 +15,16 @@ def add_io_methods(cls: Type[T]) -> Type[T]:
 
     def save_method(self, path: str, *, packed: bool = True):
         """Saves the instance to a .npz file."""
-        return io.save(path, self, packed=packed)
+        from xtructure.io import save
+
+        return save(path, self, packed=packed)
 
     @classmethod
     def load_method(cls: Type[T], path: str) -> T:
         """Loads an instance from a .npz file."""
-        loaded_instance = io.load(path)
+        from xtructure.io import load
+
+        loaded_instance = load(path)
         if not isinstance(loaded_instance, cls):
             raise TypeError(
                 f"Loaded instance is of type {type(loaded_instance).__name__}, "

@@ -54,7 +54,7 @@ def _create_default_method(cls_to_modify: Type[T]) -> Callable[..., T]:
             return field_plan.fill_value
 
         for field_plan in field_plans:
-            field_shape = shape + field_plan.intrinsic_shape
+            field_shape = shape + field_plan.storage_intrinsic_shape
             if field_plan.field_kind == "primitive":
                 default_values[field_plan.name] = jnp.full(
                     field_shape,

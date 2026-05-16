@@ -1,24 +1,21 @@
 """Lookup helpers for HashTable."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import Any
 
 import chex
 import jax
 import jax.numpy as jnp
 
-from ..core import Xtructurable
 from ..core.container_facts import SIZE_DTYPE
+from ..core.protocol import Xtructurable
 from .constants import SLOT_IDX_DTYPE
 from .hash_utils import get_new_idx_byterized
 from .types import BucketIdx, HashIdx
 
-if TYPE_CHECKING:
-    from .table import HashTable
-
 
 def _hashtable_lookup_internal(
-    table: "HashTable",
+    table: Any,
     input: Xtructurable,
     idx: BucketIdx,
     probe_step: chex.Array,
@@ -108,7 +105,7 @@ def _hashtable_lookup_internal(
 
 @jax.jit
 def _hashtable_lookup_bucket_jit(
-    table: "HashTable", input: Xtructurable
+    table: Any, input: Xtructurable
 ) -> tuple[BucketIdx, bool, chex.Array]:
     index, step, _uint32ed, fingerprint = get_new_idx_byterized(input, table._capacity, table.seed)
     idx = BucketIdx(index=index, slot_index=SLOT_IDX_DTYPE(0))
@@ -117,14 +114,14 @@ def _hashtable_lookup_bucket_jit(
 
 
 @jax.jit
-def _hashtable_lookup_jit(table: "HashTable", input: Xtructurable) -> tuple[HashIdx, bool]:
+def _hashtable_lookup_jit(table: Any, input: Xtructurable) -> tuple[HashIdx, bool]:
     idx, found, _ = _hashtable_lookup_bucket_jit(table, input)
     bucket_size_u32 = SIZE_DTYPE(table.bucket_size)
     return HashIdx(index=idx.index * bucket_size_u32 + idx.slot_index), found
 
 
 def _hashtable_lookup_parallel_internal(
-    table: "HashTable",
+    table: Any,
     inputs: Xtructurable,
     idxs: BucketIdx,
     probe_steps: chex.Array,
@@ -251,7 +248,7 @@ def _hashtable_lookup_parallel_internal(
 
 @jax.jit
 def _hashtable_lookup_parallel_jit(
-    table: "HashTable", inputs: Xtructurable, filled: chex.Array | bool = True
+    table: Any, inputs: Xtructurable, filled: chex.Array | bool = True
 ) -> tuple[HashIdx, chex.Array]:
     filled = jnp.asarray(filled)
     batch_size = inputs.shape.batch
@@ -287,5 +284,5 @@ def _hashtable_lookup_parallel_jit(
 
 
 @jax.jit
-def _hashtable_getitem_jit(table: "HashTable", idx: HashIdx) -> Xtructurable:
+def _hashtable_getitem_jit(table: Any, idx: HashIdx) -> Xtructurable:
     return table.table[idx.index]

@@ -14,7 +14,8 @@ Rules:
 
 from __future__ import annotations
 
-from typing import Any, Type, TypeVar
+import importlib
+from typing import Any, Callable, Type, TypeVar
 
 import jax
 import jax.numpy as jnp
@@ -22,7 +23,6 @@ import numpy as np
 from jax import lax
 
 from xtructure.core.field_descriptors import FieldDescriptor
-from xtructure.core.layout import get_type_layout
 from xtructure.core.layout.bitpack import ceil_div
 from xtructure.core.layout.conversion import cast_declared_dtype
 from xtructure.core.layout.traversal import (
@@ -30,16 +30,19 @@ from xtructure.core.layout.traversal import (
     get_path_value,
     iter_leaf_values,
 )
+from xtructure.core.layout.type_layout import get_type_layout
 from xtructure.core.layout.types import AggregateBitpackReason, AggregateLeafLayout
 
 from .bits import _extract_bits, _insert_bits
 from .generated import GENERATED_PACKED_ROLE, register_generated_class
-from .view import build_unpacked_view_cls
 
 T = TypeVar("T")
 
 
-def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
+def add_aggregate_bitpack(
+    cls: Type[T],
+    dataclass_factory: Callable[..., type],
+) -> Type[T]:
     aggregate = get_type_layout(cls).aggregate_bitpack
     if not aggregate.eligible:
         reason = aggregate.reason or "aggregate_bitpack is not eligible for this type."
@@ -64,18 +67,17 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
         "tail": FieldDescriptor.tensor(dtype=jnp.uint8, shape=(tail_bytes,), fill_value=0),
     }
 
-    # Delay import to avoid circular dependency during decorator import graph.
-    from xtructure.core.xtructure_decorators import (
-        xtructure_dataclass as _xtructure_dataclass,
-    )
-
-    Packed = _xtructure_dataclass(Packed)  # type: ignore[assignment]
+    Packed = dataclass_factory(Packed)  # type: ignore[assignment]
 
     register_generated_class(Packed, role=GENERATED_PACKED_ROLE)
 
     # Build nested logical-view unpacked classes mirroring the original structure,
     # but using default unpack dtypes (bool/uint8/uint32) and with validate=False.
-    UnpackedView, _view_cache = build_unpacked_view_cls(cls)
+    build_unpacked_view_cls = getattr(
+        importlib.import_module(".view", __name__),
+        "build_unpacked_view_cls",
+    )
+    UnpackedView, _view_cache = build_unpacked_view_cls(cls, dataclass_factory)
 
     def _pack_instance(instance: Any) -> tuple[jax.Array, jax.Array]:
         # Determine batch shape from the first field (xtructure invariant already implies consistent batching)
