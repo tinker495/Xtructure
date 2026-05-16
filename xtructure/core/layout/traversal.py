@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-import jax.numpy as jnp
-
+from .conversion import cast_declared_dtype
 from .type_layout import get_type_layout
 from .types import LeafLayout
 
@@ -56,10 +55,12 @@ def build_instance_from_leaf_values(
 
         value = leaf_values[path]
         if cast_declared:
-            try:
-                value = jnp.asarray(value).astype(field.dtype)
-            except TypeError:
-                pass
+            value = cast_declared_dtype(
+                value,
+                field.dtype,
+                path=path,
+                context=f"reconstructing {target_cls.__name__}",
+            )
         kwargs[field.name] = value
 
     return target_cls(**kwargs)

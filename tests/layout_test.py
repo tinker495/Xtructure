@@ -209,6 +209,18 @@ def test_type_layout_rejects_unsupported_dtype_kind_at_definition_time():
             value: FieldDescriptor.scalar(dtype=jnp.complex64)
 
 
+def test_build_instance_from_leaf_values_cast_declared_fails_with_context():
+    with pytest.raises(TypeError, match="Failed to cast leaf 'id'.*LayoutPrimitive"):
+        build_instance_from_leaf_values(
+            LayoutPrimitive,
+            {
+                ("id",): object(),
+                ("vector",): jnp.ones((3,), dtype=jnp.float32),
+            },
+            cast_declared=True,
+        )
+
+
 def test_type_layout_namedtuple_class_names_preserved():
     """Public namedtuple class names are part of the API contract for shape/dtype."""
     layout = get_type_layout(LayoutPrimitive)

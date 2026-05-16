@@ -24,6 +24,7 @@ from jax import lax
 from xtructure.core.field_descriptors import FieldDescriptor
 from xtructure.core.layout import get_type_layout
 from xtructure.core.layout.bitpack import ceil_div
+from xtructure.core.layout.conversion import cast_declared_dtype
 from xtructure.core.layout.traversal import (
     build_instance_from_leaf_values,
     get_path_value,
@@ -291,10 +292,12 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
             out = decoded.reshape(batch + (decoded.shape[1],))
 
         if dtype_policy == "declared":
-            try:
-                out = out.astype(spec.declared_dtype)
-            except TypeError:
-                pass
+            out = cast_declared_dtype(
+                out,
+                spec.declared_dtype,
+                path=spec.path,
+                context=f"unpacking {packed_name}.{name}",
+            )
         return out
 
     setattr(Packed, "unpack_field", unpack_field)

@@ -9,6 +9,7 @@ import numpy as np
 
 from xtructure.core.layout import get_type_layout
 from xtructure.core.layout.bitpack import from_uint8, to_uint8
+from xtructure.core.layout.conversion import cast_declared_dtype
 from xtructure.core.layout.traversal import (
     build_instance_from_leaf_values,
     iter_leaf_values,
@@ -94,11 +95,12 @@ def _load_leaf_value(leaf: LeafLayout, data: Dict[str, Any], owner_name: str) ->
         shape = tuple(int(x) for x in np.asarray(data[shape_key]).reshape(-1))
         packed_bytes = jnp.array(data[data_key], dtype=jnp.uint8)
         unpacked = from_uint8(packed_bytes, target_shape=shape, active_bits=bits)
-        try:
-            unpacked = unpacked.astype(leaf.declared_dtype)
-        except TypeError:
-            pass
-        return unpacked
+        return cast_declared_dtype(
+            unpacked,
+            leaf.declared_dtype,
+            path=leaf.path,
+            context=f"loading {owner_name}",
+        )
 
     if full_key in data:
         return jnp.array(data[full_key])

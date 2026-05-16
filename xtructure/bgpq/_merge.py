@@ -5,7 +5,7 @@ import jax
 
 from ..core import Xtructurable
 from ..core import xtructure_numpy as xnp
-from ._constants import merge_array_backend
+from ._backend import merge_array_backend
 
 
 @jax.jit

@@ -5,6 +5,9 @@ import jax.numpy as jnp
 import pytest
 
 from xtructure import FieldDescriptor, xtructure_dataclass
+from xtructure.core.xtructure_decorators.layout_adapters import (
+    aggregate_bitpack as aggregate_bitpack_module,
+)
 
 
 @xtructure_dataclass(validate=True, bitpack="aggregate")
@@ -213,6 +216,27 @@ def test_aggregate_unpack_field_partial():
     p0 = p[0]
     faces0 = p0.unpack_field("faces")
     chex.assert_trees_all_equal(faces0, s.faces.astype(jnp.uint8)[0])
+
+
+def test_aggregate_unpack_field_declared_dtype_uses_layout_cast_policy(monkeypatch):
+    s = AggState.default()
+    p = s.packed
+    calls = []
+
+    def fail_cast(value, declared_dtype, *, path, context):
+        calls.append((value, declared_dtype, path, context))
+        raise TypeError("sentinel cast failure")
+
+    monkeypatch.setattr(aggregate_bitpack_module, "cast_declared_dtype", fail_cast)
+
+    with pytest.raises(TypeError, match="sentinel cast failure"):
+        p.unpack_field("codes", dtype_policy="declared")
+
+    assert len(calls) == 1
+    _, declared_dtype, path, context = calls[0]
+    assert declared_dtype is jnp.uint16
+    assert path == ("codes",)
+    assert context == "unpacking AggStatePacked.codes"
 
 
 @xtructure_dataclass(validate=True)

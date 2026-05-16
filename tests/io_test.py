@@ -7,6 +7,8 @@ import jax
 import pytest
 
 from tests.testdata import NestedData, SimpleData, VectorData
+from xtructure.core.layout.types import LeafLayout
+from xtructure.io import io as io_module
 
 # --- Test Fixtures ---
 
@@ -109,3 +111,34 @@ def test_load_tolerates_legacy_extra_dtype_metadata(temp_file):
 
     loaded = VectorData.load(temp_file)
     chex.assert_trees_all_equal(instance, loaded)
+
+
+def test_load_leaf_value_cast_failure_includes_leaf_context(monkeypatch):
+    """Packed leaf restore must fail loudly when declared dtype casting fails."""
+
+    import jax.numpy as jnp
+    import numpy as np
+
+    leaf = LeafLayout(
+        path=("payload",),
+        declared_dtype=jnp.uint8,
+        intrinsic_shape=(),
+        local_intrinsic_shape=(),
+        parent_intrinsic_shape=(),
+        bits=8,
+        packed_bits=None,
+        unpacked_dtype=None,
+        unpacked_intrinsic_shape=None,
+        io_pack_bits=8,
+    )
+
+    monkeypatch.setattr(io_module, "from_uint8", lambda *_args, **_kwargs: object())
+
+    data = {
+        "payload.__xtructure_bitpack__.data": np.array([1], dtype=np.uint8),
+        "payload.__xtructure_bitpack__.shape": np.array([], dtype=np.int32),
+        "payload.__xtructure_bitpack__.bits": np.array([8], dtype=np.uint8),
+    }
+
+    with pytest.raises(TypeError, match="payload.*loading ExampleOwner"):
+        io_module._load_leaf_value(leaf, data, "ExampleOwner")

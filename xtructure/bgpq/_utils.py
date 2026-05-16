@@ -6,7 +6,8 @@ import jax.numpy as jnp
 
 from ..core import Xtructurable
 from ..core.container_facts import SIZE_DTYPE
-from ._constants import SORT_STABLE
+
+SORT_STABLE = True  # Use stable sorting to maintain insertion order for equal keys.
 
 
 def sort_arrays(k: chex.Array, v: Xtructurable):
