@@ -14,7 +14,10 @@ from ..core.xtructure_numpy.array_ops import (
     _where_no_broadcast,
 )
 from .constants import SLOT_IDX_DTYPE
-from .hash_utils import _compute_unique_mask_from_uint32eds, get_new_idx_byterized
+from .hash_utils import (
+    _compute_unique_mask_from_uint32eds,
+    get_new_idx_byterized_batched,
+)
 from .lookup import _hashtable_lookup_bucket_jit, _hashtable_lookup_parallel_internal
 from .types import BucketIdx, HashIdx
 
@@ -188,9 +191,9 @@ def _hashtable_parallel_insert_jit(
     bucket_size_u32 = SIZE_DTYPE(table.bucket_size)
 
     def _process_insert(filled_mask):
-        initial_idx, steps, uint32eds, fingerprints = jax.vmap(
-            get_new_idx_byterized, in_axes=(0, None, None)
-        )(inputs, table._capacity, table.seed)
+        initial_idx, steps, uint32eds, fingerprints = get_new_idx_byterized_batched(
+            inputs, table._capacity, table.seed
+        )
 
         unique_filled, representative_indices = _compute_unique_mask_from_uint32eds(
             uint32eds=uint32eds,

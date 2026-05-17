@@ -8,9 +8,6 @@ from tests.xnp.shared_data import HashableData
 from xtructure import FieldDescriptor
 from xtructure import numpy as xnp
 from xtructure import xtructure_dataclass
-from xtructure.core.xtructure_numpy.dataclass_ops.unique_ops.optimized_unique_ops import (
-    _batched_uint32_keys,
-)
 
 
 @xtructure_dataclass
@@ -278,8 +275,8 @@ def test_unique_mask_return_index_with_cost_is_jit_static():
     )
 
 
-def test_unique_mask_default_key_matches_scalar_uint32ed_for_mixed_width_leaves():
-    """Batched default key generation should match per-row uint32ed semantics."""
+def test_unique_mask_default_key_uses_polymorphic_uint32ed():
+    """Default key uses the batched polymorphic .uint32ed property directly."""
     data = MixedWidthHashData.default(shape=(4,))
     data = data.replace(
         flag=jnp.array([True, False, True, False]),
@@ -294,7 +291,7 @@ def test_unique_mask_default_key_matches_scalar_uint32ed_for_mixed_width_leaves(
         score=jnp.array([1.5, 2.5, 1.5, 2.5], dtype=jnp.float16),
     )
 
-    batched_keys = _batched_uint32_keys(data, batch_len=4)
+    batched_keys = data.uint32ed
     scalar_keys = jax.vmap(lambda x: x.uint32ed)(data)
 
     assert jnp.array_equal(batched_keys, scalar_keys)

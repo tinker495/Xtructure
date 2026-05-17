@@ -10,7 +10,7 @@ import jax.numpy as jnp
 from ..core.container_facts import SIZE_DTYPE
 from ..core.protocol import Xtructurable
 from .constants import SLOT_IDX_DTYPE
-from .hash_utils import get_new_idx_byterized
+from .hash_utils import get_new_idx_byterized, get_new_idx_byterized_batched
 from .types import BucketIdx, HashIdx
 
 
@@ -254,9 +254,9 @@ def _hashtable_lookup_parallel_jit(
     batch_size = inputs.shape.batch
 
     def _process_batch(filled_mask):
-        initial_idx, steps, _uint32eds, fingerprints = jax.vmap(
-            get_new_idx_byterized, in_axes=(0, None, None)
-        )(inputs, table._capacity, table.seed)
+        initial_idx, steps, _uint32eds, fingerprints = get_new_idx_byterized_batched(
+            inputs, table._capacity, table.seed
+        )
 
         idxs = BucketIdx(index=initial_idx, slot_index=jnp.zeros(batch_size, dtype=SLOT_IDX_DTYPE))
         founds = jnp.zeros(batch_size, dtype=jnp.bool_)

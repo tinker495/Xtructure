@@ -7,99 +7,7 @@ from typing import Any, Callable, Union
 import jax
 import jax.numpy as jnp
 
-from ....dtype_facts import DTypeKind, dtype_kind
 from ....xtructure_decorators import Xtructurable
-
-
-def _pack_uint8_rows(rows: jnp.ndarray) -> jnp.ndarray:
-    """Pack ``(batch, bytes)`` uint8 rows into per-row uint32 lanes."""
-    rows = jnp.asarray(rows, dtype=jnp.uint8)
-    batch_len, row_len = rows.shape
-    pad_len = (-row_len) % 4
-    if pad_len:
-        rows = jnp.pad(rows, ((0, 0), (0, pad_len)), mode="constant", constant_values=0)
-    if rows.shape[1] == 0:
-        return jnp.zeros((batch_len, 0), dtype=jnp.uint32)
-    chunks = rows.reshape(batch_len, -1, 4)
-    return jax.lax.bitcast_convert_type(chunks, jnp.uint32).reshape(batch_len, -1)
-
-
-def _pack_uint16_rows(rows: jnp.ndarray) -> jnp.ndarray:
-    """Pack ``(batch, lanes)`` uint16 rows into per-row uint32 lanes."""
-    rows = jnp.asarray(rows, dtype=jnp.uint16)
-    batch_len, row_len = rows.shape
-    pad_len = (-row_len) % 2
-    if pad_len:
-        rows = jnp.pad(rows, ((0, 0), (0, pad_len)), mode="constant", constant_values=0)
-    if rows.shape[1] == 0:
-        return jnp.zeros((batch_len, 0), dtype=jnp.uint32)
-    pairs = rows.reshape(batch_len, -1, 2)
-    lo = pairs[:, :, 0].astype(jnp.uint32)
-    hi = pairs[:, :, 1].astype(jnp.uint32)
-    return lo | (hi << jnp.uint32(16))
-
-
-def _split_uint64_rows(rows: jnp.ndarray) -> jnp.ndarray:
-    """Split ``(batch, lanes)`` uint64 rows into interleaved uint32 lanes."""
-    rows = jnp.asarray(rows, dtype=jnp.uint64)
-    lo = (rows & jnp.uint64(0xFFFFFFFF)).astype(jnp.uint32)
-    hi = (rows >> jnp.uint64(32)).astype(jnp.uint32)
-    return jnp.stack((lo, hi), axis=-1).reshape(rows.shape[0], -1)
-
-
-def _leaf_to_uint32_rows(leaf: Any, batch_len: int) -> jnp.ndarray:
-    """Convert a batched PyTree leaf into row-wise uint32 lanes.
-
-    This mirrors ``jax.vmap(lambda x: x.uint32ed)(val)`` for the default
-    unique key without rematerializing one scalar PyTree conversion per row.
-    Padding is applied per row and per leaf, matching the scalar ``uint32ed``
-    representation used by the hash decorator.
-    """
-    leaf = jnp.asarray(leaf)
-    if leaf.ndim == 0 or leaf.shape[0] != batch_len:
-        raise ValueError(
-            "default unique key generation expects every dynamic leaf to carry "
-            f"leading batch dimension {batch_len}; got leaf shape {leaf.shape}."
-        )
-
-    rows = leaf.reshape(batch_len, -1)
-    kind = dtype_kind(leaf.dtype)
-
-    if kind is DTypeKind.BOOL:
-        return _pack_uint8_rows(rows.astype(jnp.uint8))
-
-    if kind in (DTypeKind.UINT, DTypeKind.INT):
-        bits = jnp.iinfo(leaf.dtype).bits
-        if bits == 8:
-            return _pack_uint8_rows(rows.astype(jnp.uint8))
-        if bits == 16:
-            return _pack_uint16_rows(rows.astype(jnp.uint16))
-        if bits == 32:
-            return rows.astype(jnp.uint32)
-        if bits == 64:
-            return _split_uint64_rows(rows.astype(jnp.uint64))
-
-    if kind is DTypeKind.FLOAT:
-        if leaf.dtype == jnp.float32:
-            return jax.lax.bitcast_convert_type(rows, jnp.uint32).reshape(batch_len, -1)
-        if leaf.dtype == jnp.float64:
-            uint64_rows = jax.lax.bitcast_convert_type(rows, jnp.uint64).reshape(batch_len, -1)
-            return _split_uint64_rows(uint64_rows)
-        if leaf.dtype in (jnp.float16, jnp.bfloat16):
-            uint16_rows = jax.lax.bitcast_convert_type(rows, jnp.uint16).reshape(batch_len, -1)
-            return _pack_uint16_rows(uint16_rows)
-
-    raise TypeError(f"Unsupported DType Kind for unique key encoding: {leaf.dtype!r}.")
-
-
-def _batched_uint32_keys(val: Xtructurable, batch_len: int) -> jnp.ndarray:
-    """Return row-wise default ``uint32ed`` keys for a batched Xtructurable."""
-    uint32_leaves = [
-        _leaf_to_uint32_rows(leaf, batch_len) for leaf in jax.tree_util.tree_leaves(val)
-    ]
-    if not uint32_leaves:
-        return jnp.zeros((batch_len, 0), dtype=jnp.uint32)
-    return jnp.concatenate(uint32_leaves, axis=1)
 
 
 def _hash_to_wide(keys: jnp.ndarray) -> list[jnp.ndarray]:
@@ -299,15 +207,16 @@ def unique_mask(
 
     # 1. Generate keys for uniqueness.
     #
-    # The default key is exactly each row's ``uint32ed`` representation.  Build
-    # it directly from batched leaves so the common path avoids a per-row vmap
-    # around the scalar hash adapter.  Custom key functions keep the previous
-    # vmap contract.
+    # The default key is each row's ``uint32ed`` representation.  ``.uint32ed``
+    # is Instance Layout-aware and returns ``(batch, lanes)`` for BATCHED
+    # instances, so the common path consumes one decorator-attached seam
+    # owned by the hash adapter.  Custom key functions keep the previous vmap
+    # contract.
     try:
         if key_fn is None:
             if not hasattr(val, "uint32ed"):
                 raise AttributeError("value does not expose uint32ed")
-            unique_keys = _batched_uint32_keys(val, batch_len)
+            unique_keys = val.uint32ed
         else:
             unique_keys = jax.vmap(key_fn)(val)
     except Exception as e:

@@ -187,17 +187,47 @@ def test_uint32ed_padding_for_non_multiple_of_four_bytes():
 
 def test_hash_byte_encoding_rejects_unknown_dtype_kind():
     with pytest.raises(TypeError, match="DType Kind"):
-        hash_adapter._to_uint32(jnp.asarray([1 + 2j], dtype=jnp.complex64))
+        hash_adapter.tree_to_uint32(jnp.asarray([1 + 2j], dtype=jnp.complex64))
 
 
 def test_hash_decorator_attaches_module_level_functions():
     sample = OddBytesValue47(payload=jnp.asarray(jnp.arange(47, dtype=jnp.uint8)))
 
-    assert OddBytesValue47.bytes.fget is hash_adapter._byterize
-    assert OddBytesValue47.uint32ed.fget is hash_adapter._to_uint32
+    assert OddBytesValue47.bytes.fget is hash_adapter.tree_to_bytes
+    assert OddBytesValue47.uint32ed.fget is hash_adapter._uint32ed
     assert OddBytesValue47.hash is hash_adapter._h
     assert OddBytesValue47.hash_with_uint32ed is hash_adapter._h_with_uint32ed
 
-    assert jnp.array_equal(sample.bytes, hash_adapter._byterize(sample))
-    assert jnp.array_equal(sample.uint32ed, hash_adapter._to_uint32(sample))
+    assert jnp.array_equal(sample.bytes, hash_adapter.tree_to_bytes(sample))
+    assert jnp.array_equal(sample.uint32ed, hash_adapter.tree_to_uint32(sample))
     assert sample.hash(0) == hash_adapter._h(sample, 0)
+
+
+def test_uint32ed_is_instance_layout_aware():
+    expected_words = (47 + 3) // 4  # 12
+
+    single = OddBytesValue47(payload=jnp.arange(47, dtype=jnp.uint8))
+    assert single.uint32ed.shape == (expected_words,)
+
+    batched = OddBytesValue47.default((3,))
+    assert batched.uint32ed.shape == (3, expected_words)
+
+    vmap_result = jax.vmap(lambda x: x.uint32ed)(batched)
+    assert jnp.array_equal(batched.uint32ed, vmap_result)
+
+
+def test_hash_is_instance_layout_aware():
+    single = OddBytesValue47(payload=jnp.arange(47, dtype=jnp.uint8))
+    batched = OddBytesValue47.default((3,))
+
+    assert jnp.ndim(single.hash(0)) == 0
+
+    assert batched.hash(0).shape == (3,)
+
+    vmap_result = jax.vmap(lambda x: x.hash(0))(batched)
+    assert jnp.array_equal(batched.hash(0), vmap_result)
+
+
+def test_uint32ed_unstructured_raises():
+    # TODO: Construct an UNSTRUCTURED instance once the construction path is known.
+    pytest.skip("UNSTRUCTURED construction path TBD")

@@ -8,7 +8,10 @@ import jax.numpy as jnp
 
 from ..core.container_facts import SIZE_DTYPE
 from ..core.protocol import Xtructurable
-from ..core.xtructure_decorators.pytree_adapters.hash import uint32ed_to_hash
+from ..core.xtructure_decorators.pytree_adapters.hash import (
+    hash_fast_uint32ed,
+    hash_fast_uint32ed_batched,
+)
 from .constants import (
     DOUBLE_HASH_SECONDARY_DELTA,
     FINGERPRINT_MIX_CONSTANT_A,
@@ -123,9 +126,32 @@ def get_new_idx_byterized(
     hash_value, uint32ed = input.hash_with_uint32ed(seed)
     seed_u32 = jnp.asarray(seed, dtype=jnp.uint32)
     secondary_seed = jnp.bitwise_xor(seed_u32, DOUBLE_HASH_SECONDARY_DELTA)
-    secondary_hash = uint32ed_to_hash(uint32ed, secondary_seed)
+    secondary_hash = hash_fast_uint32ed(uint32ed, secondary_seed)
     idx = _modulus_reduce(hash_value, modulus)
     step = _normalize_probe_step(secondary_hash, modulus)
     length = jnp.uint32(uint32ed.size)
     fingerprint = _mix_fingerprint(hash_value, secondary_hash, length)
+    return idx, step, uint32ed, fingerprint
+
+
+def get_new_idx_byterized_batched(
+    inputs: Xtructurable,
+    modulus: int,
+    seed: int,
+) -> tuple[chex.Array, chex.Array, chex.Array, chex.Array]:
+    """Batched twin of :func:`get_new_idx_byterized`.
+
+    Consumes the **Instance Layout-aware** ``.hash_with_uint32ed`` BATCHED
+    surface (returns ``((n,), (n, lanes))``) and the row-wise hash reducer to
+    avoid the per-row ``jax.vmap(get_new_idx_byterized, in_axes=(0, None, None))``
+    wrapper that BATCHED parallel insert / lookup paths previously needed.
+    """
+    hash_value, uint32ed = inputs.hash_with_uint32ed(seed)  # ((n,), (n, lanes))
+    seed_u32 = jnp.asarray(seed, dtype=jnp.uint32)
+    secondary_seed = jnp.bitwise_xor(seed_u32, DOUBLE_HASH_SECONDARY_DELTA)
+    secondary_hash = hash_fast_uint32ed_batched(uint32ed, secondary_seed)  # (n,)
+    idx = _modulus_reduce(hash_value, modulus)  # (n,)
+    step = _normalize_probe_step(secondary_hash, modulus)  # (n,)
+    length = jnp.uint32(uint32ed.shape[1])  # scalar (per-row lane count)
+    fingerprint = _mix_fingerprint(hash_value, secondary_hash, length)  # (n,)
     return idx, step, uint32ed, fingerprint
