@@ -10,7 +10,6 @@ import numpy as np
 
 from ....field_descriptors import FieldDescriptor
 from ....xtructure_decorators import Xtructurable, xtructure_dataclass
-from .legacy_unique_ops import unique_mask_legacy
 from .optimized_unique_ops import unique_mask
 
 # -----------------------------------------------------------------------------
@@ -156,8 +155,7 @@ def run_bench(
     print("-" * 80)
 
     methods = {
-        "legacy": unique_mask_legacy,
-        "lexsort": unique_mask,
+        "optimized": unique_mask,
     }
 
     winners: Dict[Tuple[int, float], str] = {}
@@ -186,19 +184,6 @@ def run_bench(
             winner = min(results.items(), key=lambda x: x[1]["median_ms"])[0]
             winners[(size, dup)] = winner
 
-            legacy_ms = results["legacy"]["median_ms"]
-            lexsort_ms = results["lexsort"]["median_ms"]
-            if legacy_ms > 0 and lexsort_ms > 0:
-                speedup = legacy_ms / lexsort_ms
-                percentage = (speedup - 1) * 100
-                if speedup >= 1.0:
-                    print(
-                        f"  Speedup (Legacy -> Lexsort): {speedup:.2f}x ({percentage:.1f}% faster)"
-                    )
-                else:
-                    slowdown = (1 / speedup - 1) * 100
-                    print(f"  Speedup (Legacy -> Lexsort): {speedup:.2f}x ({slowdown:.1f}% slower)")
-
     print("\nSummary (Winner by Setting):")
     for (size, dup), winner in winners.items():
         print(f"  Size={size:<8} Dup={dup*100:<3.0f}% : {winner}")
@@ -207,7 +192,11 @@ def run_bench(
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Benchmark unique_mask implementations.")
     parser.add_argument(
-        "--sizes", type=int, nargs="+", default=[4096, 16384, 65536], help="Batch sizes to test."
+        "--sizes",
+        type=int,
+        nargs="+",
+        default=[4096, 16384, 65536],
+        help="Batch sizes to test.",
     )
     parser.add_argument(
         "--duplication",

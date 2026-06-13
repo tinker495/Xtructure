@@ -78,10 +78,12 @@ def _unique_mask_exact(
     return_index: bool,
     return_inverse: bool,
 ) -> Union[jnp.ndarray, tuple]:
-    """Exact small-key path backed by ``jnp.unique``.
+    """Exact non-uint32 path backed by ``jnp.unique``.
 
-    This avoids wide-hash overhead for narrow keys and preserves full precision
-    for custom key functions that return non-uint32 values.
+    This preserves full precision for custom key functions that return
+    non-uint32 values. Default Value Uint32 Encoding keys stay on the lexsort
+    path where profiling shows steadier performance across duplicate
+    distributions.
     """
     unique_input = unique_keys
     if filled is not None:
@@ -104,42 +106,73 @@ def _unique_mask_exact(
             return final_mask
         return (final_mask, _unique_indices_from_mask(final_mask, batch_len))
 
-    _, inv = jnp.unique(
-        unique_input,
-        axis=0,
-        size=batch_len,
-        return_inverse=True,
-    )
-
     batch_idx = jnp.arange(batch_len, dtype=jnp.int32)
 
     if key is None:
+        _, inv = jnp.unique(
+            unique_input,
+            axis=0,
+            size=batch_len,
+            return_inverse=True,
+        )
         candidate_indices = (
             jnp.where(filled, batch_idx, batch_len) if filled is not None else batch_idx
         )
-    else:
+
+        representative_per_group = (
+            jnp.full((batch_len,), batch_len, dtype=jnp.int32).at[inv].min(candidate_indices)
+        )
+        representative_per_group = jnp.where(
+            representative_per_group == batch_len, 0, representative_per_group
+        )
+        representative_for_item = representative_per_group[inv]
+        final_mask = batch_idx == representative_for_item
         if filled is not None:
-            inf_fill = jnp.array(jnp.inf, dtype=key.dtype)
-            masked_key = jnp.where(filled, key, inf_fill)
-        else:
-            masked_key = key
+            final_mask = jnp.logical_and(final_mask, filled)
 
-        min_keys = jnp.full((batch_len,), jnp.inf, dtype=masked_key.dtype).at[inv].min(masked_key)
-        is_min_key = masked_key == min_keys[inv]
-        candidate_mask = jnp.logical_and(is_min_key, filled) if filled is not None else is_min_key
-        candidate_indices = jnp.where(candidate_mask, batch_idx, batch_len)
+        if not return_index and not return_inverse:
+            return final_mask
 
-    representative_per_group = (
-        jnp.full((batch_len,), batch_len, dtype=jnp.int32).at[inv].min(candidate_indices)
+        returns = (final_mask,)
+        if return_index:
+            returns += (_unique_indices_from_mask(final_mask, batch_len),)
+        if return_inverse:
+            returns += (inv,)
+        return returns
+
+    # Cost-aware exact path intentionally asks for both index and inverse:
+    # asking jnp.unique for both return_index and return_inverse is faster for
+    # duplicate-heavy exact workloads than the inverse-only lowering.
+    _, _unique_indices, inv = jnp.unique(
+        unique_input,
+        axis=0,
+        size=batch_len,
+        return_index=True,
+        return_inverse=True,
     )
-    representative_per_group = jnp.where(
-        representative_per_group == batch_len, 0, representative_per_group
-    )
-    representative_for_item = representative_per_group[inv]
-    final_mask = batch_idx == representative_for_item
+
     if filled is not None:
-        final_mask = jnp.logical_and(final_mask, filled)
-    elif key is not None:
+        inf_fill = jnp.array(jnp.inf, dtype=key.dtype)
+        masked_key = jnp.where(filled, key, inf_fill)
+    else:
+        masked_key = key
+
+    min_costs_per_group = jnp.full((batch_len,), jnp.inf, dtype=key.dtype)
+    min_costs_per_group = min_costs_per_group.at[inv].min(masked_key)
+
+    min_cost_for_each_item = min_costs_per_group[inv]
+    is_min_cost = masked_key == min_cost_for_each_item
+
+    can_be_considered = jnp.logical_and(is_min_cost, filled) if filled is not None else is_min_cost
+    indices_to_consider = jnp.where(can_be_considered, batch_idx, batch_len)
+
+    winning_indices_per_group = jnp.full((batch_len,), batch_len, dtype=jnp.int32)
+    winning_indices_per_group = winning_indices_per_group.at[inv].min(indices_to_consider)
+
+    winning_index_for_each_item = winning_indices_per_group[inv]
+    final_mask = batch_idx == winning_index_for_each_item
+
+    if filled is None:
         final_mask = jnp.logical_and(final_mask, key < jnp.inf)
 
     if not return_index and not return_inverse:
@@ -150,6 +183,75 @@ def _unique_mask_exact(
         returns += (_unique_indices_from_mask(final_mask, batch_len),)
     if return_inverse:
         returns += (inv,)
+    return returns
+
+
+def _unique_mask_uint32_lexsort(
+    keys_flat: jnp.ndarray,
+    key: jnp.ndarray | None,
+    filled: jnp.ndarray | None,
+    batch_len: int,
+    return_index: bool,
+    return_inverse: bool,
+) -> Union[jnp.ndarray, tuple]:
+    """Uint32 Value Encoding path backed by lexsort.
+
+    This is the common default-key implementation. It keeps narrow and wide
+    uint32 encodings on one path, avoiding narrow ``jnp.unique`` lowering
+    variance while still hashing wider rows down to a fixed-width sort key.
+    """
+    hashes = _hash_to_wide(keys_flat)
+
+    if filled is not None:
+        for i in range(len(hashes)):
+            dtype = hashes[i].dtype
+            max_val = jnp.array(jnp.iinfo(dtype).max, dtype=dtype)
+            hashes[i] = jnp.where(filled, hashes[i], max_val)
+
+    sort_keys = []
+
+    if key is not None:
+        if filled is not None:
+            inf_fill = jnp.array(jnp.inf, dtype=key.dtype)
+            valid_key = jnp.where(filled, key, inf_fill)
+        else:
+            valid_key = key
+        sort_keys.append(valid_key)
+    else:
+        sort_keys.append(jnp.arange(batch_len, dtype=jnp.int32))
+
+    sort_keys.extend(reversed(hashes))
+
+    perm = jnp.lexsort(sort_keys)
+    sorted_hashes = [h[perm] for h in hashes]
+
+    diffs = [h[1:] != h[:-1] for h in sorted_hashes]
+    is_diff = diffs[0]
+    for d in diffs[1:]:
+        is_diff = jnp.logical_or(is_diff, d)
+
+    mask_sorted = jnp.concatenate([jnp.array([True]), is_diff])
+
+    if filled is not None:
+        is_valid_sorted = filled[perm]
+        mask_sorted = jnp.logical_and(mask_sorted, is_valid_sorted)
+
+    final_mask = jnp.zeros(batch_len, dtype=jnp.bool_).at[perm].set(mask_sorted)
+
+    if not return_index and not return_inverse:
+        return final_mask
+
+    returns = (final_mask,)
+
+    if return_index:
+        unique_indices = _compact_unique_indices(perm, mask_sorted, batch_len)
+        returns += (unique_indices,)
+
+    if return_inverse:
+        group_id_sorted = jnp.cumsum(mask_sorted) - 1
+        inv = jnp.zeros(batch_len, dtype=jnp.int32).at[perm].set(group_id_sorted)
+        returns += (inv,)
+
     return returns
 
 
@@ -164,11 +266,12 @@ def unique_mask(
 ) -> Union[jnp.ndarray, tuple]:
     """Mask or index information for selecting unique states.
 
-    Adaptive implementation using exact ``jnp.unique`` for narrow or non-uint32
-    keys, and wide hashing + lexsort for wider uint32 keys. The wide path
-    reduces multi-column keys into a fixed-width representation (128-bit),
-    minimizing sorting passes and comparison overhead while maintaining
-    near-zero collision probability for the default uint32 encoding.
+    Adaptive implementation using exact ``jnp.unique`` for non-uint32 custom
+    keys and wide hashing + lexsort for the default uint32 Value Encoding
+    path. The wide path reduces multi-column keys into a fixed-width
+    representation (128-bit), minimizing sorting passes and comparison
+    overhead while maintaining near-zero collision probability for the default
+    uint32 encoding.
 
     Args:
         val: Xtructurable dataclass to deduplicate.
@@ -214,8 +317,6 @@ def unique_mask(
     # contract.
     try:
         if key_fn is None:
-            if not hasattr(val, "uint32ed"):
-                raise AttributeError("value does not expose uint32ed")
             unique_keys = val.uint32ed
         else:
             unique_keys = jax.vmap(key_fn)(val)
@@ -224,7 +325,8 @@ def unique_mask(
 
     keys_flat = unique_keys.reshape(batch_len, -1)
 
-    if keys_flat.shape[1] > 0 and (keys_flat.dtype != jnp.uint32 or keys_flat.shape[1] <= 2):
+    use_exact_path = keys_flat.shape[1] > 0 and keys_flat.dtype != jnp.uint32
+    if use_exact_path:
         return _unique_mask_exact(
             unique_keys=unique_keys,
             key=key,
@@ -234,68 +336,11 @@ def unique_mask(
             return_inverse=return_inverse,
         )
 
-    # 2. Wide Hashing to reduce sort columns (128-bit)
-    hashes = _hash_to_wide(keys_flat)
-
-    # 3. Handle filled: invalid items get MAX_KEY so they sort to the end
-    if filled is not None:
-        for i in range(len(hashes)):
-            dtype = hashes[i].dtype
-            max_val = jnp.array(jnp.iinfo(dtype).max, dtype=dtype)
-            hashes[i] = jnp.where(filled, hashes[i], max_val)
-
-    # 4. Prepare columns for lexsort
-    sort_keys = []
-
-    if key is not None:
-        if filled is not None:
-            inf_fill = jnp.array(jnp.inf, dtype=key.dtype)
-            valid_key = jnp.where(filled, key, inf_fill)
-        else:
-            valid_key = key
-        sort_keys.append(valid_key)
-    else:
-        # Stable sort: prefer earlier index
-        sort_keys.append(jnp.arange(batch_len, dtype=jnp.int32))
-
-    # Add hashes as primary (last in lexsort list).
-    # Reversed so the first hash is most significant.
-    sort_keys.extend(reversed(hashes))
-
-    # 5. Perform Lexsort
-    perm = jnp.lexsort(sort_keys)
-
-    # 6. Compute unique mask from sorted hashes
-    sorted_hashes = [h[perm] for h in hashes]
-
-    # Row i is unique if it differs from i-1 in ANY of the hashes
-    diffs = [h[1:] != h[:-1] for h in sorted_hashes]
-    is_diff = diffs[0]
-    for d in diffs[1:]:
-        is_diff = jnp.logical_or(is_diff, d)
-
-    mask_sorted = jnp.concatenate([jnp.array([True]), is_diff])
-
-    # 7. Filter out the "filled=False" group
-    if filled is not None:
-        is_valid_sorted = filled[perm]
-        mask_sorted = jnp.logical_and(mask_sorted, is_valid_sorted)
-
-    # 8. Map back to original order
-    final_mask = jnp.zeros(batch_len, dtype=jnp.bool_).at[perm].set(mask_sorted)
-
-    if not return_index and not return_inverse:
-        return final_mask
-
-    returns = (final_mask,)
-
-    if return_index:
-        unique_indices = _compact_unique_indices(perm, mask_sorted, batch_len)
-        returns += (unique_indices,)
-
-    if return_inverse:
-        group_id_sorted = jnp.cumsum(mask_sorted) - 1
-        inv = jnp.zeros(batch_len, dtype=jnp.int32).at[perm].set(group_id_sorted)
-        returns += (inv,)
-
-    return returns
+    return _unique_mask_uint32_lexsort(
+        keys_flat=keys_flat,
+        key=key,
+        filled=filled,
+        batch_len=batch_len,
+        return_index=return_index,
+        return_inverse=return_inverse,
+    )
