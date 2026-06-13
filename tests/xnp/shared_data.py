@@ -1,37 +1,14 @@
-"""Shared dataclasses used across xnp tests."""
+"""Shared dataclasses used across xnp tests.
 
-import jax.numpy as jnp
+These re-export the canonical test dataclasses from ``tests.testdata`` so the
+xnp suite shares one definition with the rest of the component tests.
+``HashableData`` is an alias for ``SimpleData``: it is used only as a hashable
+carrier in ``unique_mask`` tests, and ``SimpleData`` (same ``id``/``value``
+fields) hashes identically.
+"""
 
-from xtructure import FieldDescriptor, xtructure_dataclass
+from tests.testdata import NestedData, SimpleData, VectorData
 
+HashableData = SimpleData
 
-@xtructure_dataclass
-class SimpleData:
-    """Basic scalar dataclass used in multiple xnp tests."""
-
-    id: FieldDescriptor.scalar(dtype=jnp.uint32)
-    value: FieldDescriptor.scalar(dtype=jnp.float32)
-
-
-@xtructure_dataclass
-class VectorData:
-    """Dataclass with fixed vector fields for batch and vector ops."""
-
-    position: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))
-    velocity: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))
-
-
-@xtructure_dataclass
-class NestedData:
-    """Nested dataclass combining simple and vector fields."""
-
-    simple: FieldDescriptor.scalar(dtype=SimpleData)
-    vector: FieldDescriptor.scalar(dtype=VectorData)
-
-
-@xtructure_dataclass
-class HashableData:
-    """Dataclass with fields that support hashing for unique_mask tests."""
-
-    id: FieldDescriptor.scalar(dtype=jnp.uint32)
-    value: FieldDescriptor.scalar(dtype=jnp.float32)
+__all__ = ["SimpleData", "VectorData", "NestedData", "HashableData"]

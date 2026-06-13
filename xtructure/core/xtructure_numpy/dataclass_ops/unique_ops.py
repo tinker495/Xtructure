@@ -7,7 +7,7 @@ from typing import Any, Callable, Union
 import jax
 import jax.numpy as jnp
 
-from ....xtructure_decorators import Xtructurable
+from ...xtructure_decorators import Xtructurable
 
 
 def _hash_to_wide(keys: jnp.ndarray) -> list[jnp.ndarray]:
