@@ -8,8 +8,6 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 import jax
 import jax.numpy as jnp
 import numpy as np
-from rich.console import Console
-from rich.table import Table
 
 from xtructure import FieldDescriptor, xtructure_dataclass
 
@@ -288,24 +286,13 @@ def throughput_stats(num_ops: int, durations: Iterable[float]) -> Dict[str, floa
 
 
 def print_results_table(results: Dict[str, Any], title: str):
-    """
-    Displays benchmark results in a formatted table using the rich library.
-    """
-    console = Console()
-    table = Table(title=title, show_header=True, header_style="bold magenta")
-
-    table.add_column("Batch Size", justify="right", style="cyan")
-    table.add_column("Operation", style="green")
-    table.add_column("Implementation", style="yellow")
-    table.add_column("Ops/Sec (Median)", justify="right", style="bold blue")
-    table.add_column("IQR", justify="right", style="dim blue")
-    table.add_column("P99 (Ops/Sec)", justify="right", style="dim cyan")
-
+    """Print benchmark results as a plain text table."""
     batch_sizes = results.get("batch_sizes", [])
     xtructure_results = results.get("xtructure", {})
     python_results = results.get("python", {})
 
     operations = list(xtructure_results.keys())
+    rows = []
 
     for i, size in enumerate(batch_sizes):
         for op in operations:
@@ -323,13 +310,15 @@ def print_results_table(results: Dict[str, Any], title: str):
                 xtructure_perf = xtructure_data
                 xtructure_iqr = 0
 
-            table.add_row(
-                f"{size:,}",
-                op_name,
-                "xtructure",
-                human_format(xtructure_perf),
-                f"±{human_format(xtructure_iqr)}",
-                xtructure_p99,
+            rows.append(
+                (
+                    f"{size:,}",
+                    op_name,
+                    "xtructure",
+                    human_format(xtructure_perf),
+                    f"±{human_format(xtructure_iqr)}",
+                    xtructure_p99,
+                )
             )
 
             # Add row for python
@@ -344,15 +333,27 @@ def print_results_table(results: Dict[str, Any], title: str):
                 python_perf = python_data
                 python_iqr = 0
 
-            table.add_row(
-                "",
-                op_name,
-                "python",
-                human_format(python_perf),
-                f"±{human_format(python_iqr)}",
-                python_p99,
+            rows.append(
+                (
+                    "",
+                    op_name,
+                    "python",
+                    human_format(python_perf),
+                    f"±{human_format(python_iqr)}",
+                    python_p99,
+                )
             )
-        if i < len(batch_sizes) - 1:
-            table.add_row("", "", "", "", "", end_section=True)
 
-    console.print(table)
+    headers = ("Batch Size", "Operation", "Implementation", "Ops/Sec (Median)", "IQR", "P99")
+    widths = [len(header) for header in headers]
+    for row in rows:
+        widths = [max(width, len(value)) for width, value in zip(widths, row)]
+
+    def format_row(row):
+        return "  ".join(value.rjust(width) for value, width in zip(row, widths))
+
+    print(title)
+    print(format_row(headers))
+    print(format_row(tuple("-" * width for width in widths)))
+    for row in rows:
+        print(format_row(row))

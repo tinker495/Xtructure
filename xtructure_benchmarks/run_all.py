@@ -7,29 +7,14 @@ from pathlib import Path
 from typing import List, Optional
 
 from common import human_format
-from rich.console import Console
-from rich.table import Table
 
 
 def display_summary_table():
     """
-    Finds all result files and displays a summary table of the performance
-    at the largest batch size.
+    Finds all result files and prints largest-batch performance.
     """
-    console = Console()
-    table = Table(
-        title="🏆 Benchmark Summary (Largest Batch Size) 🏆",
-        show_header=True,
-        header_style="bold magenta",
-    )
-
-    table.add_column("Data Structure", style="cyan")
-    table.add_column("Operation", style="green")
-    table.add_column("xtructure Ops/Sec", justify="right", style="bold blue")
-    table.add_column("Python Ops/Sec", justify="right", style="bold blue")
-    table.add_column("Ratio (xtructure/Python)", justify="right")
-
     results_dir = Path(__file__).parent / "results"
+    rows = []
     for results_file in sorted(results_dir.glob("*_results.json")):
         with open(results_file, "r") as f:
             data = json.load(f)
@@ -62,17 +47,35 @@ def display_summary_table():
 
             ratio = xtructure_perf / python_perf if python_perf > 0 else float("inf")
 
-            ratio_style = "bold green" if ratio > 1 else "bold red"
-
-            table.add_row(
-                data_structure if i == 0 else "",
-                op_name,
-                f"{human_format(xtructure_perf)}",
-                f"{human_format(python_perf)}",
-                f"[{ratio_style}]{ratio:.2f}x[/{ratio_style}]",
+            rows.append(
+                (
+                    data_structure if i == 0 else "",
+                    op_name,
+                    human_format(xtructure_perf),
+                    human_format(python_perf),
+                    f"{ratio:.2f}x",
+                )
             )
 
-    console.print(table)
+    headers = (
+        "Data Structure",
+        "Operation",
+        "xtructure Ops/Sec",
+        "Python Ops/Sec",
+        "Ratio (xtructure/Python)",
+    )
+    widths = [len(header) for header in headers]
+    for row in rows:
+        widths = [max(width, len(value)) for width, value in zip(widths, row)]
+
+    def format_row(row):
+        return "  ".join(value.rjust(width) for value, width in zip(row, widths))
+
+    print("Benchmark Summary (Largest Batch Size)")
+    print(format_row(headers))
+    print(format_row(tuple("-" * width for width in widths)))
+    for row in rows:
+        print(format_row(row))
 
 
 def run_script(script_path: Path, extra_args: Optional[List[str]] = None):
