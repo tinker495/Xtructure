@@ -155,11 +155,6 @@ class _AtIndexer:
         )
 
 
-# Backwards-compatible alias used by tests / external callers that imported the
-# previous indexer type by name.
-AtIndexer = _AtIndexer
-
-
 def add_indexing_methods(cls: Type[T]) -> Type[T]:
     """
     Augments the class with an `__getitem__` method for indexing/slicing

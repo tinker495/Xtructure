@@ -7,6 +7,7 @@ import pytest
 
 from tests.dataclass.fixtures import NestedData, SimpleData, VectorData
 from xtructure import FieldDescriptor, xtructure_dataclass
+from xtructure.core.xtructure_decorators.layout_adapters import indexing
 
 
 def test_at_set_simple_data():
@@ -42,6 +43,11 @@ def test_at_set_simple_data():
     assert updated_data_slice.value[1] == slice_data_to_set.value[1]
     assert updated_data_slice.id[2] == original_data.id[2]
     assert updated_data_slice.value[2] == original_data.value[2]
+
+
+def test_legacy_at_indexer_alias_is_removed():
+    assert hasattr(indexing, "_AtIndexer")
+    assert not hasattr(indexing, "AtIndexer")
 
 
 def test_at_set_vector_data():
