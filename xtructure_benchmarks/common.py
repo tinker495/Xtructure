@@ -1,16 +1,15 @@
 import gc
+import json
 import os
 import platform
 import time
-import tracemalloc
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 import jax
 import jax.numpy as jnp
 import numpy as np
-from rich.console import Console
-from rich.table import Table
 
 from xtructure import FieldDescriptor, xtructure_dataclass
 
@@ -95,28 +94,16 @@ def validate_results_schema(results: Dict[str, Any]) -> None:
             _validate_entry(e)
 
 
-def _ops_stats(
-    num_ops: int, durations: Iterable[float], peak_memories: Optional[Iterable[float]] = None
-) -> Dict[str, float]:
-    """Compute median/IQR/P99 of per-trial throughput and peak memory."""
+def _ops_stats(num_ops: int, durations: Iterable[float]) -> Dict[str, float]:
+    """Compute median/IQR/P99 throughput from per-trial durations."""
     durations_arr = np.asarray(list(durations), dtype=np.float64)
     ops = num_ops / durations_arr
 
     median_ops = float(np.median(ops))
     q75, q25 = np.percentile(ops, [75, 25])
-    # P99 throughput corresponds to the slowest 1% of trials,
-    # but usually P99 latency is desired. Here we report P99 ops/sec (which is the 1st percentile of speed).
-    # To be less confusing,
-    # let's just store p99_ops which is the performance of the 99th percentile slowest run (1st percentile speed).
     p99_ops = float(np.percentile(ops, 1))
 
-    stats = {"median": median_ops, "iqr": float(q75 - q25), "p99_ops": p99_ops}
-
-    if peak_memories:
-        mem_arr = np.asarray(list(peak_memories), dtype=np.float64)
-        stats["peak_memory_median"] = float(np.median(mem_arr))
-
-    return stats
+    return {"median": median_ops, "iqr": float(q75 - q25), "p99_ops": p99_ops}
 
 
 def get_system_info() -> Dict[str, Any]:
@@ -222,13 +209,8 @@ def run_jax_trials(
     warmup: int = 5,
     include_device_transfer: bool = False,
     args_supplier: Optional[Callable[[], Tuple[Any, ...]]] = None,
-) -> Tuple[List[float], List[float]]:
-    """
-    JITs, warms up, and measures JAX function latency per trial.
-
-    Returns:
-        (durations, peak_memories) - peak_memories is currently a placeholder (0s) for JAX
-    """
+) -> List[float]:
+    """JIT, warm up, and measure JAX function latency per trial."""
 
     jitted = jax.jit(func)
 
@@ -256,20 +238,13 @@ def run_jax_trials(
         end = time.perf_counter()
         durations.append(end - start)
 
-    # JAX memory tracking is complex and requires external tools usually.
-    # For now, returning 0 to indicate "not measured" in this context.
-    peak_memories = [0.0] * trials
-
-    return durations, peak_memories
+    return durations
 
 
 def run_python_trials(
     func: Callable[[], Any], trials: int = 10, warmup: int = 5, disable_gc: bool = False
-) -> Tuple[List[float], List[float]]:
-    """
-    Runs a Python function multiple times.
-    Splits timing and memory measurement to avoid observer effect overhead.
-    """
+) -> List[float]:
+    """Run a Python function multiple times and return per-trial durations."""
 
     # Warmup
     for _ in range(max(1, warmup)):
@@ -304,56 +279,119 @@ def run_python_trials(
         if disable_gc and gc_was_enabled:
             gc.enable()
 
-    # Phase 2: Peak Memory Measurement
-    # We run this separately because tracemalloc slows down execution significantly.
-    # We can use fewer trials or the same number. Using same number for consistency.
-    peak_memories: List[float] = []
+    return durations
 
+
+def throughput_stats(num_ops: int, durations: Iterable[float]) -> Dict[str, float]:
+    """Public helper to compute ops/sec statistics."""
+    return _ops_stats(num_ops, durations)
+
+
+def run_linear_container_benchmarks(
+    *,
+    container_name: str,
+    container_class: Any,
+    add_method: str,
+    remove_method: str,
+    python_add: Callable[[List[PythonBenchmarkValue]], Any],
+    python_remove: Callable[[List[PythonBenchmarkValue], int], Any],
+    mode: str = "kernel",
+    trials: int = 10,
+    batch_sizes: Optional[List[int]] = None,
+    output_path: str,
+    title: str,
+) -> None:
+    """Run the shared Queue/Stack benchmark shape."""
+    batch_sizes = batch_sizes or [2**10, 2**12, 2**14]
+
+    check_system_load()
+
+    results: Dict[str, Any] = {
+        "batch_sizes": batch_sizes,
+        "xtructure": {},
+        "python": {},
+        "environment": get_system_info(),
+    }
+    max_size = int(max(batch_sizes) * 2)
+
+    print(f"Running {container_name} Benchmarks...")
     try:
-        for _ in range(trials):
-            gc.collect()
-
-            tracemalloc.start()
-            # We don't time this run
-            func()
-            _, peak = tracemalloc.get_traced_memory()
-            tracemalloc.stop()
-
-            peak_memories.append(peak / (1024 * 1024))  # Convert to MB
-
+        print(f"JAX backend: {jax.default_backend()}")
+        print("JAX devices:", ", ".join([d.platform + ":" + d.device_kind for d in jax.devices()]))
     except Exception:
-        # Fallback if memory tracking fails or isn't supported
-        peak_memories = [0.0] * trials
+        pass
 
-    return durations, peak_memories
+    add_key = f"{add_method}_ops_per_sec"
+    remove_key = f"{remove_method}_ops_per_sec"
 
+    for batch_size in batch_sizes:
+        print(f"  Batch Size: {batch_size}")
+        key = jax.random.PRNGKey(batch_size)
+        values_device = BenchmarkValue.random(shape=(batch_size,), key=key)
+        values_host = jax.device_get(values_device)
 
-def throughput_stats(num_ops: int, results: Tuple[List[float], List[float]]) -> Dict[str, float]:
-    """Public helper to compute ops/sec and memory statistics."""
-    durations, peak_memories = results
-    return _ops_stats(num_ops, durations, peak_memories)
+        precomputed_items = to_python_values(values_device)
+
+        def materialize_items(include_preprocessing: bool):
+            return to_python_values(values_device) if include_preprocessing else precomputed_items
+
+        container = container_class.build(max_size=max_size, value_class=BenchmarkValue)
+
+        def add_args_supplier():
+            return (jax.device_put(values_host),) if mode == "e2e" else (values_device,)
+
+        add_durations = run_jax_trials(
+            lambda batch: getattr(container, add_method)(batch),
+            trials=trials,
+            args_supplier=add_args_supplier,
+        )
+        add_stats = throughput_stats(batch_size, add_durations)
+
+        filled_container = getattr(container, add_method)(values_device)
+        jax.block_until_ready(filled_container)
+        remove_durations = run_jax_trials(
+            lambda: getattr(filled_container, remove_method)(batch_size),
+            trials=trials,
+            include_device_transfer=(mode == "e2e"),
+        )
+        remove_stats = throughput_stats(batch_size, remove_durations)
+
+        results["xtructure"].setdefault(add_key, []).append(add_stats)
+        results["xtructure"].setdefault(remove_key, []).append(remove_stats)
+
+        def python_add_op():
+            return python_add(materialize_items(mode == "e2e"))
+
+        add_durations = run_python_trials(python_add_op, trials=trials)
+        add_stats = throughput_stats(batch_size, add_durations)
+
+        def python_remove_op():
+            return python_remove(materialize_items(mode == "e2e"), batch_size)
+
+        remove_durations = run_python_trials(python_remove_op, trials=trials)
+        remove_stats = throughput_stats(batch_size, remove_durations)
+
+        results["python"].setdefault(add_key, []).append(add_stats)
+        results["python"].setdefault(remove_key, []).append(remove_stats)
+
+    validate_results_schema(results)
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("w") as f:
+        json.dump(results, f, indent=4)
+
+    print(f"{container_name} benchmark results saved to {output_path}")
+    print_results_table(results, title)
 
 
 def print_results_table(results: Dict[str, Any], title: str):
-    """
-    Displays benchmark results in a formatted table using the rich library.
-    """
-    console = Console()
-    table = Table(title=title, show_header=True, header_style="bold magenta")
-
-    table.add_column("Batch Size", justify="right", style="cyan")
-    table.add_column("Operation", style="green")
-    table.add_column("Implementation", style="yellow")
-    table.add_column("Ops/Sec (Median)", justify="right", style="bold blue")
-    table.add_column("IQR", justify="right", style="dim blue")
-    table.add_column("P99 (Ops/Sec)", justify="right", style="dim cyan")
-    table.add_column("Peak Mem (MB)", justify="right", style="bold red")
-
+    """Print benchmark results as a plain text table."""
     batch_sizes = results.get("batch_sizes", [])
     xtructure_results = results.get("xtructure", {})
     python_results = results.get("python", {})
 
     operations = list(xtructure_results.keys())
+    rows = []
 
     for i, size in enumerate(batch_sizes):
         for op in operations:
@@ -361,57 +399,60 @@ def print_results_table(results: Dict[str, Any], title: str):
 
             # Add row for xtructure
             xtructure_data = xtructure_results.get(op, [])[i]
-            xtructure_mem = "-"
             xtructure_p99 = "-"
             if isinstance(xtructure_data, dict):
                 xtructure_perf = xtructure_data["median"]
                 xtructure_iqr = xtructure_data["iqr"]
                 if "p99_ops" in xtructure_data:
                     xtructure_p99 = human_format(xtructure_data["p99_ops"])
-                if (
-                    "peak_memory_median" in xtructure_data
-                    and xtructure_data["peak_memory_median"] > 0
-                ):
-                    xtructure_mem = f"{xtructure_data['peak_memory_median']:.1f}"
             else:
                 xtructure_perf = xtructure_data
                 xtructure_iqr = 0
 
-            table.add_row(
-                f"{size:,}",
-                op_name,
-                "xtructure",
-                human_format(xtructure_perf),
-                f"±{human_format(xtructure_iqr)}",
-                xtructure_p99,
-                xtructure_mem,
+            rows.append(
+                (
+                    f"{size:,}",
+                    op_name,
+                    "xtructure",
+                    human_format(xtructure_perf),
+                    f"±{human_format(xtructure_iqr)}",
+                    xtructure_p99,
+                )
             )
 
             # Add row for python
             python_data = python_results.get(op, [])[i]
-            python_mem = "-"
             python_p99 = "-"
             if isinstance(python_data, dict):
                 python_perf = python_data["median"]
                 python_iqr = python_data["iqr"]
                 if "p99_ops" in python_data:
                     python_p99 = human_format(python_data["p99_ops"])
-                if "peak_memory_median" in python_data:
-                    python_mem = f"{python_data['peak_memory_median']:.1f}"
             else:
                 python_perf = python_data
                 python_iqr = 0
 
-            table.add_row(
-                "",
-                op_name,
-                "python",
-                human_format(python_perf),
-                f"±{human_format(python_iqr)}",
-                python_p99,
-                python_mem,
+            rows.append(
+                (
+                    "",
+                    op_name,
+                    "python",
+                    human_format(python_perf),
+                    f"±{human_format(python_iqr)}",
+                    python_p99,
+                )
             )
-        if i < len(batch_sizes) - 1:
-            table.add_row("", "", "", "", "", "", end_section=True)
 
-    console.print(table)
+    headers = ("Batch Size", "Operation", "Implementation", "Ops/Sec (Median)", "IQR", "P99")
+    widths = [len(header) for header in headers]
+    for row in rows:
+        widths = [max(width, len(value)) for width, value in zip(widths, row)]
+
+    def format_row(row):
+        return "  ".join(value.rjust(width) for value, width in zip(row, widths))
+
+    print(title)
+    print(format_row(headers))
+    print(format_row(tuple("-" * width for width in widths)))
+    for row in rows:
+        print(format_row(row))

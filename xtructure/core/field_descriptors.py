@@ -2,10 +2,7 @@ from typing import Any, Callable, Dict, Tuple, Type
 
 import jax.numpy as jnp
 
-from xtructure.core.dtype_facts import default_fill_value_for_dtype
-
 from .shape_utils import normalize_shape
-from .type_utils import is_xtructure_dataclass_type
 
 # Represents a JAX dtype, can be a specific type like jnp.int32 or a more generic jnp.dtype
 DType = Any
@@ -253,13 +250,6 @@ class FieldDescriptor:
         else:
             # Single item is treated as dtype
             return cls(item)
-
-
-def _default_fill_value_for_dtype(dtype: DType) -> Any:
-    """Return a dtype-aware sentinel that plays nicely with jnp.full."""
-    if is_xtructure_dataclass_type(dtype):
-        return None
-    return default_fill_value_for_dtype(dtype)
 
 
 # Example usage (to be placed in your class definitions later):

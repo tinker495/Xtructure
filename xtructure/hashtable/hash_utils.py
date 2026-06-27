@@ -34,25 +34,6 @@ def _mix_fingerprint(primary: chex.Array, secondary: chex.Array, length: chex.Ar
     return mix
 
 
-def _first_occurrence_mask(
-    values: chex.Array, active: chex.Array, sentinel: chex.Array
-) -> chex.Array:
-    active = jnp.asarray(active, dtype=jnp.bool_)
-    values = jnp.asarray(values, dtype=jnp.uint32)
-    sentinel = jnp.asarray(sentinel, dtype=jnp.uint32)
-
-    safe_values = jnp.where(active, values, sentinel)
-    _, unique_indices = jnp.unique(
-        safe_values,
-        size=values.shape[0],
-        return_index=True,
-        return_inverse=False,
-        fill_value=sentinel,
-    )
-    mask = jnp.zeros_like(active, dtype=jnp.bool_).at[unique_indices].set(True)
-    return jnp.logical_and(mask, active)
-
-
 def _compute_unique_mask_from_uint32eds(
     uint32eds: chex.Array,
     filled: chex.Array,

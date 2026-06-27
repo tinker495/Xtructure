@@ -7,7 +7,7 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from ..core.container_facts import init_counter, init_value_store
+from ..core.container_facts import SIZE_DTYPE
 from ..core.dataclass import base_dataclass
 from ..core.protocol import Xtructurable
 from .insert import _hashtable_insert_jit, _hashtable_parallel_insert_jit
@@ -35,11 +35,11 @@ def _hashtable_build_jit(
     else:
         _capacity = 1 << (_target_cap - 1).bit_length()
 
-    size = init_counter()
+    size = SIZE_DTYPE(0)
     if max_probes is None:
         max_probes = _capacity * bucket_size
 
-    table = init_value_store(dataclass, ((_capacity + 1) * bucket_size,))
+    table = dataclass.default(((_capacity + 1) * bucket_size,))
     bucket_fill_levels = jnp.zeros((_capacity + 1), dtype=jnp.uint8)
     fingerprints = jnp.zeros(((_capacity + 1) * bucket_size,), dtype=jnp.uint32)
     return HashTable(

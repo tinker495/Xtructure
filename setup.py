@@ -17,7 +17,6 @@ setuptools.setup(
         "jax[cuda]>=0.4.0",
         "chex>=0.1.0",
         "numpy>=2.2.0",
-        "rich",
     ],
     extras_require={
         "dev": [

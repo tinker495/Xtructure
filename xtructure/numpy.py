@@ -1,14 +1,6 @@
-"""
-Backward-compatible alias module for xtructure_numpy.
+"""Canonical NumPy-like helpers for xtructure dataclasses."""
 
-Historically, users imported the NumPy-like helpers via:
+from .core import xtructure_numpy as _xnp
+from .core.xtructure_numpy import *  # noqa: F401,F403
 
-    from xtructure import numpy as xnp
-
-This stub keeps that import path working while all functionality lives in
-`xtructure.xtructure_numpy`. Keeping this file avoids Python import errors for
-code that does `import xtructure.numpy`.
-"""
-
-from .xtructure_numpy import *  # noqa: F401,F403
-
+__all__ = list(_xnp.__all__)

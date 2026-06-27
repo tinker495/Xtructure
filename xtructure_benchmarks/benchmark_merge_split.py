@@ -6,8 +6,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from .parallel import merge_arrays_parallel
-from .split import merge_sort_split_idx
+from xtructure.bgpq.merge_split import merge_arrays_parallel, merge_sort_split_idx
 
 MethodFn = Callable[[jax.Array, jax.Array], Tuple[jax.Array, jax.Array]]
 

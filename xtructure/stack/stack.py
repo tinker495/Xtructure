@@ -3,15 +3,15 @@ from functools import partial
 import jax
 import jax.numpy as jnp  # noqa: F401  # Retained for downstream type hints.
 
-from ..core.container_facts import SIZE_DTYPE, init_counter, init_value_store
+from ..core.container_facts import SIZE_DTYPE
 from ..core.dataclass import base_dataclass
 from ..core.protocol import Xtructurable
 
 
 @partial(jax.jit, static_argnums=(0, 1))
 def _stack_build_jit(max_size: int, value_class: Xtructurable):
-    size = init_counter()
-    val_store = init_value_store(value_class, (max_size,))
+    size = SIZE_DTYPE(0)
+    val_store = value_class.default((max_size,))
     return Stack(max_size=max_size, size=size, val_store=val_store)
 
 

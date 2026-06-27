@@ -3,16 +3,16 @@ from functools import partial
 import jax
 import jax.numpy as jnp  # noqa: F401  # Retained for downstream type hints.
 
-from ..core.container_facts import SIZE_DTYPE, init_counter, init_value_store
+from ..core.container_facts import SIZE_DTYPE
 from ..core.dataclass import base_dataclass
 from ..core.protocol import Xtructurable
 
 
 @partial(jax.jit, static_argnums=(0, 1))
 def _queue_build_jit(max_size: int, value_class: Xtructurable):
-    val_store = init_value_store(value_class, (max_size,))
-    head = init_counter()
-    tail = init_counter()
+    val_store = value_class.default((max_size,))
+    head = SIZE_DTYPE(0)
+    tail = SIZE_DTYPE(0)
     return Queue(max_size=max_size, val_store=val_store, head=head, tail=tail)
 
 
@@ -55,7 +55,7 @@ def _queue_peek_jit(queue, num_items: int = 1):
 
 @jax.jit
 def _queue_clear_jit(queue):
-    return queue.replace(head=init_counter(), tail=init_counter())
+    return queue.replace(head=SIZE_DTYPE(0), tail=SIZE_DTYPE(0))
 
 
 @jax.jit

@@ -1,22 +1,11 @@
-"""Batched Dataclass Renderer.
-
-Owns string serialization of BATCHED xtructure instances. The 2D-grid-vs-1D-flat
-layout and truncation index calculation live here, alongside the small Rich
-table assembly needed to serialize the result.
-"""
+"""Batched dataclass renderer."""
 
 from __future__ import annotations
 
-from io import StringIO
 from typing import Any, Callable, List, Optional
 
 import jax.numpy as jnp
 import numpy as np
-from rich.align import Align
-from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
-from rich.text import Text
 
 
 class BatchedRenderer:
@@ -57,11 +46,11 @@ class BatchedRenderer:
             ]
 
         frame = self._frame(
-            self._grid(rows),
+            rows,
             title=title,
             subtitle=f"shape: {batch_shape}",
         )
-        return self._to_str(frame)
+        return frame
 
     def _build_2d_rows(
         self,
@@ -123,35 +112,18 @@ class BatchedRenderer:
         return list(range(show_size)) + [None] + list(range(n - show_size, n))
 
     @staticmethod
-    def _cell(content: str) -> Any:
-        return Text.from_ansi(content)
+    def _cell(content: str) -> str:
+        return str(content)
 
     @staticmethod
-    def _ellipsis_cell() -> Any:
-        return Align.center(Text("..."), vertical="middle")
+    def _ellipsis_cell() -> str:
+        return "..."
 
     @staticmethod
-    def _row(cells: list[Any]) -> tuple[Any, ...]:
+    def _row(cells: list[str]) -> tuple[str, ...]:
         return tuple(cells)
 
     @staticmethod
-    def _grid(rows: list[tuple[Any, ...]]) -> Table:
-        table = Table(show_header=False, show_edge=False, box=None)
-        for cells in rows:
-            table.add_row(*cells)
-        return table
-
-    @staticmethod
-    def _frame(grid: Table, *, title: str, subtitle: str) -> Panel:
-        return Panel(
-            grid,
-            title=f"[yellow bold]{title}[/yellow bold]",
-            subtitle=f"[green bold]{subtitle}[/green bold]",
-            expand=False,
-        )
-
-    @staticmethod
-    def _to_str(frame: Panel) -> str:
-        buf = StringIO()
-        Console(file=buf, force_terminal=True).print(frame)
-        return buf.getvalue()
+    def _frame(rows: list[tuple[str, ...]], *, title: str, subtitle: str) -> str:
+        body = [" | ".join(cells) for cells in rows]
+        return "\n".join([title, subtitle, *body]) + "\n"
