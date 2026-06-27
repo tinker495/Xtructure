@@ -1,8 +1,10 @@
 import gc
+import json
 import os
 import platform
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 import jax
@@ -283,6 +285,103 @@ def run_python_trials(
 def throughput_stats(num_ops: int, durations: Iterable[float]) -> Dict[str, float]:
     """Public helper to compute ops/sec statistics."""
     return _ops_stats(num_ops, durations)
+
+
+def run_linear_container_benchmarks(
+    *,
+    container_name: str,
+    container_class: Any,
+    add_method: str,
+    remove_method: str,
+    python_add: Callable[[List[PythonBenchmarkValue]], Any],
+    python_remove: Callable[[List[PythonBenchmarkValue], int], Any],
+    mode: str = "kernel",
+    trials: int = 10,
+    batch_sizes: Optional[List[int]] = None,
+    output_path: str,
+    title: str,
+) -> None:
+    """Run the shared Queue/Stack benchmark shape."""
+    batch_sizes = batch_sizes or [2**10, 2**12, 2**14]
+
+    check_system_load()
+
+    results: Dict[str, Any] = {
+        "batch_sizes": batch_sizes,
+        "xtructure": {},
+        "python": {},
+        "environment": get_system_info(),
+    }
+    max_size = int(max(batch_sizes) * 2)
+
+    print(f"Running {container_name} Benchmarks...")
+    try:
+        print(f"JAX backend: {jax.default_backend()}")
+        print("JAX devices:", ", ".join([d.platform + ":" + d.device_kind for d in jax.devices()]))
+    except Exception:
+        pass
+
+    add_key = f"{add_method}_ops_per_sec"
+    remove_key = f"{remove_method}_ops_per_sec"
+
+    for batch_size in batch_sizes:
+        print(f"  Batch Size: {batch_size}")
+        key = jax.random.PRNGKey(batch_size)
+        values_device = BenchmarkValue.random(shape=(batch_size,), key=key)
+        values_host = jax.device_get(values_device)
+
+        precomputed_items = to_python_values(values_device)
+
+        def materialize_items(include_preprocessing: bool):
+            return to_python_values(values_device) if include_preprocessing else precomputed_items
+
+        container = container_class.build(max_size=max_size, value_class=BenchmarkValue)
+
+        def add_args_supplier():
+            return (jax.device_put(values_host),) if mode == "e2e" else (values_device,)
+
+        add_durations = run_jax_trials(
+            lambda batch: getattr(container, add_method)(batch),
+            trials=trials,
+            args_supplier=add_args_supplier,
+        )
+        add_stats = throughput_stats(batch_size, add_durations)
+
+        filled_container = getattr(container, add_method)(values_device)
+        jax.block_until_ready(filled_container)
+        remove_durations = run_jax_trials(
+            lambda: getattr(filled_container, remove_method)(batch_size),
+            trials=trials,
+            include_device_transfer=(mode == "e2e"),
+        )
+        remove_stats = throughput_stats(batch_size, remove_durations)
+
+        results["xtructure"].setdefault(add_key, []).append(add_stats)
+        results["xtructure"].setdefault(remove_key, []).append(remove_stats)
+
+        def python_add_op():
+            return python_add(materialize_items(mode == "e2e"))
+
+        add_durations = run_python_trials(python_add_op, trials=trials)
+        add_stats = throughput_stats(batch_size, add_durations)
+
+        def python_remove_op():
+            return python_remove(materialize_items(mode == "e2e"), batch_size)
+
+        remove_durations = run_python_trials(python_remove_op, trials=trials)
+        remove_stats = throughput_stats(batch_size, remove_durations)
+
+        results["python"].setdefault(add_key, []).append(add_stats)
+        results["python"].setdefault(remove_key, []).append(remove_stats)
+
+    validate_results_schema(results)
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with output.open("w") as f:
+        json.dump(results, f, indent=4)
+
+    print(f"{container_name} benchmark results saved to {output_path}")
+    print_results_table(results, title)
 
 
 def print_results_table(results: Dict[str, Any], title: str):
