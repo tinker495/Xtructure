@@ -16,7 +16,6 @@ setuptools.setup(
     install_requires=[
         "jax[cuda]>=0.4.0",
         "chex>=0.1.0",
-        "tabulate>=0.9.0",
         "numpy>=2.2.0",
         "rich",
     ],

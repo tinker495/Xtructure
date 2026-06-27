@@ -6,16 +6,15 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from .loop import merge_arrays_indices_loop
 from .parallel import merge_arrays_parallel
 from .split import merge_sort_split_idx
 
 MethodFn = Callable[[jax.Array, jax.Array], Tuple[jax.Array, jax.Array]]
 
 # Empirical results (GPU, float32, trials=10000, warmup=3):
-# n=m=1024:  loop 1.383 ms, parallel 0.219 ms, split 1.421 ms
-# n=m=4096:  loop 1.383 ms, parallel 0.195 ms, split 1.391 ms
-# n=m=16384: loop 2.505 ms, parallel 0.181 ms, split 1.383 ms
+# n=m=1024:  parallel 0.219 ms, split 1.421 ms
+# n=m=4096:  parallel 0.195 ms, split 1.391 ms
+# n=m=16384: parallel 0.181 ms, split 1.383 ms
 # Winner across sizes: parallel
 
 
@@ -136,8 +135,8 @@ def _parse_args() -> argparse.Namespace:
         "--methods",
         type=str,
         nargs="+",
-        default=["loop", "parallel", "split"],
-        choices=["loop", "parallel", "split"],
+        default=["parallel", "split"],
+        choices=["parallel", "split"],
         help="Methods to benchmark.",
     )
     return parser.parse_args()
@@ -152,7 +151,6 @@ def main() -> None:
     }
     dtype = dtype_map[args.dtype]
     method_map: Dict[str, MethodFn] = {
-        "loop": merge_arrays_indices_loop,
         "parallel": merge_arrays_parallel,
         "split": merge_sort_split_idx,
     }

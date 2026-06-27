@@ -1,50 +1,26 @@
 import jax.numpy as jnp
 
 from tests.dataclass.fixtures import SimpleData
-from xtructure.core.display import BatchedRenderer, RichBackend
+from xtructure.core.display import BatchedRenderer
 from xtructure.core.display.renderer import BatchedRenderer as _BatchedRendererCls
 
 
-class FakeBackend:
-    """Records calls for verifying BatchedRenderer's invocation policy."""
-
-    def __init__(self):
-        self.calls = []
-
-    def cell(self, content):
-        self.calls.append(("cell", content))
-        return ("CELL", content)
-
-    def ellipsis_cell(self):
-        self.calls.append(("ellipsis",))
-        return ("ELLIPSIS",)
-
-    def row(self, cells):
-        cells = tuple(cells)
-        self.calls.append(("row", cells))
-        return ("ROW", cells)
-
-    def grid(self, rows):
-        rows = tuple(rows)
-        self.calls.append(("grid", rows))
-        return ("GRID", rows)
-
-    def frame(self, grid, *, title, subtitle):
-        self.calls.append(("frame", grid, title, subtitle))
-        return ("FRAME", grid, title, subtitle)
-
-    def to_str(self, frame):
-        self.calls.append(("to_str", frame))
-        return "OK"
+def _simple_batch(shape):
+    total = 1
+    for size in shape:
+        total *= size
+    ids = jnp.arange(total, dtype=jnp.uint32).reshape(shape)
+    return SimpleData(id=ids, value=ids.astype(jnp.float32))
 
 
 def _label_formatter(item, **_kwargs):
-    """Stable string label so slicing can be verified through cell contents."""
+    """Stable string label so slicing can be verified through output text."""
     return f"id={int(item.id)}"
 
 
-def _count(backend, kind):
-    return sum(1 for entry in backend.calls if entry[0] == kind)
+def _render(instance, *, max_size=10, show_size=2, title="T"):
+    renderer = BatchedRenderer(_label_formatter)
+    return renderer.render(instance, max_size=max_size, show_size=show_size, title=title)
 
 
 def test_truncate_indices_no_truncation():
@@ -58,80 +34,57 @@ def test_truncate_indices_inserts_none_for_ellipsis():
 
 
 def test_1d_batch_no_truncation_renders_all_cells():
-    backend = FakeBackend()
-    renderer = BatchedRenderer(_label_formatter, backend)
-    instance = SimpleData.default(shape=(3,))
+    out = _render(_simple_batch((3,)), max_size=10, show_size=2)
 
-    out = renderer.render(instance, max_size=10, show_size=2, title="T")
-
-    assert out == "OK"
-    assert _count(backend, "cell") == 3
-    assert _count(backend, "ellipsis") == 0
-    assert _count(backend, "row") == 1
+    assert "id=0" in out
+    assert "id=1" in out
+    assert "id=2" in out
+    assert "..." not in out
 
 
 def test_1d_batch_truncation_inserts_one_ellipsis():
-    backend = FakeBackend()
-    renderer = BatchedRenderer(_label_formatter, backend)
-    instance = SimpleData.default(shape=(8,))
+    out = _render(_simple_batch((8,)), max_size=4, show_size=2)
 
-    renderer.render(instance, max_size=4, show_size=2, title="T")
-
-    assert _count(backend, "cell") == 4
-    assert _count(backend, "ellipsis") == 1
-    assert _count(backend, "row") == 1
+    assert "id=0" in out
+    assert "id=1" in out
+    assert "id=6" in out
+    assert "id=7" in out
+    assert "id=2" not in out
+    assert "..." in out
 
 
 def test_2d_batch_no_truncation():
-    backend = FakeBackend()
-    renderer = BatchedRenderer(_label_formatter, backend)
-    instance = SimpleData.default(shape=(3, 3))
+    out = _render(_simple_batch((3, 3)), max_size=999, show_size=2)
 
-    renderer.render(instance, max_size=999, show_size=2, title="T")
-
-    assert _count(backend, "cell") == 9
-    assert _count(backend, "ellipsis") == 0
-    assert _count(backend, "row") == 3
+    for i in range(9):
+        assert f"id={i}" in out
+    assert "..." not in out
 
 
 def test_2d_batch_row_and_column_truncation():
-    backend = FakeBackend()
-    renderer = BatchedRenderer(_label_formatter, backend)
-    instance = SimpleData.default(shape=(5, 5))
+    out = _render(_simple_batch((5, 5)), max_size=999, show_size=2)
 
-    renderer.render(instance, max_size=999, show_size=2, title="T")
-
-    # 4 non-None rows × 4 non-None cols = 16 real cells
-    assert _count(backend, "cell") == 16
-    # 4 non-None rows × 1 col-ellipsis + 1 ellipsis-row × 5 cells = 9 ellipsis
-    assert _count(backend, "ellipsis") == 9
-    # 2 prefix + 1 ellipsis-row + 2 suffix
-    assert _count(backend, "row") == 5
+    assert "id=0" in out
+    assert "id=24" in out
+    assert "id=12" not in out
+    assert "..." in out
 
 
-def test_frame_receives_title_and_subtitle_with_shape():
-    backend = FakeBackend()
-    renderer = BatchedRenderer(_label_formatter, backend)
-    instance = SimpleData.default(shape=(2,))
+def test_frame_includes_title_and_shape_subtitle():
+    out = _render(_simple_batch((2,)), max_size=10, show_size=2, title="MyTitle")
 
-    renderer.render(instance, max_size=10, show_size=2, title="MyTitle")
-
-    frame_record = next(c for c in backend.calls if c[0] == "frame")
-    _, _grid, title, subtitle = frame_record
-    assert title == "MyTitle"
-    assert subtitle == "shape: (2,)"
+    assert "MyTitle" in out
+    assert "shape: (2,)" in out
 
 
 def test_cell_content_comes_from_single_formatter():
-    backend = FakeBackend()
-    renderer = BatchedRenderer(_label_formatter, backend)
-    instance = SimpleData.default(shape=(3,))
+    instance = _simple_batch((3,))
 
-    renderer.render(instance, max_size=10, show_size=2, title="T")
+    out = _render(instance, max_size=10, show_size=2)
 
-    cell_contents = [entry[1] for entry in backend.calls if entry[0] == "cell"]
     expected = [f"id={int(instance[i].id)}" for i in range(3)]
-    assert cell_contents == expected
+    for label in expected:
+        assert label in out
 
 
 def test_formatter_kwargs_pass_through_to_single_formatter():
@@ -141,8 +94,7 @@ def test_formatter_kwargs_pass_through_to_single_formatter():
         received.update(kwargs)
         return "x"
 
-    backend = FakeBackend()
-    renderer = BatchedRenderer(capturing_formatter, backend)
+    renderer = BatchedRenderer(capturing_formatter)
     instance = SimpleData.default(shape=(2,))
 
     renderer.render(instance, max_size=10, show_size=2, title="T", extra="hello")
@@ -150,11 +102,8 @@ def test_formatter_kwargs_pass_through_to_single_formatter():
     assert received == {"extra": "hello"}
 
 
-def test_rich_backend_produces_non_empty_string_with_title():
-    renderer = BatchedRenderer(_label_formatter, RichBackend())
-    instance = SimpleData.default(shape=(3,))
-
-    out = renderer.render(instance, max_size=10, show_size=2, title="MyClass")
+def test_renderer_produces_non_empty_string_with_title():
+    out = _render(_simple_batch((3,)), max_size=10, show_size=2, title="MyClass")
 
     assert isinstance(out, str)
     assert "MyClass" in out

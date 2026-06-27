@@ -20,11 +20,6 @@ Welcome to Xtructure's documentation!
    stack
    bgpq
 
-.. toctree::
-   :maxdepth: 2
-   :caption: API Reference:
-
-   modules
 
 Indices and tables
 ==================
