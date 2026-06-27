@@ -4,7 +4,6 @@ from xtructure.core.display import (
     MAX_PRINT_BATCH_SIZE,
     SHOW_BATCH_SIZE,
     BatchedRenderer,
-    RichBackend,
 )
 from xtructure.core.structuredtype import StructuredType
 
@@ -32,7 +31,7 @@ def add_string_representation_methods(cls: Type[T]) -> Type[T]:
         def single_formatter(item, **kwargs):
             return original_str(item, **kwargs)
 
-    renderer = BatchedRenderer(single_formatter, RichBackend())
+    renderer = BatchedRenderer(single_formatter)
 
     def __str__(self, **kwargs) -> str:
         structured_type = self.structured_type

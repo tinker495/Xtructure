@@ -10,15 +10,11 @@ MAX_PRINT_BATCH_SIZE = 4
 __all__ = [
     "BatchedRenderer",
     "MAX_PRINT_BATCH_SIZE",
-    "RenderBackend",
-    "RichBackend",
     "SHOW_BATCH_SIZE",
 ]
 
 _EXPORTS = {
     "BatchedRenderer": (".renderer", "BatchedRenderer"),
-    "RenderBackend": (".backend", "RenderBackend"),
-    "RichBackend": (".rich_backend", "RichBackend"),
 }
 
 
