@@ -14,16 +14,6 @@ import numpy as np
 from xtructure import FieldDescriptor, xtructure_dataclass
 
 
-def enable_jax_float64():
-    """
-    Enables JAX float64 mode (double precision).
-    Must be called before any JAX operations.
-    """
-    from jax import config
-
-    config.update("jax_enable_x64", True)
-
-
 def human_format(num, pos=None):
     num = float("{:.3g}".format(num))
     magnitude = 0
