@@ -14,7 +14,7 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from ..core.container_facts import init_counter, init_value_store
+from ..core.container_facts import SIZE_DTYPE
 from ..core.dataclass import base_dataclass
 from ..core.protocol import Xtructurable
 from ..core.xtructure_numpy.array_ops import _where_no_broadcast
@@ -35,14 +35,14 @@ def _bgpq_build_jit(total_size, batch_size, value_class=Xtructurable, key_dtype=
         total_size // batch_size if total_size % batch_size == 0 else total_size // batch_size + 1
     )
     max_size = branch_size * batch_size
-    heap_size = init_counter()
-    buffer_size = init_counter()
+    heap_size = SIZE_DTYPE(0)
+    buffer_size = SIZE_DTYPE(0)
 
     # Initialize storage arrays with infinity for unused slots
     key_store = jnp.full((branch_size, batch_size), jnp.inf, dtype=key_dtype)
-    val_store = init_value_store(value_class, (branch_size, batch_size))
+    val_store = value_class.default((branch_size, batch_size))
     key_buffer = jnp.full((batch_size - 1,), jnp.inf, dtype=key_dtype)
-    val_buffer = init_value_store(value_class, (batch_size - 1,))
+    val_buffer = value_class.default((batch_size - 1,))
 
     return BGPQ(
         max_size=max_size,
