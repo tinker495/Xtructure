@@ -2,7 +2,6 @@ import gc
 import os
 import platform
 import time
-import tracemalloc
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
@@ -95,28 +94,16 @@ def validate_results_schema(results: Dict[str, Any]) -> None:
             _validate_entry(e)
 
 
-def _ops_stats(
-    num_ops: int, durations: Iterable[float], peak_memories: Optional[Iterable[float]] = None
-) -> Dict[str, float]:
-    """Compute median/IQR/P99 of per-trial throughput and peak memory."""
+def _ops_stats(num_ops: int, durations: Iterable[float]) -> Dict[str, float]:
+    """Compute median/IQR/P99 throughput from per-trial durations."""
     durations_arr = np.asarray(list(durations), dtype=np.float64)
     ops = num_ops / durations_arr
 
     median_ops = float(np.median(ops))
     q75, q25 = np.percentile(ops, [75, 25])
-    # P99 throughput corresponds to the slowest 1% of trials,
-    # but usually P99 latency is desired. Here we report P99 ops/sec (which is the 1st percentile of speed).
-    # To be less confusing,
-    # let's just store p99_ops which is the performance of the 99th percentile slowest run (1st percentile speed).
     p99_ops = float(np.percentile(ops, 1))
 
-    stats = {"median": median_ops, "iqr": float(q75 - q25), "p99_ops": p99_ops}
-
-    if peak_memories:
-        mem_arr = np.asarray(list(peak_memories), dtype=np.float64)
-        stats["peak_memory_median"] = float(np.median(mem_arr))
-
-    return stats
+    return {"median": median_ops, "iqr": float(q75 - q25), "p99_ops": p99_ops}
 
 
 def get_system_info() -> Dict[str, Any]:
@@ -222,13 +209,8 @@ def run_jax_trials(
     warmup: int = 5,
     include_device_transfer: bool = False,
     args_supplier: Optional[Callable[[], Tuple[Any, ...]]] = None,
-) -> Tuple[List[float], List[float]]:
-    """
-    JITs, warms up, and measures JAX function latency per trial.
-
-    Returns:
-        (durations, peak_memories) - peak_memories is currently a placeholder (0s) for JAX
-    """
+) -> List[float]:
+    """JIT, warm up, and measure JAX function latency per trial."""
 
     jitted = jax.jit(func)
 
@@ -256,20 +238,13 @@ def run_jax_trials(
         end = time.perf_counter()
         durations.append(end - start)
 
-    # JAX memory tracking is complex and requires external tools usually.
-    # For now, returning 0 to indicate "not measured" in this context.
-    peak_memories = [0.0] * trials
-
-    return durations, peak_memories
+    return durations
 
 
 def run_python_trials(
     func: Callable[[], Any], trials: int = 10, warmup: int = 5, disable_gc: bool = False
-) -> Tuple[List[float], List[float]]:
-    """
-    Runs a Python function multiple times.
-    Splits timing and memory measurement to avoid observer effect overhead.
-    """
+) -> List[float]:
+    """Run a Python function multiple times and return per-trial durations."""
 
     # Warmup
     for _ in range(max(1, warmup)):
@@ -304,34 +279,12 @@ def run_python_trials(
         if disable_gc and gc_was_enabled:
             gc.enable()
 
-    # Phase 2: Peak Memory Measurement
-    # We run this separately because tracemalloc slows down execution significantly.
-    # We can use fewer trials or the same number. Using same number for consistency.
-    peak_memories: List[float] = []
-
-    try:
-        for _ in range(trials):
-            gc.collect()
-
-            tracemalloc.start()
-            # We don't time this run
-            func()
-            _, peak = tracemalloc.get_traced_memory()
-            tracemalloc.stop()
-
-            peak_memories.append(peak / (1024 * 1024))  # Convert to MB
-
-    except Exception:
-        # Fallback if memory tracking fails or isn't supported
-        peak_memories = [0.0] * trials
-
-    return durations, peak_memories
+    return durations
 
 
-def throughput_stats(num_ops: int, results: Tuple[List[float], List[float]]) -> Dict[str, float]:
-    """Public helper to compute ops/sec and memory statistics."""
-    durations, peak_memories = results
-    return _ops_stats(num_ops, durations, peak_memories)
+def throughput_stats(num_ops: int, durations: Iterable[float]) -> Dict[str, float]:
+    """Public helper to compute ops/sec statistics."""
+    return _ops_stats(num_ops, durations)
 
 
 def print_results_table(results: Dict[str, Any], title: str):
@@ -347,7 +300,6 @@ def print_results_table(results: Dict[str, Any], title: str):
     table.add_column("Ops/Sec (Median)", justify="right", style="bold blue")
     table.add_column("IQR", justify="right", style="dim blue")
     table.add_column("P99 (Ops/Sec)", justify="right", style="dim cyan")
-    table.add_column("Peak Mem (MB)", justify="right", style="bold red")
 
     batch_sizes = results.get("batch_sizes", [])
     xtructure_results = results.get("xtructure", {})
@@ -361,18 +313,12 @@ def print_results_table(results: Dict[str, Any], title: str):
 
             # Add row for xtructure
             xtructure_data = xtructure_results.get(op, [])[i]
-            xtructure_mem = "-"
             xtructure_p99 = "-"
             if isinstance(xtructure_data, dict):
                 xtructure_perf = xtructure_data["median"]
                 xtructure_iqr = xtructure_data["iqr"]
                 if "p99_ops" in xtructure_data:
                     xtructure_p99 = human_format(xtructure_data["p99_ops"])
-                if (
-                    "peak_memory_median" in xtructure_data
-                    and xtructure_data["peak_memory_median"] > 0
-                ):
-                    xtructure_mem = f"{xtructure_data['peak_memory_median']:.1f}"
             else:
                 xtructure_perf = xtructure_data
                 xtructure_iqr = 0
@@ -384,20 +330,16 @@ def print_results_table(results: Dict[str, Any], title: str):
                 human_format(xtructure_perf),
                 f"±{human_format(xtructure_iqr)}",
                 xtructure_p99,
-                xtructure_mem,
             )
 
             # Add row for python
             python_data = python_results.get(op, [])[i]
-            python_mem = "-"
             python_p99 = "-"
             if isinstance(python_data, dict):
                 python_perf = python_data["median"]
                 python_iqr = python_data["iqr"]
                 if "p99_ops" in python_data:
                     python_p99 = human_format(python_data["p99_ops"])
-                if "peak_memory_median" in python_data:
-                    python_mem = f"{python_data['peak_memory_median']:.1f}"
             else:
                 python_perf = python_data
                 python_iqr = 0
@@ -409,9 +351,8 @@ def print_results_table(results: Dict[str, Any], title: str):
                 human_format(python_perf),
                 f"±{human_format(python_iqr)}",
                 python_p99,
-                python_mem,
             )
         if i < len(batch_sizes) - 1:
-            table.add_row("", "", "", "", "", "", end_section=True)
+            table.add_row("", "", "", "", "", end_section=True)
 
     console.print(table)
