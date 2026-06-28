@@ -6,14 +6,12 @@ from typing import Any, Sequence
 import jax
 import jax.numpy as jnp
 
-from xtructure.core.type_utils import is_xtructure_dataclass_instance
+from xtructure.core.type_utils import (
+    is_xtructure_dataclass_instance as _is_xtructurable,
+)
 
 from . import dataclass_ops as _dc
 from .array_ops import _update_array_on_condition
-
-
-def _is_xtructurable(value: Any) -> bool:
-    return is_xtructure_dataclass_instance(value)
 
 
 def _check_homogeneous_inputs(func_name: str, arrays_list: list[Any]) -> bool:
