@@ -24,7 +24,6 @@ __all__ = [
     "broadcast_intrinsic_shape",
     "descriptor_metadata",
     "numpy",
-    "xtructure_numpy",
     "io",
 ]
 
@@ -44,7 +43,6 @@ _EXPORTS: dict[str, tuple[str, str | None]] = {
     "broadcast_intrinsic_shape": (".core.field_descriptor_utils", "broadcast_intrinsic_shape"),
     "descriptor_metadata": (".core.field_descriptor_utils", "descriptor_metadata"),
     "numpy": (".numpy", None),
-    "xtructure_numpy": (".xtructure_numpy", None),
     "io": (".io", None),
 }
 
