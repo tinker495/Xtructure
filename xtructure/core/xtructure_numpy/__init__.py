@@ -1,23 +1,17 @@
 from __future__ import annotations
 
 import inspect
-from typing import Any, Iterable, Sequence
+from typing import Any, Sequence
 
 import jax
 import jax.numpy as jnp
 
-from xtructure.core.type_utils import is_xtructure_dataclass_instance
+from xtructure.core.type_utils import (
+    is_xtructure_dataclass_instance as _is_xtructurable,
+)
 
 from . import dataclass_ops as _dc
 from .array_ops import _update_array_on_condition
-
-
-def _is_xtructurable(value: Any) -> bool:
-    return is_xtructure_dataclass_instance(value)
-
-
-def _coerce_sequence(values: Iterable[Any]) -> list[Any]:
-    return list(values)
 
 
 def _check_homogeneous_inputs(func_name: str, arrays_list: list[Any]) -> bool:
@@ -68,7 +62,7 @@ def _like_kwargs(
 
 
 def concat(arrays, /, *, axis: int | None = 0):
-    arrays_list = _coerce_sequence(arrays)
+    arrays_list = list(arrays)
     if _check_homogeneous_inputs("concat", arrays_list):
         if axis is None:
             return jax.tree_util.tree_map(lambda *xs: jnp.concatenate(xs, axis=None), *arrays_list)
@@ -77,7 +71,7 @@ def concat(arrays, /, *, axis: int | None = 0):
 
 
 def concatenate(arrays, axis: int | None = 0, dtype: Any | None = None):
-    arrays_list = _coerce_sequence(arrays)
+    arrays_list = list(arrays)
     if _check_homogeneous_inputs("concatenate", arrays_list):
         if dtype is not None:
             raise TypeError("concatenate does not support dtype for xtructure dataclass inputs.")
@@ -94,7 +88,7 @@ def pad(array, pad_width, mode: str | Any = "constant", **kwargs):
 
 
 def stack(arrays, axis: int = 0, out: None = None, dtype: Any | None = None):
-    arrays_list = _coerce_sequence(arrays)
+    arrays_list = list(arrays)
     if _check_homogeneous_inputs("stack", arrays_list):
         _reject_dataclass_kwargs("stack", out=out, dtype=dtype)
         return _dc.stack(arrays_list, axis=axis)

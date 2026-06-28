@@ -51,39 +51,9 @@ def base_dataclass(
         A JAX-friendly dataclass.
     """
 
-    def dcls(cls):
-        # Make sure to create a separate _Dataclass instance for each `cls`.
-        return _Dataclass(init, repr, eq, order, unsafe_hash, frozen, kw_only, static_fields)(cls)
+    static_fields = tuple(static_fields)
 
-    if cls is None:
-        return dcls
-    return dcls(cls)
-
-
-class _Dataclass:
-    """JAX-friendly wrapper for `dataclasses.dataclass`."""
-
-    def __init__(
-        self,
-        init=True,
-        repr=True,  # pylint: disable=redefined-builtin
-        eq=True,
-        order=False,
-        unsafe_hash=False,
-        frozen=False,
-        kw_only=False,
-        static_fields: tuple[str, ...] = (),
-    ):
-        self.init = init
-        self.repr = repr  # pylint: disable=redefined-builtin
-        self.eq = eq
-        self.order = order
-        self.unsafe_hash = unsafe_hash
-        self.frozen = frozen
-        self.kw_only = kw_only
-        self.static_fields = tuple(static_fields)
-
-    def __call__(self, cls):
+    def make_dataclass(cls):
         """Forwards class to dataclasses's wrapper and registers it with JAX."""
 
         # Remove once https://github.com/python/cpython/pull/24484 is merged.
@@ -91,7 +61,7 @@ class _Dataclass:
             if (
                 dataclasses.is_dataclass(base)
                 and getattr(base, "__dataclass_params__").frozen
-                and not self.frozen
+                and not frozen
             ):
                 raise TypeError("cannot inherit non-frozen dataclass from a frozen one")
 
@@ -99,16 +69,16 @@ class _Dataclass:
         version_dependent_args = {}
         version = sys.version_info
         if version.major == 3 and version.minor >= 10:
-            version_dependent_args = {"kw_only": self.kw_only}
+            version_dependent_args = {"kw_only": kw_only}
         # pytype: disable=wrong-keyword-args
         dcls = dataclasses.dataclass(
             cls,
-            init=self.init,
-            repr=self.repr,
-            eq=self.eq,
-            order=self.order,
-            unsafe_hash=self.unsafe_hash,
-            frozen=self.frozen,
+            init=init,
+            repr=repr,
+            eq=eq,
+            order=order,
+            unsafe_hash=unsafe_hash,
+            frozen=frozen,
             **version_dependent_args,
         )
         # pytype: enable=wrong-keyword-args
@@ -154,7 +124,6 @@ class _Dataclass:
         # _pickle.PicklingError: Can't pickle <functools._lru_cache_wrapper object>:
         # it's not the same object as register_dataclass_type_with_jax_tree_util
         # for modules defined in __main__ so we disable registration in this case.
-        static_fields = self.static_fields
         if dcls.__module__ != "__main__":
             register_dataclass_type_with_jax_tree_util(dcls, static_fields)
 
@@ -186,6 +155,10 @@ class _Dataclass:
         setattr(dcls, "__init__", _init)
 
         return dcls
+
+    if cls is None:
+        return make_dataclass
+    return make_dataclass(cls)
 
 
 def _dataclass_unflatten(dcls, keys, values):

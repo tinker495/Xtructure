@@ -18,8 +18,6 @@ __all__ = [
     "with_intrinsic_shape",
     "broadcast_intrinsic_shape",
     "descriptor_metadata",
-    "get_type_layout",
-    "get_instance_layout",
     "xtructure_numpy",
 ]
 
@@ -33,8 +31,6 @@ _EXPORTS: dict[str, tuple[str, str | None]] = {
     "with_intrinsic_shape": (".field_descriptor_utils", "with_intrinsic_shape"),
     "broadcast_intrinsic_shape": (".field_descriptor_utils", "broadcast_intrinsic_shape"),
     "descriptor_metadata": (".field_descriptor_utils", "descriptor_metadata"),
-    "get_type_layout": (".layout.type_layout", "get_type_layout"),
-    "get_instance_layout": (".layout.instance_layout", "get_instance_layout"),
     "xtructure_numpy": (".xtructure_numpy", None),
 }
 

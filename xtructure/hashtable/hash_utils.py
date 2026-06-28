@@ -93,7 +93,6 @@ def _modulus_reduce(value: chex.Array, modulus: int) -> chex.Array:
 
 def _normalize_probe_step(step: chex.Array, modulus: int) -> chex.Array:
     step = _modulus_reduce(step, modulus)
-    step = jnp.where(step == 0, SIZE_DTYPE(1), step)
     step = jnp.bitwise_or(step, SIZE_DTYPE(1))
     return step
 
