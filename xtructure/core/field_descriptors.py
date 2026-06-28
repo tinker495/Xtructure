@@ -223,34 +223,6 @@ class FieldDescriptor:
             validator=validator,
         )
 
-    @classmethod
-    def __class_getitem__(cls, item: Any) -> "FieldDescriptor":
-        """
-        Allows for syntax like FieldDescriptor[dtype, intrinsic_shape, fill_value].
-        """
-        if isinstance(item, tuple):
-            if len(item) == 1:
-                return cls(item[0])
-            elif len(item) == 2:
-                # Assuming item[1] is intrinsic_shape or fill_value.
-                # Heuristic: if it's a tuple, it's intrinsic_shape. Otherwise, it could be fill_value.
-                # This could be ambiguous. For clarity, users might prefer named args with __init__
-                # or a more structured approach if this becomes complex.
-                if isinstance(item[1], tuple):
-                    return cls(item[0], intrinsic_shape=item[1])
-                else:  # Assuming it's a fill_value, and intrinsic_shape is default
-                    return cls(item[0], fill_value=item[1])
-            elif len(item) == 3:
-                return cls(item[0], intrinsic_shape=item[1], fill_value=item[2])
-            else:
-                raise ValueError(
-                    "FieldDescriptor[...] expects 1 to 3 arguments: "
-                    "dtype, optional intrinsic_shape, optional fill_value"
-                )
-        else:
-            # Single item is treated as dtype
-            return cls(item)
-
 
 # Example usage (to be placed in your class definitions later):
 #
