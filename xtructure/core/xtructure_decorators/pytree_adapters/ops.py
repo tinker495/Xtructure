@@ -23,16 +23,7 @@ def add_comparison_operators(cls: Type[T]) -> Type[T]:
 
     def _xtructure_eq(self, other: Any) -> T:
         if not isinstance(other, self.__class__):
-            # If comparing with a different type, one might return False
-            # or NotImplemented. For element-wise comparison resulting in a
-            # structure, raising an error or returning a structure of False
-            # might be alternatives. JAX's __eq__ on arrays would raise
-            # an error or broadcast if shapes are incompatible.
-            # Here, we'll opt for a structure of False values if types don't match
-            # or if users expect a single boolean, this override might be surprising.
-            # A more robust approach for general pytrees might involve checking
-            # tree structure compatibility.
-            # For now, returning NotImplemented is safest if 'other' isn't the same type.
+            # Different type -> NotImplemented
             return NotImplemented
 
         # Element-wise comparison for each field
