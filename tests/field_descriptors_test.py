@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 import pytest
 
-from xtructure import FieldDescriptor, clone_field_descriptor, descriptor_metadata
+from xtructure import FieldDescriptor, clone_field_descriptor
 from xtructure.core.dtype_facts import (
     DTypeKind,
     default_fill_value_for_dtype,
@@ -109,9 +109,6 @@ def test_field_descriptor_with_validator():
 
     fd = FieldDescriptor.scalar(dtype=jnp.int32, validator=my_validator)
     assert fd.validator is my_validator
-
-    meta = descriptor_metadata(fd)
-    assert meta["validator"] is my_validator
 
 
 def test_clone_field_descriptor_preserves_validator():

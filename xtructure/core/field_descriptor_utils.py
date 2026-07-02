@@ -55,37 +55,3 @@ def clone_field_descriptor(
         fill_value_factory=next_fill_value_factory,
         validator=next_validator,
     )
-
-
-def with_intrinsic_shape(
-    descriptor: FieldDescriptor, intrinsic_shape: Iterable[int] | Tuple[int, ...]
-) -> FieldDescriptor:
-    """Return a copy of ``descriptor`` with a new intrinsic shape."""
-    return clone_field_descriptor(descriptor, intrinsic_shape=intrinsic_shape)
-
-
-def broadcast_intrinsic_shape(
-    descriptor: FieldDescriptor, batch_shape: Iterable[int] | Tuple[int, ...]
-) -> FieldDescriptor:
-    """
-    Prepend ``batch_shape`` to the intrinsic shape, useful when scripting batched
-    variants of an existing descriptor.
-    """
-    batch = normalize_shape(batch_shape)
-    new_shape = batch + descriptor.intrinsic_shape
-    return clone_field_descriptor(descriptor, intrinsic_shape=new_shape)
-
-
-def descriptor_metadata(descriptor: FieldDescriptor) -> dict[str, Any]:
-    """Expose a descriptor's core metadata as a plain dict for tooling."""
-    return {
-        "dtype": descriptor.dtype,
-        "intrinsic_shape": descriptor.intrinsic_shape,
-        "fill_value": descriptor.fill_value,
-        "fill_value_factory": descriptor.fill_value_factory,
-        "validator": descriptor.validator,
-        "bits": descriptor.bits,
-        "packed_bits": descriptor.packed_bits,
-        "unpacked_dtype": descriptor.unpacked_dtype,
-        "unpacked_intrinsic_shape": descriptor.unpacked_intrinsic_shape,
-    }
