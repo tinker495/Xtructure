@@ -1,12 +1,24 @@
-"""Public API for xtructure.
-
-Imports are resolved lazily so internal modules can depend on concrete owners
-without re-entering the top-level facade during package initialization.
-"""
+"""Public API for xtructure."""
 
 from __future__ import annotations
 
-from xtructure._lazy_imports import lazy_dir, load_lazy_export
+from . import io, numpy
+from .bgpq.bgpq import BGPQ
+from .core.dataclass import base_dataclass
+from .core.field_descriptor_utils import (
+    broadcast_intrinsic_shape,
+    clone_field_descriptor,
+    descriptor_metadata,
+    with_intrinsic_shape,
+)
+from .core.field_descriptors import FieldDescriptor
+from .core.protocol import Xtructurable
+from .core.structuredtype import StructuredType
+from .core.xtructure_decorators import xtructure_dataclass
+from .hashtable.table import HashTable
+from .hashtable.types import HashIdx
+from .queue.queue import Queue
+from .stack.stack import Stack
 
 __all__ = [
     "BGPQ",
@@ -26,30 +38,3 @@ __all__ = [
     "numpy",
     "io",
 ]
-
-_EXPORTS: dict[str, tuple[str, str | None]] = {
-    "BGPQ": (".bgpq.bgpq", "BGPQ"),
-    "HashTable": (".hashtable.table", "HashTable"),
-    "HashIdx": (".hashtable.types", "HashIdx"),
-    "Queue": (".queue.queue", "Queue"),
-    "Stack": (".stack.stack", "Stack"),
-    "Xtructurable": (".core.protocol", "Xtructurable"),
-    "base_dataclass": (".core.dataclass", "base_dataclass"),
-    "xtructure_dataclass": (".core.xtructure_decorators", "xtructure_dataclass"),
-    "StructuredType": (".core.structuredtype", "StructuredType"),
-    "FieldDescriptor": (".core.field_descriptors", "FieldDescriptor"),
-    "clone_field_descriptor": (".core.field_descriptor_utils", "clone_field_descriptor"),
-    "with_intrinsic_shape": (".core.field_descriptor_utils", "with_intrinsic_shape"),
-    "broadcast_intrinsic_shape": (".core.field_descriptor_utils", "broadcast_intrinsic_shape"),
-    "descriptor_metadata": (".core.field_descriptor_utils", "descriptor_metadata"),
-    "numpy": (".numpy", None),
-    "io": (".io", None),
-}
-
-
-def __getattr__(name: str):
-    return load_lazy_export(name, __name__, _EXPORTS, globals())
-
-
-def __dir__() -> list[str]:
-    return lazy_dir(globals(), __all__)
