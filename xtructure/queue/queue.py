@@ -3,8 +3,8 @@ from functools import partial
 import jax
 import jax.numpy as jnp  # noqa: F401  # Retained for downstream type hints.
 
-from ..core.container_facts import SIZE_DTYPE
 from ..core.dataclass import base_dataclass
+from ..core.dtype_facts import SIZE_DTYPE
 from ..core.protocol import Xtructurable
 
 

@@ -7,8 +7,8 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from ..core.container_facts import SIZE_DTYPE
 from ..core.dataclass import base_dataclass
+from ..core.dtype_facts import SIZE_DTYPE
 from ..core.protocol import Xtructurable
 from .insert import _hashtable_insert_jit, _hashtable_parallel_insert_jit
 from .lookup import (

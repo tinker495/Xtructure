@@ -13,6 +13,8 @@ from typing import Any
 
 import jax.numpy as jnp
 
+SIZE_DTYPE = jnp.uint32
+
 
 class DTypeKind(enum.Enum):
     """Recognised primitive **DType Kind** values."""

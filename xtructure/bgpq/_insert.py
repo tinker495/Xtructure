@@ -7,7 +7,7 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from ..core.container_facts import SIZE_DTYPE
+from ..core.dtype_facts import SIZE_DTYPE
 from ..core.protocol import Xtructurable
 from ..core.xtructure_numpy import concatenate as xnp_concatenate
 from ..core.xtructure_numpy import pad
