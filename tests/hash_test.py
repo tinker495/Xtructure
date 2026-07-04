@@ -231,3 +231,117 @@ def test_hash_is_instance_layout_aware():
 def test_uint32ed_unstructured_raises():
     # TODO: Construct an UNSTRUCTURED instance once the construction path is known.
     pytest.skip("UNSTRUCTURED construction path TBD")
+
+
+def _assert_tables_bit_identical(a: HashTable, b: HashTable) -> None:
+    assert int(a.size) == int(b.size)
+    assert bool(jnp.all(a.fingerprints == b.fingerprints))
+    assert bool(jnp.all(a.bucket_fill_levels == b.bucket_fill_levels))
+    assert bool(jnp.all(jax.vmap(lambda x, y: x == y)(a.table, b.table)))
+
+
+def test_lookup_parallel_with_probe_matches_lookup_parallel():
+    """The probe-returning lookup must return the same (idx, found) as the plain one."""
+    batch = 2048
+    table: HashTable = HashTable.build(HashValueAB, 7, int(1e5))
+    samples = HashValueAB.random((batch,))
+    filled = jax.random.bernoulli(jax.random.PRNGKey(0), 0.8, (batch,))
+
+    table, *_ = table.parallel_insert(samples, filled)
+
+    idx_plain, found_plain = table.lookup_parallel(samples, filled)
+    idx_probe, found_probe, probe = table.lookup_parallel_with_probe(samples, filled)
+
+    assert bool(jnp.all(idx_plain.index == idx_probe.index))
+    assert bool(jnp.all(found_plain == found_probe))
+    # Probe fields are exactly the shared hash-pass products.
+    assert probe.index.shape == (batch,)
+    assert probe.step.shape == (batch,)
+    assert probe.fingerprint.shape == (batch,)
+    assert probe.uint32ed.ndim == 2 and probe.uint32ed.shape[0] == batch
+
+
+def test_parallel_insert_with_probe_is_bit_identical():
+    """parallel_insert(probe=...) must yield bit-identical table state and idx vs recompute.
+
+    Runs several batches with deliberate intra-batch duplicates on two independently
+    built tables: one always recomputes the hash pass, the other threads the probe
+    produced by lookup_parallel_with_probe. The resulting tables, returned masks and
+    HashIdx must match exactly (the whole point of the no-rehash optimisation is that
+    reusing the probe changes nothing observable).
+    """
+    batch = 4000
+    table_recompute: HashTable = HashTable.build(HashValueAB, 3, int(1e5))
+    table_probe: HashTable = HashTable.build(HashValueAB, 3, int(1e5))
+
+    for i in range(6):
+        key = jax.random.PRNGKey(i)
+        samples = HashValueAB.random((batch,))
+        # Inject intra-batch duplicates so dedup logic is exercised.
+        dup_src = jax.random.randint(key, (batch // 3,), 0, batch)
+        dup_dst = jax.random.randint(jax.random.fold_in(key, 1), (batch // 3,), 0, batch)
+        samples = samples.at[dup_dst].set(samples[dup_src])
+        filled = jax.random.bernoulli(jax.random.fold_in(key, 2), 0.9, (batch,))
+
+        # Recompute path: plain lookup (discards probe) then plain insert.
+        _, _ = table_recompute.lookup_parallel(samples, filled)
+        table_recompute, ins_r, uniq_r, hidx_r = table_recompute.parallel_insert(samples, filled)
+
+        # Probe path: probe-returning lookup then insert reusing the probe.
+        _, _, probe = table_probe.lookup_parallel_with_probe(samples, filled)
+        table_probe, ins_p, uniq_p, hidx_p = table_probe.parallel_insert(
+            samples, filled, None, probe
+        )
+
+        assert bool(jnp.all(ins_r == ins_p)), f"inserted mask diverged at batch {i}"
+        assert bool(jnp.all(uniq_r == uniq_p)), f"unique mask diverged at batch {i}"
+        assert bool(jnp.all(hidx_r.index == hidx_p.index)), f"HashIdx diverged at batch {i}"
+        _assert_tables_bit_identical(table_recompute, table_probe)
+
+
+def test_parallel_insert_with_probe_respects_unique_key():
+    """The probe path must stay bit-identical when a unique_key tie-breaker is supplied."""
+    batch = 3000
+    table_recompute: HashTable = HashTable.build(HashValueAB, 11, int(1e5))
+    table_probe: HashTable = HashTable.build(HashValueAB, 11, int(1e5))
+
+    key = jax.random.PRNGKey(99)
+    samples = HashValueAB.random((batch,))
+    dup_src = jax.random.randint(key, (batch // 2,), 0, batch)
+    dup_dst = jax.random.randint(jax.random.fold_in(key, 1), (batch // 2,), 0, batch)
+    samples = samples.at[dup_dst].set(samples[dup_src])
+    filled = jnp.ones((batch,), dtype=jnp.bool_)
+    unique_key = jax.random.uniform(jax.random.fold_in(key, 3), (batch,))
+
+    table_recompute, ins_r, uniq_r, hidx_r = table_recompute.parallel_insert(
+        samples, filled, unique_key
+    )
+    _, _, probe = table_probe.lookup_parallel_with_probe(samples, filled)
+    table_probe, ins_p, uniq_p, hidx_p = table_probe.parallel_insert(
+        samples, filled, unique_key, probe
+    )
+
+    assert bool(jnp.all(ins_r == ins_p))
+    assert bool(jnp.all(uniq_r == uniq_p))
+    assert bool(jnp.all(hidx_r.index == hidx_p.index))
+    _assert_tables_bit_identical(table_recompute, table_probe)
+
+
+def test_parallel_insert_probe_shape_mismatch_raises():
+    """A probe whose batch length disagrees with the states must fail fast, not recompute."""
+    from xtructure import HashTableProbe
+
+    batch = 512
+    table: HashTable = HashTable.build(HashValueAB, 1, int(1e4))
+    samples = HashValueAB.random((batch,))
+    filled = jnp.ones((batch,), dtype=jnp.bool_)
+    _, _, probe = table.lookup_parallel_with_probe(samples, filled)
+
+    truncated = HashTableProbe(
+        index=probe.index[: batch // 2],
+        step=probe.step,
+        uint32ed=probe.uint32ed,
+        fingerprint=probe.fingerprint,
+    )
+    with pytest.raises(ValueError):
+        table.parallel_insert(samples, filled, None, truncated)

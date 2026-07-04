@@ -17,6 +17,7 @@ from .constants import (
     FINGERPRINT_MIX_CONSTANT_A,
     FINGERPRINT_MIX_CONSTANT_B,
 )
+from .types import HashTableProbe
 
 
 def _mix_fingerprint(primary: chex.Array, secondary: chex.Array, length: chex.Array) -> chex.Array:
@@ -118,13 +119,17 @@ def get_new_idx_byterized_batched(
     inputs: Xtructurable,
     modulus: int,
     seed: int,
-) -> tuple[chex.Array, chex.Array, chex.Array, chex.Array]:
+) -> HashTableProbe:
     """Batched twin of :func:`get_new_idx_byterized`.
 
     Consumes the **Instance Layout-aware** ``.hash_with_uint32ed`` BATCHED
     surface (returns ``((n,), (n, lanes))``) and the row-wise hash reducer to
     avoid the per-row ``jax.vmap(get_new_idx_byterized, in_axes=(0, None, None))``
     wrapper that BATCHED parallel insert / lookup paths previously needed.
+
+    Returns a :class:`HashTableProbe` bundling ``(index, step, uint32ed,
+    fingerprint)`` so parallel lookup and parallel insert can consume one shared
+    hash pass. This is the single canonical producer of that probe.
     """
     hash_value, uint32ed = inputs.hash_with_uint32ed(seed)  # ((n,), (n, lanes))
     seed_u32 = jnp.asarray(seed, dtype=jnp.uint32)
@@ -134,4 +139,4 @@ def get_new_idx_byterized_batched(
     step = _normalize_probe_step(secondary_hash, modulus)  # (n,)
     length = jnp.uint32(uint32ed.shape[1])  # scalar (per-row lane count)
     fingerprint = _mix_fingerprint(hash_value, secondary_hash, length)  # (n,)
-    return idx, step, uint32ed, fingerprint
+    return HashTableProbe(index=idx, step=step, uint32ed=uint32ed, fingerprint=fingerprint)

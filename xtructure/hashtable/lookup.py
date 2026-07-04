@@ -1,4 +1,5 @@
 """Lookup helpers for HashTable."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -11,7 +12,7 @@ from ..core.dtype_facts import SIZE_DTYPE
 from ..core.protocol import Xtructurable
 from .constants import SLOT_IDX_DTYPE
 from .hash_utils import get_new_idx_byterized, get_new_idx_byterized_batched
-from .types import BucketIdx, HashIdx
+from .types import BucketIdx, HashIdx, HashTableProbe
 
 
 def _hashtable_lookup_internal(
@@ -148,7 +149,7 @@ def _hashtable_lookup_parallel_internal(
         return jnp.any(active)
 
     def _body(
-        val: tuple[BucketIdx, chex.Array, chex.Array, chex.Array]
+        val: tuple[BucketIdx, chex.Array, chex.Array, chex.Array],
     ) -> tuple[BucketIdx, chex.Array, chex.Array, chex.Array]:
         idxs, founds, probes, active = val
 
@@ -246,23 +247,27 @@ def _hashtable_lookup_parallel_internal(
     return idxs, founds
 
 
-@jax.jit
-def _hashtable_lookup_parallel_jit(
-    table: Any, inputs: Xtructurable, filled: chex.Array | bool = True
+def _lookup_parallel_from_probe(
+    table: Any,
+    inputs: Xtructurable,
+    probe: HashTableProbe,
+    filled: chex.Array,
 ) -> tuple[HashIdx, chex.Array]:
+    """Run the parallel probe scan from an already-computed :class:`HashTableProbe`.
+
+    Shared by the plain lookup and the probe-returning sibling so both consume
+    the identical scan; the only difference is whether the caller keeps the
+    probe afterwards.
+    """
     filled = jnp.asarray(filled)
     batch_size = inputs.shape.batch
 
     def _process_batch(filled_mask):
-        initial_idx, steps, _uint32eds, fingerprints = get_new_idx_byterized_batched(
-            inputs, table._capacity, table.seed
-        )
-
-        idxs = BucketIdx(index=initial_idx, slot_index=jnp.zeros(batch_size, dtype=SLOT_IDX_DTYPE))
+        idxs = BucketIdx(index=probe.index, slot_index=jnp.zeros(batch_size, dtype=SLOT_IDX_DTYPE))
         founds = jnp.zeros(batch_size, dtype=jnp.bool_)
 
         idx, found = _hashtable_lookup_parallel_internal(
-            table, inputs, idxs, steps, fingerprints, founds, filled_mask
+            table, inputs, idxs, probe.step, probe.fingerprint, founds, filled_mask
         )
         bucket_size_u32 = SIZE_DTYPE(table.bucket_size)
         return HashIdx(index=idx.index * bucket_size_u32 + idx.slot_index), found
@@ -279,8 +284,24 @@ def _hashtable_lookup_parallel_jit(
             lambda: _process_batch(jnp.ones(batch_size, dtype=jnp.bool_)),
             lambda: _empty_result(None),
         )
-    else:
-        return _process_batch(filled)
+    return _process_batch(filled)
+
+
+@jax.jit
+def _hashtable_lookup_parallel_jit(
+    table: Any, inputs: Xtructurable, filled: chex.Array | bool = True
+) -> tuple[HashIdx, chex.Array]:
+    probe = get_new_idx_byterized_batched(inputs, table._capacity, table.seed)
+    return _lookup_parallel_from_probe(table, inputs, probe, filled)
+
+
+@jax.jit
+def _hashtable_lookup_parallel_with_probe_jit(
+    table: Any, inputs: Xtructurable, filled: chex.Array | bool = True
+) -> tuple[HashIdx, chex.Array, HashTableProbe]:
+    probe = get_new_idx_byterized_batched(inputs, table._capacity, table.seed)
+    idx, found = _lookup_parallel_from_probe(table, inputs, probe, filled)
+    return idx, found, probe
 
 
 @jax.jit
