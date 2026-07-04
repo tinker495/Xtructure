@@ -46,4 +46,4 @@ def test_size_dtype_defined_once() -> None:
             continue
         if any(line.lstrip().startswith("SIZE_DTYPE = ") for line in path.read_text().splitlines()):
             definitions.append(path.relative_to(PACKAGE_DIR).as_posix())
-    assert definitions == ["core/container_facts.py"]
+    assert definitions == ["core/dtype_facts.py"]

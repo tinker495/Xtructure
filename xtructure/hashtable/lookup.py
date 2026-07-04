@@ -7,7 +7,7 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from ..core.container_facts import SIZE_DTYPE
+from ..core.dtype_facts import SIZE_DTYPE
 from ..core.protocol import Xtructurable
 from .constants import SLOT_IDX_DTYPE
 from .hash_utils import get_new_idx_byterized, get_new_idx_byterized_batched

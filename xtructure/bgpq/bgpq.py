@@ -14,8 +14,8 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from ..core.container_facts import SIZE_DTYPE
 from ..core.dataclass import base_dataclass
+from ..core.dtype_facts import SIZE_DTYPE
 from ..core.protocol import Xtructurable
 from ..core.xtructure_numpy.array_ops import _where_no_broadcast
 from ._delete import _bgpq_delete_mins_jit

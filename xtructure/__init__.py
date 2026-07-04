@@ -20,9 +20,6 @@ __all__ = [
     "StructuredType",
     "FieldDescriptor",
     "clone_field_descriptor",
-    "with_intrinsic_shape",
-    "broadcast_intrinsic_shape",
-    "descriptor_metadata",
     "numpy",
     "io",
 ]
@@ -39,9 +36,6 @@ _EXPORTS: dict[str, tuple[str, str | None]] = {
     "StructuredType": (".core.structuredtype", "StructuredType"),
     "FieldDescriptor": (".core.field_descriptors", "FieldDescriptor"),
     "clone_field_descriptor": (".core.field_descriptor_utils", "clone_field_descriptor"),
-    "with_intrinsic_shape": (".core.field_descriptor_utils", "with_intrinsic_shape"),
-    "broadcast_intrinsic_shape": (".core.field_descriptor_utils", "broadcast_intrinsic_shape"),
-    "descriptor_metadata": (".core.field_descriptor_utils", "descriptor_metadata"),
     "numpy": (".numpy", None),
     "io": (".io", None),
 }

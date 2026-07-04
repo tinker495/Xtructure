@@ -1,8 +1,4 @@
-"""Core public facade for xtructure.
-
-Concrete modules inside ``xtructure.core`` import each other directly; this
-facade remains lazy for external compatibility.
-"""
+"""Core public facade for xtructure."""
 
 from __future__ import annotations
 
@@ -15,9 +11,6 @@ __all__ = [
     "xtructure_dataclass",
     "FieldDescriptor",
     "clone_field_descriptor",
-    "with_intrinsic_shape",
-    "broadcast_intrinsic_shape",
-    "descriptor_metadata",
     "xtructure_numpy",
 ]
 
@@ -28,9 +21,6 @@ _EXPORTS: dict[str, tuple[str, str | None]] = {
     "xtructure_dataclass": (".xtructure_decorators", "xtructure_dataclass"),
     "FieldDescriptor": (".field_descriptors", "FieldDescriptor"),
     "clone_field_descriptor": (".field_descriptor_utils", "clone_field_descriptor"),
-    "with_intrinsic_shape": (".field_descriptor_utils", "with_intrinsic_shape"),
-    "broadcast_intrinsic_shape": (".field_descriptor_utils", "broadcast_intrinsic_shape"),
-    "descriptor_metadata": (".field_descriptor_utils", "descriptor_metadata"),
     "xtructure_numpy": (".xtructure_numpy", None),
 }
 

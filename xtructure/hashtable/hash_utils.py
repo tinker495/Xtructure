@@ -6,7 +6,7 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from ..core.container_facts import SIZE_DTYPE
+from ..core.dtype_facts import SIZE_DTYPE
 from ..core.protocol import Xtructurable
 from ..core.xtructure_decorators.pytree_adapters.hash import (
     hash_fast_uint32ed,

@@ -28,26 +28,13 @@ def merge_arrays_adaptive(ak: jax.Array, bk: jax.Array) -> Tuple[jax.Array, jax.
     return merge_arrays_parallel(ak, bk)
 
 
-def select_merge_array_backend(backend_name: str | None = None) -> MergeArrayBackend:
-    """Return the merge backend for a JAX backend name.
-
-    TPU currently uses the sort/split implementation because the parallel
-    Pallas Merge Path kernel is not TPU-ready. GPU/CPU use an adaptive policy:
-    small merges stay on ``lax.sort_key_val`` to avoid Pallas launch overhead,
-    while larger merges use the parallel Merge Path kernel.
-    """
-    backend = jax.default_backend() if backend_name is None else backend_name
-    if backend == "tpu":
-        return merge_sort_split_idx
-    return merge_arrays_adaptive
-
-
-merge_array_backend = select_merge_array_backend()
+merge_array_backend = (
+    merge_sort_split_idx if jax.default_backend() == "tpu" else merge_arrays_adaptive
+)
 
 __all__ = [
     "MergeArrayBackend",
     "PARALLEL_MERGE_MIN_ELEMENTS",
     "merge_array_backend",
     "merge_arrays_adaptive",
-    "select_merge_array_backend",
 ]
