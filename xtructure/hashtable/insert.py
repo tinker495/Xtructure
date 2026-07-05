@@ -1,4 +1,5 @@
 """Insertion helpers for HashTable."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -19,7 +20,42 @@ from .hash_utils import (
     get_new_idx_byterized_batched,
 )
 from .lookup import _hashtable_lookup_bucket_jit, _hashtable_lookup_parallel_internal
-from .types import BucketIdx, HashIdx
+from .types import BucketIdx, HashIdx, HashTableProbe
+
+
+def _check_probe_matches_inputs(probe: HashTableProbe, inputs: Xtructurable) -> None:
+    """Fail fast when a supplied probe does not match the insert batch.
+
+    The probe must be exactly what :func:`get_new_idx_byterized_batched` would
+    have produced for ``inputs``; a mismatch means the caller threaded intermediates
+    from a different batch / table, which would silently corrupt the table. We
+    reject it at trace time rather than recomputing behind the caller's back.
+    """
+    batch_shape = tuple(inputs.shape.batch)
+    expected = {
+        "index": (batch_shape, SIZE_DTYPE),
+        "step": (batch_shape, SIZE_DTYPE),
+        "fingerprint": (batch_shape, jnp.uint32),
+    }
+    for name, (shape, dtype) in expected.items():
+        arr = getattr(probe, name)
+        if arr.shape != shape:
+            raise ValueError(
+                f"HashTableProbe.{name} shape {arr.shape} does not match insert batch {shape}"
+            )
+        if arr.dtype != dtype:
+            raise ValueError(
+                f"HashTableProbe.{name} dtype {arr.dtype} does not match expected {dtype}"
+            )
+    if probe.uint32ed.ndim != 2 or probe.uint32ed.shape[:1] != batch_shape:
+        raise ValueError(
+            f"HashTableProbe.uint32ed shape {probe.uint32ed.shape} is not "
+            f"{batch_shape + ('lanes',)} for the insert batch"
+        )
+    if probe.uint32ed.dtype != jnp.uint32:
+        raise ValueError(
+            f"HashTableProbe.uint32ed dtype {probe.uint32ed.dtype} does not match expected uint32"
+        )
 
 
 def _resolve_slot_conflicts(flat_indices: chex.Array, active: chex.Array) -> chex.Array:
@@ -131,7 +167,7 @@ def _hashtable_parallel_insert_internal(
         return jnp.logical_and(jnp.any(pending), probes < table.max_probes)
 
     def _body(
-        val: tuple[BucketIdx, chex.Array, chex.Array]
+        val: tuple[BucketIdx, chex.Array, chex.Array],
     ) -> tuple[BucketIdx, chex.Array, chex.Array]:
         idxs, pending, probes = val
         updated_idxs = _next_idx(idxs, pending)
@@ -182,6 +218,7 @@ def _hashtable_parallel_insert_jit(
     inputs: Xtructurable,
     filled: chex.Array | bool = None,
     unique_key: chex.Array = None,
+    probe: HashTableProbe = None,
 ):
     if filled is None:
         filled = jnp.ones(inputs.shape.batch, dtype=jnp.bool_)
@@ -190,10 +227,19 @@ def _hashtable_parallel_insert_jit(
     batch_len = inputs.shape.batch
     bucket_size_u32 = SIZE_DTYPE(table.bucket_size)
 
+    if probe is not None:
+        _check_probe_matches_inputs(probe, inputs)
+
     def _process_insert(filled_mask):
-        initial_idx, steps, uint32eds, fingerprints = get_new_idx_byterized_batched(
-            inputs, table._capacity, table.seed
+        local_probe = (
+            probe
+            if probe is not None
+            else get_new_idx_byterized_batched(inputs, table._capacity, table.seed)
         )
+        initial_idx = local_probe.index
+        steps = local_probe.step
+        uint32eds = local_probe.uint32ed
+        fingerprints = local_probe.fingerprint
 
         unique_filled, representative_indices = _compute_unique_mask_from_uint32eds(
             uint32eds=uint32eds,

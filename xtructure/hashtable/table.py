@@ -1,4 +1,5 @@
 """HashTable data container and public API."""
+
 from __future__ import annotations
 
 from functools import partial
@@ -16,8 +17,9 @@ from .lookup import (
     _hashtable_lookup_bucket_jit,
     _hashtable_lookup_jit,
     _hashtable_lookup_parallel_jit,
+    _hashtable_lookup_parallel_with_probe_jit,
 )
-from .types import BucketIdx, HashIdx
+from .types import BucketIdx, HashIdx, HashTableProbe
 
 
 @partial(jax.jit, static_argnums=(0, 1, 2, 3, 4, 5))
@@ -103,6 +105,18 @@ class HashTable:
     ) -> tuple[HashIdx, chex.Array]:
         return _hashtable_lookup_parallel_jit(self, inputs, filled)
 
+    def lookup_parallel_with_probe(
+        self, inputs: Xtructurable, filled: chex.Array | bool = True
+    ) -> tuple[HashIdx, chex.Array, HashTableProbe]:
+        """Parallel lookup that also returns the shared :class:`HashTableProbe`.
+
+        The probe carries the products of the single uint32 hash pass this lookup
+        already computed. A caller that inserts the same batch of states next can
+        pass it back to :meth:`parallel_insert` (``probe=...``) to skip the second,
+        redundant hash pass. Table behaviour is identical to :meth:`lookup_parallel`.
+        """
+        return _hashtable_lookup_parallel_with_probe_jit(self, inputs, filled)
+
     def insert(self, input: Xtructurable) -> tuple["HashTable", bool, HashIdx]:
         return _hashtable_insert_jit(self, input)
 
@@ -111,8 +125,16 @@ class HashTable:
         inputs: Xtructurable,
         filled: chex.Array | bool = None,
         unique_key: chex.Array = None,
+        probe: HashTableProbe | None = None,
     ):
-        return _hashtable_parallel_insert_jit(self, inputs, filled, unique_key)
+        """Insert a batch of states in parallel.
+
+        When ``probe`` is supplied it must be the :class:`HashTableProbe` returned
+        by :meth:`lookup_parallel_with_probe` for this exact batch and table; the
+        insert then reuses that hash pass instead of recomputing it, producing
+        bit-identical table state. Shape/dtype mismatches raise (no silent recompute).
+        """
+        return _hashtable_parallel_insert_jit(self, inputs, filled, unique_key, probe)
 
     def __getitem__(self, idx: HashIdx) -> Xtructurable:
         return _hashtable_getitem_jit(self, idx)
