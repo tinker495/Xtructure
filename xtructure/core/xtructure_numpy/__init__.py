@@ -101,7 +101,7 @@ def reshape(a, shape, order: str = "C", *, copy: bool | None = None, out_shardin
             raise ValueError("xtructure reshape only supports order='C'.")
         _reject_dataclass_kwargs("reshape", copy=copy, out_sharding=out_sharding)
         shape_tuple = tuple(shape) if isinstance(shape, (list, tuple)) else (shape,)
-        return _dc.reshape(a, shape_tuple)
+        return a.reshape(shape_tuple)
     return jnp.reshape(a, shape, order=order, copy=copy, out_sharding=out_sharding)
 
 
@@ -110,7 +110,7 @@ def ravel(a, order: str = "C", *, out_sharding=None):
         if order != "C":
             raise ValueError("xtructure ravel only supports order='C'.")
         _reject_dataclass_kwargs("ravel", out_sharding=out_sharding)
-        return _dc.flatten(a)
+        return a.flatten()
     return jnp.ravel(a, order=order, out_sharding=out_sharding)
 
 
@@ -195,13 +195,13 @@ def tile(A, reps):
 
 def transpose(a, axes: Sequence[int] | None = None):
     if _is_xtructurable(a):
-        return _dc.transpose(a, axes=axes)
+        return a.transpose(axes)
     return jnp.transpose(a, axes=axes)
 
 
 def swapaxes(a, axis1: int, axis2: int):
     if _is_xtructurable(a):
-        return _dc.swapaxes(a, axis1=axis1, axis2=axis2)
+        return a.swapaxes(axis1, axis2)
     return jnp.swapaxes(a, axis1, axis2)
 
 

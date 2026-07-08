@@ -31,6 +31,7 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
             - `reshape(*new_shape)`: Reshapes the batch dimensions of a BATCHED instance.
             - `flatten()`: Flattens the batch dimensions of a BATCHED instance.
             - `transpose(axes=None)`: Transposes only the batch dimensions.
+            - `swapaxes(axis1, axis2)`: Swaps two batch dimensions.
         - Classmethod:
             - `random(shape=(), key=None)`: Generates an instance with random data.
               The `shape` argument specifies the desired batch shape, which is
@@ -40,6 +41,14 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
 
     type_layout = get_type_layout(cls)
     field_plans = type_layout.adapter_field_plans
+
+    def _structured_batch_ndim(self, op_name: str) -> int:
+        if self.structured_type == StructuredType.UNSTRUCTURED:
+            raise ValueError(
+                f"{op_name} operation is only supported for SINGLE or BATCHED structured types. "
+                f"Current type: {self.structured_type}"
+            )
+        return len(self.shape.batch)
 
     def reshape(self, *new_shape: int | tuple[int, ...]) -> T:
         if len(new_shape) == 0:
@@ -118,14 +127,7 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
         )
 
     def transpose(self, axes: tuple[int, ...] | None = None) -> T:
-        if self.structured_type == StructuredType.UNSTRUCTURED:
-            raise ValueError(
-                "Transpose operation is only supported for SINGLE or BATCHED structured types. "
-                f"Current type: {self.structured_type}"
-            )
-
-        batch_shape = self.shape.batch
-        batch_ndim = len(batch_shape)
+        batch_ndim = _structured_batch_ndim(self, "Transpose")
 
         if axes is None:
             axes = tuple(range(batch_ndim - 1, -1, -1))
@@ -138,6 +140,25 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
             return jnp.transpose(field, axes=full_axes)
 
         return jax.tree_util.tree_map(transpose_batch_only, self)
+
+    def swapaxes(self, axis1: int, axis2: int) -> T:
+        batch_ndim = _structured_batch_ndim(self, "Swapaxes")
+
+        axis1_norm = axis1 if axis1 >= 0 else batch_ndim + axis1
+        axis2_norm = axis2 if axis2 >= 0 else batch_ndim + axis2
+
+        if axis1_norm < 0 or axis1_norm >= batch_ndim:
+            raise ValueError(
+                f"Axis {axis1} is out of bounds for batch dimensions {self.shape.batch}"
+            )
+        if axis2_norm < 0 or axis2_norm >= batch_ndim:
+            raise ValueError(
+                f"Axis {axis2} is out of bounds for batch dimensions {self.shape.batch}"
+            )
+
+        return jax.tree_util.tree_map(
+            lambda field: jnp.swapaxes(field, axis1_norm, axis2_norm), self
+        )
 
     def random(cls, shape=(), key=None):
         if key is None:
@@ -198,6 +219,7 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
     setattr(cls, "reshape", reshape)
     setattr(cls, "flatten", flatten)
     setattr(cls, "transpose", transpose)
+    setattr(cls, "swapaxes", swapaxes)
     setattr(cls, "random", classmethod(random))
     setattr(cls, "padding_as_batch", padding_as_batch)
     return cls

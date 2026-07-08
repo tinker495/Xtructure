@@ -1,9 +1,11 @@
 """Tests for xnp.transpose and xnp.swapaxes helpers."""
 
 import jax.numpy as jnp
+import pytest
 
 from tests.xnp.shared_data import NestedData, SimpleData, VectorData
 from xtructure import numpy as xnp
+from xtructure.core.structuredtype import StructuredType
 
 
 def test_transpose_2d_basic():
@@ -176,6 +178,14 @@ def test_transpose_nested_dataclass():
     expected_simple_value = jnp.transpose(data.simple.value)
     assert jnp.array_equal(result.simple.id, expected_simple_id)
     assert jnp.array_equal(result.simple.value, expected_simple_value)
+
+
+def test_transpose_unstructured_raises():
+    data = SimpleData(id=jnp.array(1), value=jnp.array([2.0, 3.0, 4.0]))
+    assert data.structured_type == StructuredType.UNSTRUCTURED
+
+    with pytest.raises(ValueError):
+        xnp.transpose(data)
 
 
 def test_swap_axes_2d_basic():
@@ -356,6 +366,14 @@ def test_swap_axes_nested_dataclass():
     expected_simple_value = jnp.array([[1.0, 3.0], [2.0, 4.0]], dtype=jnp.float32)
     assert jnp.array_equal(result.simple.id, expected_simple_id)
     assert jnp.array_equal(result.simple.value, expected_simple_value)
+
+
+def test_swapaxes_unstructured_raises():
+    data = SimpleData(id=jnp.array(1), value=jnp.array([2.0, 3.0, 4.0]))
+    assert data.structured_type == StructuredType.UNSTRUCTURED
+
+    with pytest.raises(ValueError):
+        xnp.swapaxes(data, 0, 0)
 
 
 def test_swap_axes_integration_with_other_ops():
