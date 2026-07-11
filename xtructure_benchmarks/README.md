@@ -46,3 +46,20 @@ All output files are saved in the `xtructure_benchmarks/results/` directory.
   - **X-axis**: Batch Size (on a log base 2 scale)
   - **Y-axis**: Operations per Second (on a log scale)
   - **Interpretation**: Higher values on the y-axis indicate better performance. The graphs clearly illustrate the performance difference as the amount of data processed in parallel increases.
+
+## Measurement caveats
+
+- **Pass timed operands as jit arguments, not closure constants.** A jitted
+  callable whose operands are all captured by closure can be constant-folded
+  by XLA into precomputed outputs; remove-side ops (pop/dequeue/delete_mins)
+  then report impossible throughput (40M+ ops/s). The harness passes the
+  container through `args_supplier` for this reason — keep that pattern when
+  adding benchmarks.
+- **Per-process compile lottery.** Identical code can land in fast or slow
+  XLA plans per process (observed 2-5× on hashtable/heap ops). Single-process
+  A/B numbers are not comparable; compare medians from multiple alternating
+  processes of each arm.
+- **Host-dispatch sensitivity.** Small-kernel ops (queue/stack) are dominated
+  by per-call dispatch + device-sync host time on some hosts (notably WSL2),
+  which can pin walls regardless of kernel count. Interpret absolute ops/s
+  with the environment block recorded in the results JSON.
