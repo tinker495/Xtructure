@@ -121,6 +121,13 @@ def _hashtable_lookup_jit(table: Any, input: Xtructurable) -> tuple[HashIdx, boo
     return HashIdx(index=idx.index * bucket_size_u32 + idx.slot_index), found
 
 
+# Probe rounds run unconditionally before the while_loop. Every while round
+# costs a host round-trip (the loop predicate is copied D2H), which dominates
+# lookup wall time on GPU; straight-line rounds cost only their (cheap)
+# kernels. 2 covers the typical probe depth at benchmark load factors.
+_PROLOGUE_PROBE_ROUNDS = 2
+
+
 def _hashtable_lookup_parallel_internal(
     table: Any,
     inputs: Xtructurable,
@@ -191,27 +198,19 @@ def _hashtable_lookup_parallel_internal(
             slot_offsets[None, :] != first_match_slot[:, None],
         )
         need_fallback = jnp.logical_and(~found_fast, jnp.any(other_fp_matches, axis=1))
-        any_need_fallback = jnp.any(need_fallback)
 
-        def _fallback_scan():
-            bucket_vals = table.table[flat_indices]
-            value_equals = jax.vmap(lambda bv, inp: jax.vmap(lambda s: s == inp)(bv))(
-                bucket_vals, inputs
-            )
-            match_found = jnp.logical_and(value_equals, other_fp_matches)
-            match_found = jnp.logical_and(match_found, need_fallback[:, None])
-            found_fb = jnp.any(match_found, axis=1)
-            idx_fb = jnp.argmax(match_found, axis=1).astype(SLOT_IDX_DTYPE)
-            return found_fb, idx_fb
-
-        found_fb, idx_fb = jax.lax.cond(
-            any_need_fallback,
-            _fallback_scan,
-            lambda: (
-                jnp.zeros_like(need_fallback, dtype=jnp.bool_),
-                jnp.zeros_like(first_match_slot, dtype=SLOT_IDX_DTYPE),
-            ),
+        # Unconditional: when need_fallback is all-False the masking below
+        # yields exactly (all-False, 0) — same as the old lax.cond false
+        # branch — and skipping the cond avoids a per-round D2H sync of its
+        # scalar predicate, which costs far more than this gather.
+        bucket_vals = table.table[flat_indices]
+        value_equals = jax.vmap(lambda bv, inp: jax.vmap(lambda s: s == inp)(bv))(
+            bucket_vals, inputs
         )
+        match_found = jnp.logical_and(value_equals, other_fp_matches)
+        match_found = jnp.logical_and(match_found, need_fallback[:, None])
+        found_fb = jnp.any(match_found, axis=1)
+        idx_fb = jnp.argmax(match_found, axis=1).astype(SLOT_IDX_DTYPE)
 
         new_founds_in_bucket = jnp.logical_or(found_fast, found_fb)
         founds = jnp.logical_or(founds, new_founds_in_bucket)
@@ -243,7 +242,14 @@ def _hashtable_lookup_parallel_internal(
         active = continue_mask
         return idxs, founds, probes, active
 
-    idxs, founds, _, _ = jax.lax.while_loop(_cond, _body, (idxs, founds, probes, active))
+    # A round with active all-False leaves the carry bit-identical (every
+    # update is masked by step_active/continue_mask), so unconditionally
+    # unrolling the first rounds preserves the while_loop semantics exactly
+    # while skipping their host-synced loop-predicate checks.
+    val = (idxs, founds, probes, active)
+    for _ in range(_PROLOGUE_PROBE_ROUNDS):
+        val = _body(val)
+    idxs, founds, _, _ = jax.lax.while_loop(_cond, _body, val)
     return idxs, founds
 
 
@@ -293,6 +299,36 @@ def _hashtable_lookup_parallel_jit(
 ) -> tuple[HashIdx, chex.Array]:
     probe = get_new_idx_byterized_batched(inputs, table._capacity, table.seed)
     return _lookup_parallel_from_probe(table, inputs, probe, filled)
+
+
+@jax.jit
+def _hashtable_lookup_parallel_all_jit(
+    table: Any, inputs: Xtructurable
+) -> tuple[HashIdx, chex.Array]:
+    probe = get_new_idx_byterized_batched(inputs, table._capacity, table.seed)
+    mask = jnp.ones(inputs.shape.batch, dtype=jnp.bool_)
+    return _lookup_parallel_from_probe(table, inputs, probe, mask)
+
+
+def _lookup_parallel_dispatch(
+    table: Any, inputs: Xtructurable, filled: chex.Array | bool
+) -> tuple[HashIdx, chex.Array]:
+    """Route Python-bool ``filled`` to a jit with no scalar operand.
+
+    A literal ``filled`` bool otherwise becomes a per-call device scalar:
+    one H2D upload plus a conditional-thunk D2H readback of the same value
+    on every lookup. Dispatching at trace time bakes the mask in as a
+    constant; array masks keep the dynamic path unchanged.
+    """
+    if isinstance(filled, bool):
+        if filled:
+            return _hashtable_lookup_parallel_all_jit(table, inputs)
+        batch_size = inputs.shape.batch
+        return (
+            HashIdx(index=jnp.zeros(batch_size, dtype=SIZE_DTYPE)),
+            jnp.zeros(batch_size, dtype=jnp.bool_),
+        )
+    return _hashtable_lookup_parallel_jit(table, inputs, filled)
 
 
 @jax.jit
