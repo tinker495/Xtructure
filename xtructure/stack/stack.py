@@ -5,7 +5,7 @@ import jax.numpy as jnp
 
 from ..core.dataclass import base_dataclass
 from ..core.dtype_facts import SIZE_DTYPE
-from ..core.packing import pack_rows, unpack_rows
+from ..core.packing import pack_rows, packed_default_store, unpack_rows
 from ..core.protocol import Xtructurable
 
 
@@ -14,7 +14,7 @@ def _stack_build_jit(max_size: int, value_class: Xtructurable):
     size = SIZE_DTYPE(0)
     # Packed default rows, not zeros: reads of never-written slots (e.g.
     # clamped partial-pop rows) must keep returning value_class defaults.
-    val_store = pack_rows(value_class, value_class.default((max_size,)))
+    val_store = packed_default_store(value_class, max_size)
     return Stack(max_size=max_size, value_class=value_class, size=size, val_store=val_store)
 
 

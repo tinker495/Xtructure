@@ -5,7 +5,7 @@ import jax.numpy as jnp
 
 from ..core.dataclass import base_dataclass
 from ..core.dtype_facts import SIZE_DTYPE
-from ..core.packing import pack_rows, unpack_rows
+from ..core.packing import pack_rows, packed_default_store, unpack_rows
 from ..core.protocol import Xtructurable
 
 
@@ -13,7 +13,7 @@ from ..core.protocol import Xtructurable
 def _queue_build_jit(max_size: int, value_class: Xtructurable):
     # Packed default rows, not zeros: reads of never-written slots must keep
     # returning value_class defaults (legacy val_store semantics).
-    val_store = pack_rows(value_class, value_class.default((max_size,)))
+    val_store = packed_default_store(value_class, max_size)
     head = SIZE_DTYPE(0)
     tail = SIZE_DTYPE(0)
     return Queue(

@@ -64,6 +64,18 @@ def pack_rows(value_class: Any, items: Xtructurable) -> jnp.ndarray:
     return jnp.concatenate(rows, axis=1)
 
 
+def packed_default_store(value_class: Any, max_size: int) -> jnp.ndarray:
+    """Packed store of ``max_size`` default rows.
+
+    Tiles ONE packed default row instead of packing a materialized
+    ``default((max_size,))`` batch — the latter transiently holds the
+    unpacked store, its bitcast copies, and the concat output at once,
+    which OOMs multi-GiB stores (observed on IDA* trail-bearing stacks).
+    """
+    row = pack_rows(value_class, value_class.default((1,)))
+    return jnp.tile(row, (max_size, 1))
+
+
 def unpack_rows(value_class: Any, packed: jnp.ndarray) -> Xtructurable:
     """Inverse of :func:`pack_rows` for a ``uint8[batch, row_bytes]`` buffer."""
     spec = row_spec(value_class)
