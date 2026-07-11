@@ -16,8 +16,8 @@ from .lookup import (
     _hashtable_getitem_jit,
     _hashtable_lookup_bucket_jit,
     _hashtable_lookup_jit,
-    _hashtable_lookup_parallel_jit,
     _hashtable_lookup_parallel_with_probe_jit,
+    _lookup_parallel_dispatch,
 )
 from .types import BucketIdx, HashIdx, HashTableProbe
 
@@ -103,7 +103,7 @@ class HashTable:
     def lookup_parallel(
         self, inputs: Xtructurable, filled: chex.Array | bool = True
     ) -> tuple[HashIdx, chex.Array]:
-        return _hashtable_lookup_parallel_jit(self, inputs, filled)
+        return _lookup_parallel_dispatch(self, inputs, filled)
 
     def lookup_parallel_with_probe(
         self, inputs: Xtructurable, filled: chex.Array | bool = True
