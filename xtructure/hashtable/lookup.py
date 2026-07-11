@@ -302,6 +302,36 @@ def _hashtable_lookup_parallel_jit(
 
 
 @jax.jit
+def _hashtable_lookup_parallel_all_jit(
+    table: Any, inputs: Xtructurable
+) -> tuple[HashIdx, chex.Array]:
+    probe = get_new_idx_byterized_batched(inputs, table._capacity, table.seed)
+    mask = jnp.ones(inputs.shape.batch, dtype=jnp.bool_)
+    return _lookup_parallel_from_probe(table, inputs, probe, mask)
+
+
+def _lookup_parallel_dispatch(
+    table: Any, inputs: Xtructurable, filled: chex.Array | bool
+) -> tuple[HashIdx, chex.Array]:
+    """Route Python-bool ``filled`` to a jit with no scalar operand.
+
+    A literal ``filled`` bool otherwise becomes a per-call device scalar:
+    one H2D upload plus a conditional-thunk D2H readback of the same value
+    on every lookup. Dispatching at trace time bakes the mask in as a
+    constant; array masks keep the dynamic path unchanged.
+    """
+    if isinstance(filled, bool):
+        if filled:
+            return _hashtable_lookup_parallel_all_jit(table, inputs)
+        batch_size = inputs.shape.batch
+        return (
+            HashIdx(index=jnp.zeros(batch_size, dtype=SIZE_DTYPE)),
+            jnp.zeros(batch_size, dtype=jnp.bool_),
+        )
+    return _hashtable_lookup_parallel_jit(table, inputs, filled)
+
+
+@jax.jit
 def _hashtable_lookup_parallel_with_probe_jit(
     table: Any, inputs: Xtructurable, filled: chex.Array | bool = True
 ) -> tuple[HashIdx, chex.Array, HashTableProbe]:
