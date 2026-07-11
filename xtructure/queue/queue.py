@@ -5,13 +5,15 @@ import jax.numpy as jnp
 
 from ..core.dataclass import base_dataclass
 from ..core.dtype_facts import SIZE_DTYPE
-from ..core.packing import pack_rows, row_spec, unpack_rows
+from ..core.packing import pack_rows, packed_default_store, unpack_rows
 from ..core.protocol import Xtructurable
 
 
 @partial(jax.jit, static_argnums=(0, 1))
 def _queue_build_jit(max_size: int, value_class: Xtructurable):
-    val_store = jnp.zeros((max_size, row_spec(value_class).row_bytes), dtype=jnp.uint8)
+    # Packed default rows, not zeros: reads of never-written slots must keep
+    # returning value_class defaults (legacy val_store semantics).
+    val_store = packed_default_store(value_class, max_size)
     head = SIZE_DTYPE(0)
     tail = SIZE_DTYPE(0)
     return Queue(

@@ -1,67 +1,70 @@
 from functools import partial
 
 import jax
-import jax.numpy as jnp  # noqa: F401  # Retained for downstream type hints.
+import jax.numpy as jnp
 
 from ..core.dataclass import base_dataclass
 from ..core.dtype_facts import SIZE_DTYPE
+from ..core.packing import pack_rows, packed_default_store, unpack_rows
 from ..core.protocol import Xtructurable
 
 
 @partial(jax.jit, static_argnums=(0, 1))
 def _stack_build_jit(max_size: int, value_class: Xtructurable):
     size = SIZE_DTYPE(0)
-    val_store = value_class.default((max_size,))
-    return Stack(max_size=max_size, size=size, val_store=val_store)
+    # Packed default rows, not zeros: reads of never-written slots (e.g.
+    # clamped partial-pop rows) must keep returning value_class defaults.
+    val_store = packed_default_store(value_class, max_size)
+    return Stack(max_size=max_size, value_class=value_class, size=size, val_store=val_store)
 
 
 @jax.jit
 def _stack_push_jit(stack, items: Xtructurable):
     batch_size = items.shape.batch
     if batch_size == ():
-        new_size = stack.size + 1
-        indices = stack.size
+        items = jax.tree_util.tree_map(lambda x: x[None], items)
+        num_to_push = 1
     else:
         assert len(batch_size) == 1, "Batch size must be 1"
-        new_size = stack.size + batch_size[0]
-        indices = stack.size + jnp.arange(batch_size[0])
-    val_store = stack.val_store.at[indices].set(items)
-    # Since Stack is a dataclass (chex.ArrayTree), we need to return a new instance
-    # or if it's mutable (which it isn't usually in JAX), we construct a new one.
-    # The original code was modifying self attributes which is not pure JAX if it was a python class
-    # but here it's @base_dataclass which is likely a Pytree.
-    # The original code did: self.val_store = ...; return self.
-    # We should reconstruct.
-    return stack.replace(val_store=val_store, size=new_size)
+        num_to_push = batch_size[0]
+    rows = pack_rows(stack.value_class, items)
+    # One contiguous row write regardless of leaf count: the packed store
+    # keeps the per-call GPU submission count flat (see core/packing.py).
+    val_store = jax.lax.dynamic_update_slice(
+        stack.val_store, rows, (stack.size.astype(jnp.int32), jnp.int32(0))
+    )
+    return stack.replace(val_store=val_store, size=stack.size + num_to_push)
+
+
+@partial(jax.jit, static_argnums=(1,))
+def _stack_read_jit(stack, num_items: int):
+    # Gather with the legacy index arithmetic (uint32 underflow + clamp on
+    # partial pops) — JAxtar id_stars depends on that exact row placement,
+    # so a start-clamping dynamic_slice is NOT equivalent here.
+    if num_items == 1:
+        indices = (stack.size - 1)[None]
+    else:
+        indices = stack.size - jnp.arange(num_items, 0, -1)
+    rows = stack.val_store[indices]
+    items = unpack_rows(stack.value_class, rows)
+    if num_items == 1:
+        items = jax.tree_util.tree_map(lambda x: x[0], items)
+    return items
 
 
 @partial(jax.jit, static_argnums=(1,))
 def _stack_pop_jit(stack, num_items: int = 1):
-    new_size = stack.size - num_items
-    if num_items == 1:
-        indices = stack.size - 1
-    else:
-        indices = stack.size - jnp.arange(num_items, 0, -1)
-    popped_items = stack.val_store[indices]
-    return stack.replace(size=new_size), popped_items
-
-
-@partial(jax.jit, static_argnums=(1,))
-def _stack_peek_jit(stack, num_items: int = 1):
-    if num_items == 1:
-        indices = stack.size - 1
-    else:
-        indices = stack.size - jnp.arange(num_items, 0, -1)
-    peeked_items = stack.val_store[indices]
-    return peeked_items
+    popped_items = _stack_read_jit(stack, num_items)
+    return stack.replace(size=stack.size - num_items), popped_items
 
 
 @jax.jit
 def _stack_getitem_jit(stack, idx: SIZE_DTYPE) -> Xtructurable:
-    return stack.val_store[idx]
+    rows = stack.val_store[jnp.asarray(idx)[None]]
+    return jax.tree_util.tree_map(lambda x: x[0], unpack_rows(stack.value_class, rows))
 
 
-@base_dataclass(static_fields=("max_size",))
+@base_dataclass(static_fields=("max_size", "value_class"))
 class Stack:
     """
     A JAX-compatible batched Stack data structure.
@@ -69,13 +72,15 @@ class Stack:
 
     Attributes:
         max_size: Maximum number of elements the stack can hold.
+        value_class: The Xtructurable class stored in the stack.
         size: Current number of elements in the stack.
-        val_store: Array storing the values in the stack.
+        val_store: Packed byte storage, ``uint8[max_size, row_bytes]``.
     """
 
     max_size: int
+    value_class: Xtructurable
     size: SIZE_DTYPE
-    val_store: Xtructurable
+    val_store: jnp.ndarray
 
     @staticmethod
     def build(max_size: int, value_class: Xtructurable) -> "Stack":
@@ -129,7 +134,7 @@ class Stack:
         Returns:
             The top `num_items` from the stack.
         """
-        return _stack_peek_jit(self, num_items)
+        return _stack_read_jit(self, num_items)
 
     def __getitem__(self, idx: SIZE_DTYPE) -> Xtructurable:
         """
