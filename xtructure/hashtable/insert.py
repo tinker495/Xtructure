@@ -10,7 +10,10 @@ import jax.numpy as jnp
 
 from ..core.dtype_facts import SIZE_DTYPE
 from ..core.protocol import Xtructurable
-from ..core.xtructure_numpy.array_ops import _where_no_broadcast
+from ..core.xtructure_numpy.array_ops import (
+    _update_array_on_condition,
+    _where_no_broadcast,
+)
 from .constants import SLOT_IDX_DTYPE
 from .hash_utils import (
     _compute_unique_mask_from_uint32eds,
@@ -269,19 +272,13 @@ def _hashtable_parallel_insert_internal(
     successful = jnp.logical_and(successful, index.slot_index < table.bucket_size)
     flat_indices = index.index * SIZE_DTYPE(table.bucket_size) + index.slot_index.astype(SIZE_DTYPE)
 
-    total_slots = SIZE_DTYPE((table._capacity + 1) * table.bucket_size)
-    safe_indices = _where_no_broadcast(
-        successful,
+    new_table = table.table.at[flat_indices].set_as_condition(successful, inputs)
+
+    new_fingerprints = _update_array_on_condition(
+        table.fingerprints,
         flat_indices,
-        jnp.full_like(flat_indices, total_slots),
-    )
-    new_table = jax.tree_util.tree_map(
-        lambda current, value: current.at[safe_indices].set(value, mode="drop"),
-        table.table,
-        inputs,
-    )
-    new_fingerprints = table.fingerprints.at[safe_indices].set(
-        fingerprints.astype(jnp.uint32), mode="drop"
+        successful,
+        fingerprints.astype(jnp.uint32),
     )
     new_bucket_fill_levels = table.bucket_fill_levels.at[index.index].add(successful)
     new_size = table.size + jnp.sum(successful, dtype=SIZE_DTYPE)
