@@ -18,8 +18,8 @@ def test_layout_entrypoints_exist() -> None:
 
 
 def test_decorator_adapters_stay_in_adapter_packages() -> None:
-    assert (DECORATOR_DIR / "layout_adapters").is_dir()
-    assert (DECORATOR_DIR / "pytree_adapters").is_dir()
+    assert (DECORATOR_DIR / "layout_adapters" / "__init__.py").is_file()
+    assert (DECORATOR_DIR / "pytree_adapters" / "__init__.py").is_file()
 
     forbidden_root_names = {
         "aggregate_bitpack.py",
