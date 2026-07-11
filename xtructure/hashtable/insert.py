@@ -85,7 +85,7 @@ def _allocate_initial_bucket_slots(
     table: Any,
     index: BucketIdx,
     updatable: chex.Array,
-) -> tuple[BucketIdx, chex.Array]:
+) -> tuple[chex.Array, chex.Array]:
     """Allocate every candidate that fits in its lookup-selected bucket.
 
     Parallel lookup leaves each missing value at the first free slot of a
@@ -95,9 +95,10 @@ def _allocate_initial_bucket_slots(
     rounds are exactly equivalent to assigning candidates their stable rank
     within the bucket in one sort.
 
-    Returns the ranked indices and a scalar indicating whether all active
-    candidates fit. Callers route overflow batches to the bucket-level probe
-    allocator.
+    Returns the ranked slots (batch order, SIZE_DTYPE — may exceed
+    bucket_size for overflowing candidates) and a scalar indicating whether
+    all active candidates fit. Callers route overflow batches to the
+    bucket-level probe allocator, which warm-starts from these slots.
     """
     batch_size = index.index.shape[0]
     batch_idx = jnp.arange(batch_size, dtype=jnp.uint32)
@@ -124,11 +125,7 @@ def _allocate_initial_bucket_slots(
 
     slots = jnp.zeros((batch_size,), dtype=SIZE_DTYPE)
     slots = slots.at[sorted_batch_idx].set(ranked_slots)
-    ranked_index = BucketIdx(
-        index=index.index,
-        slot_index=slots.astype(SLOT_IDX_DTYPE),
-    )
-    return ranked_index, all_fit
+    return slots, all_fit
 
 
 def _allocate_bucket_slots(
@@ -136,8 +133,15 @@ def _allocate_bucket_slots(
     index: BucketIdx,
     probe_steps: chex.Array,
     updatable: chex.Array,
+    initial_slots: chex.Array,
 ) -> tuple[BucketIdx, chex.Array]:
-    """Allocate stable per-bucket ranks and probe only bucket overflows."""
+    """Allocate stable per-bucket ranks and probe only bucket overflows.
+
+    Warm-starts from the ranked slots of :func:`_allocate_initial_bucket_slots`:
+    the prologue below must stay bit-equivalent to the first `_body` round with
+    every candidate pending, so the while loop only pays full-batch sorts for
+    genuine bucket overflows.
+    """
     batch_size = index.index.shape[0]
     batch_idx = jnp.arange(batch_size, dtype=jnp.uint32)
     sentinel = jnp.uint32(0xFFFFFFFF)
@@ -148,9 +152,19 @@ def _allocate_bucket_slots(
     probe_steps = jnp.asarray(probe_steps, dtype=SIZE_DTYPE)
 
     pending = jnp.asarray(updatable, dtype=jnp.bool_)
-    assigned = jnp.zeros_like(pending)
-    probe_count = jnp.zeros((batch_size,), dtype=SIZE_DTYPE)
-    slots = index.slot_index.astype(SIZE_DTYPE)
+    first_free = table.bucket_fill_levels[index.index].astype(SIZE_DTYPE)
+    rank_in_bucket = initial_slots - first_free
+    accepted = jnp.logical_and(
+        pending,
+        jnp.logical_and(initial_slots < bucket_size, rank_in_bucket <= max_probes),
+    )
+    slots = jnp.where(accepted, initial_slots, index.slot_index.astype(SIZE_DTYPE))
+    steps_to_next = jnp.maximum(SIZE_DTYPE(1), bucket_size - first_free)
+    overflow = pending & ~accepted & (initial_slots >= bucket_size) & (steps_to_next <= max_probes)
+    buckets = jnp.where(overflow, (index.index + probe_steps) & capacity_mask, index.index)
+    probe_count = jnp.where(overflow, steps_to_next, SIZE_DTYPE(0))
+    pending = overflow
+    assigned = accepted
 
     def _cond(
         carry: tuple[chex.Array, chex.Array, chex.Array, chex.Array, chex.Array],
@@ -215,7 +229,7 @@ def _allocate_bucket_slots(
     buckets, slots, _, assigned, _ = jax.lax.while_loop(
         _cond,
         _body,
-        (index.index, slots, pending, assigned, probe_count),
+        (buckets, slots, pending, assigned, probe_count),
     )
     return (
         BucketIdx(index=buckets, slot_index=slots.astype(SLOT_IDX_DTYPE)),
@@ -261,11 +275,14 @@ def _hashtable_parallel_insert_internal(
     updatable: chex.Array,
     fingerprints: chex.Array,
 ) -> tuple[Any, BucketIdx]:
-    ranked_index, all_fit = _allocate_initial_bucket_slots(table, index, updatable)
+    initial_slots, all_fit = _allocate_initial_bucket_slots(table, index, updatable)
     index, pending = jax.lax.cond(
         all_fit,
-        lambda: (ranked_index, jnp.zeros_like(updatable, dtype=jnp.bool_)),
-        lambda: _allocate_bucket_slots(table, index, probe_steps, updatable),
+        lambda: (
+            BucketIdx(index=index.index, slot_index=initial_slots.astype(SLOT_IDX_DTYPE)),
+            jnp.zeros_like(updatable, dtype=jnp.bool_),
+        ),
+        lambda: _allocate_bucket_slots(table, index, probe_steps, updatable, initial_slots),
     )
 
     successful = jnp.logical_and(updatable, jnp.logical_not(pending))
