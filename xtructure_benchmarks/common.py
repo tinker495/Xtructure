@@ -339,10 +339,14 @@ def run_linear_container_benchmarks(
 
         filled_container = getattr(container, add_method)(values_device)
         jax.block_until_ready(filled_container)
+        # The container must be a jit ARGUMENT: as a closure constant XLA
+        # can fold the whole remove into precomputed outputs (impossible
+        # 40M+ ops/s readings).
         remove_durations = run_jax_trials(
-            lambda: getattr(filled_container, remove_method)(batch_size),
+            lambda container: getattr(container, remove_method)(batch_size),
             trials=trials,
             include_device_transfer=(mode == "e2e"),
+            args_supplier=lambda: (filled_container,),
         )
         remove_stats = throughput_stats(batch_size, remove_durations)
 

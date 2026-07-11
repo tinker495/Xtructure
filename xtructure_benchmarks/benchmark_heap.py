@@ -56,10 +56,13 @@ def benchmark_bgpq_insert(
 def benchmark_bgpq_delete(heap: BGPQ, trials: int = 10, include_host_transfer: bool = False):
     """Benchmarks the batched deletion from the xtructure BGPQ."""
 
+    # heap as a jit ARGUMENT — a closure constant lets XLA fold the whole
+    # delete into precomputed outputs (impossible ops/s readings).
     durations = run_jax_trials(
-        lambda: BGPQ.delete_mins(heap),
+        lambda h: BGPQ.delete_mins(h),
         trials=trials,
         include_device_transfer=include_host_transfer,
+        args_supplier=lambda: (heap,),
     )
     return durations
 
