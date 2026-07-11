@@ -5,6 +5,7 @@ import pytest
 from tests.testdata import HashValueAB, OddBytesValue47
 from xtructure import HashTable
 from xtructure.core.xtructure_decorators.pytree_adapters import hash as hash_adapter
+from xtructure.hashtable.hash_utils import get_new_idx_byterized_batched
 
 
 def test_hash_table_lookup():
@@ -99,6 +100,34 @@ def test_same_state_insert_at_batch():
         assert jnp.all(
             jax.vmap(lambda x, y: x == y)(contents, samples)
         ), "Inserted states not found in table"
+
+
+def test_parallel_insert_probes_bucket_overflow_without_losing_values():
+    """A batch wider than an initial bucket must spill through double hashing."""
+    count = 24
+    bucket_size = 2
+    table: HashTable = HashTable.build(
+        HashValueAB,
+        seed=17,
+        capacity=32,
+        bucket_size=bucket_size,
+        hash_size_multiplier=1,
+    )
+    samples = HashValueAB.random((count,), key=jax.random.PRNGKey(23))
+    probe = get_new_idx_byterized_batched(samples, table._capacity, table.seed)
+    initial_counts = jnp.bincount(probe.index, length=table._capacity)
+
+    assert int(jnp.max(initial_counts)) > bucket_size
+
+    table, inserted, unique, hash_idx = table.parallel_insert(samples)
+    lookup_idx, found = table.lookup_parallel(samples)
+
+    assert int(table.size) == count
+    assert bool(jnp.all(inserted))
+    assert bool(jnp.all(unique))
+    assert bool(jnp.all(found))
+    assert int(jnp.unique(hash_idx.index).shape[0]) == count
+    assert bool(jnp.all(lookup_idx.index == hash_idx.index))
 
 
 def test_large_hash_table():

@@ -81,6 +81,148 @@ def _resolve_slot_conflicts(flat_indices: chex.Array, active: chex.Array) -> che
     return winners
 
 
+def _allocate_initial_bucket_slots(
+    table: Any,
+    index: BucketIdx,
+    updatable: chex.Array,
+) -> tuple[BucketIdx, chex.Array]:
+    """Allocate every candidate that fits in its lookup-selected bucket.
+
+    Parallel lookup leaves each missing value at the first free slot of a
+    non-full bucket.  The legacy insert loop then elects one writer for that
+    slot, advances the losers by one slot, sorts the entire batch again, and
+    repeats.  When every bucket has enough remaining slots, those repeated
+    rounds are exactly equivalent to assigning candidates their stable rank
+    within the bucket in one sort.
+
+    Returns the ranked indices and a scalar indicating whether all active
+    candidates fit. Callers route overflow batches to the bucket-level probe
+    allocator.
+    """
+    batch_size = index.index.shape[0]
+    batch_idx = jnp.arange(batch_size, dtype=jnp.uint32)
+    sentinel = jnp.uint32(0xFFFFFFFF)
+    bucket_keys = jnp.where(updatable, index.index.astype(jnp.uint32), sentinel)
+
+    sorted_buckets, sorted_batch_idx = jax.lax.sort(
+        (bucket_keys, batch_idx), dimension=0, is_stable=True
+    )
+    valid_sorted = sorted_buckets != sentinel
+    group_starts = jnp.concatenate(
+        [jnp.array([True]), sorted_buckets[1:] != sorted_buckets[:-1]], axis=0
+    )
+    sorted_positions = jnp.arange(batch_size, dtype=SIZE_DTYPE)
+    start_positions = jnp.where(group_starts, sorted_positions, SIZE_DTYPE(0))
+    group_start_positions = jax.lax.cummax(start_positions, axis=0)
+    rank_in_bucket = sorted_positions - group_start_positions
+
+    safe_buckets = jnp.where(valid_sorted, sorted_buckets, jnp.uint32(table._capacity))
+    first_free = table.bucket_fill_levels[safe_buckets].astype(SIZE_DTYPE)
+    ranked_slots = first_free + rank_in_bucket
+    fits_sorted = jnp.logical_or(~valid_sorted, ranked_slots < table.bucket_size)
+    all_fit = jnp.all(fits_sorted)
+
+    slots = jnp.zeros((batch_size,), dtype=SIZE_DTYPE)
+    slots = slots.at[sorted_batch_idx].set(ranked_slots)
+    ranked_index = BucketIdx(
+        index=index.index,
+        slot_index=slots.astype(SLOT_IDX_DTYPE),
+    )
+    return ranked_index, all_fit
+
+
+def _allocate_bucket_slots(
+    table: Any,
+    index: BucketIdx,
+    probe_steps: chex.Array,
+    updatable: chex.Array,
+) -> tuple[BucketIdx, chex.Array]:
+    """Allocate stable per-bucket ranks and probe only bucket overflows."""
+    batch_size = index.index.shape[0]
+    batch_idx = jnp.arange(batch_size, dtype=jnp.uint32)
+    sentinel = jnp.uint32(0xFFFFFFFF)
+    capacity = SIZE_DTYPE(table._capacity)
+    capacity_mask = capacity - SIZE_DTYPE(1)
+    bucket_size = SIZE_DTYPE(table.bucket_size)
+    max_probes = SIZE_DTYPE(table.max_probes)
+    probe_steps = jnp.asarray(probe_steps, dtype=SIZE_DTYPE)
+
+    pending = jnp.asarray(updatable, dtype=jnp.bool_)
+    assigned = jnp.zeros_like(pending)
+    probe_count = jnp.zeros((batch_size,), dtype=SIZE_DTYPE)
+    slots = index.slot_index.astype(SIZE_DTYPE)
+
+    def _cond(
+        carry: tuple[chex.Array, chex.Array, chex.Array, chex.Array, chex.Array],
+    ) -> chex.Array:
+        _, _, pending, _, _ = carry
+        return jnp.any(pending)
+
+    def _body(
+        carry: tuple[chex.Array, chex.Array, chex.Array, chex.Array, chex.Array],
+    ) -> tuple[chex.Array, chex.Array, chex.Array, chex.Array, chex.Array]:
+        buckets, slots, pending, assigned, probe_count = carry
+        bucket_keys = jnp.where(updatable, buckets, sentinel)
+        sorted_buckets, perm = jax.lax.sort((bucket_keys, batch_idx), dimension=0, is_stable=True)
+        sorted_pending = pending[perm]
+        sorted_assigned = assigned[perm]
+        valid_sorted = sorted_buckets != sentinel
+
+        group_starts = jnp.concatenate(
+            [jnp.array([True]), sorted_buckets[1:] != sorted_buckets[:-1]], axis=0
+        )
+        group_id = jnp.cumsum(group_starts.astype(jnp.int32)) - 1
+        assigned_per_group = (
+            jnp.zeros((batch_size,), dtype=SIZE_DTYPE)
+            .at[group_id]
+            .add(sorted_assigned.astype(SIZE_DTYPE))
+        )
+
+        pending_prefix = jnp.cumsum(sorted_pending.astype(SIZE_DTYPE))
+        prefix_before = pending_prefix - sorted_pending.astype(SIZE_DTYPE)
+        group_base_marks = jnp.where(group_starts, prefix_before, SIZE_DTYPE(0))
+        group_base = jax.lax.associative_scan(jnp.maximum, group_base_marks)
+        pending_rank = pending_prefix - group_base - SIZE_DTYPE(1)
+
+        safe_buckets = jnp.where(valid_sorted, sorted_buckets, capacity)
+        first_free = table.bucket_fill_levels[safe_buckets].astype(SIZE_DTYPE)
+        rank_offset = assigned_per_group[group_id] + pending_rank
+        proposed_slots = first_free + rank_offset
+        sorted_probe_count = probe_count[perm]
+        accepted_sorted = (
+            sorted_pending
+            & (proposed_slots < bucket_size)
+            & (sorted_probe_count + rank_offset <= max_probes)
+        )
+
+        accepted = jnp.zeros_like(pending).at[perm].set(accepted_sorted)
+        proposed = jnp.zeros((batch_size,), dtype=SIZE_DTYPE).at[perm].set(proposed_slots)
+        slots = jnp.where(accepted, proposed, slots)
+        assigned = assigned | accepted
+
+        current_fill = table.bucket_fill_levels[buckets].astype(SIZE_DTYPE)
+        steps_to_next = jnp.maximum(SIZE_DTYPE(1), bucket_size - current_fill)
+        overflow = (
+            pending
+            & ~accepted
+            & (proposed >= bucket_size)
+            & (probe_count + steps_to_next <= max_probes)
+        )
+        buckets = jnp.where(overflow, (buckets + probe_steps) & capacity_mask, buckets)
+        probe_count = jnp.where(overflow, probe_count + steps_to_next, probe_count)
+        return buckets, slots, overflow, assigned, probe_count
+
+    buckets, slots, _, assigned, _ = jax.lax.while_loop(
+        _cond,
+        _body,
+        (index.index, slots, pending, assigned, probe_count),
+    )
+    return (
+        BucketIdx(index=buckets, slot_index=slots.astype(SLOT_IDX_DTYPE)),
+        jnp.logical_and(updatable, ~assigned),
+    )
+
+
 @jax.jit
 def _hashtable_insert_jit(table: Any, input: Xtructurable) -> tuple[Any, bool, HashIdx]:
     def _update_table(table: Any, input: Xtructurable, idx: BucketIdx, fingerprint: chex.Array):
@@ -119,74 +261,12 @@ def _hashtable_parallel_insert_internal(
     updatable: chex.Array,
     fingerprints: chex.Array,
 ) -> tuple[Any, BucketIdx]:
-    capacity = jnp.asarray(table._capacity, dtype=SIZE_DTYPE)
-    probe_steps = jnp.asarray(probe_steps, dtype=SIZE_DTYPE)
-
-    def _advance(idx: BucketIdx, step: chex.Array) -> BucketIdx:
-        next_bucket = idx.slot_index >= (table.bucket_size - 1)
-
-        def _next_bucket() -> BucketIdx:
-            mask = capacity - SIZE_DTYPE(1)
-            next_index = (idx.index + step) & mask
-            bucket_fill = table.bucket_fill_levels[next_index]
-            return BucketIdx(
-                index=SIZE_DTYPE(next_index),
-                slot_index=SLOT_IDX_DTYPE(bucket_fill),
-            )
-
-        def _same_bucket() -> BucketIdx:
-            return BucketIdx(
-                index=idx.index,
-                slot_index=SLOT_IDX_DTYPE(idx.slot_index + 1),
-            )
-
-        return jax.lax.cond(next_bucket, _next_bucket, _same_bucket)
-
-    def _next_idx(idxs: BucketIdx, unupdateds: chex.Array) -> BucketIdx:
-        return jax.vmap(
-            lambda active, current_idx, step: jax.lax.cond(
-                active,
-                lambda: _advance(current_idx, step),
-                lambda: current_idx,
-            )
-        )(unupdateds, idxs, probe_steps)
-
-    valid_initial = index.slot_index < table.bucket_size
-    flat_initial_slots = index.index * SIZE_DTYPE(table.bucket_size) + index.slot_index.astype(
-        SIZE_DTYPE
+    ranked_index, all_fit = _allocate_initial_bucket_slots(table, index, updatable)
+    index, pending = jax.lax.cond(
+        all_fit,
+        lambda: (ranked_index, jnp.zeros_like(updatable, dtype=jnp.bool_)),
+        lambda: _allocate_bucket_slots(table, index, probe_steps, updatable),
     )
-    initial_candidates = jnp.logical_and(updatable, valid_initial)
-    initial_unique_mask = _resolve_slot_conflicts(flat_initial_slots, initial_candidates)
-    pending = jnp.logical_or(
-        jnp.logical_and(updatable, jnp.logical_not(initial_unique_mask)),
-        jnp.logical_and(updatable, jnp.logical_not(valid_initial)),
-    )
-
-    def _cond(val: tuple[BucketIdx, chex.Array, chex.Array]) -> bool:
-        _, pending, probes = val
-        return jnp.logical_and(jnp.any(pending), probes < table.max_probes)
-
-    def _body(
-        val: tuple[BucketIdx, chex.Array, chex.Array],
-    ) -> tuple[BucketIdx, chex.Array, chex.Array]:
-        idxs, pending, probes = val
-        updated_idxs = _next_idx(idxs, pending)
-
-        valid = updated_idxs.slot_index < table.bucket_size
-        flat_updated_slots = updated_idxs.index * SIZE_DTYPE(
-            table.bucket_size
-        ) + updated_idxs.slot_index.astype(SIZE_DTYPE)
-
-        active_for_unique = jnp.logical_and(updatable, valid)
-        unique_mask = _resolve_slot_conflicts(flat_updated_slots, active_for_unique)
-
-        next_pending = jnp.logical_or(
-            jnp.logical_and(updatable, jnp.logical_not(unique_mask)),
-            jnp.logical_and(updatable, jnp.logical_not(valid)),
-        )
-        return updated_idxs, next_pending, probes + 1
-
-    index, pending, _ = jax.lax.while_loop(_cond, _body, (index, pending, jnp.uint32(0)))
 
     successful = jnp.logical_and(updatable, jnp.logical_not(pending))
     successful = jnp.logical_and(successful, index.slot_index < table.bucket_size)
@@ -250,14 +330,18 @@ def _hashtable_parallel_insert_jit(
         idx = BucketIdx(index=initial_idx, slot_index=jnp.zeros(batch_len, dtype=SLOT_IDX_DTYPE))
 
         initial_found = jnp.logical_not(unique_filled)
-        idx, found = _hashtable_lookup_parallel_internal(
-            table,
-            inputs,
-            idx,
-            steps,
-            fingerprints,
-            initial_found,
-            filled_mask,
+        idx, found = jax.lax.cond(
+            table.size == 0,
+            lambda: (idx, initial_found),
+            lambda: _hashtable_lookup_parallel_internal(
+                table,
+                inputs,
+                idx,
+                steps,
+                fingerprints,
+                initial_found,
+                filled_mask,
+            ),
         )
 
         updatable = jnp.logical_and(~found, unique_filled)
