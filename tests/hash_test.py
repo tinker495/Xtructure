@@ -5,7 +5,27 @@ import pytest
 from tests.testdata import HashValueAB, OddBytesValue47
 from xtructure import HashTable
 from xtructure.core.xtructure_decorators.pytree_adapters import hash as hash_adapter
-from xtructure.hashtable.hash_utils import get_new_idx_byterized_batched
+from xtructure.hashtable.hash_utils import (
+    _compute_unique_mask_from_uint32eds,
+    get_new_idx_byterized_batched,
+)
+
+
+def test_dedupe_reused_hash_collision_falls_back_to_exact_rows():
+    rows = jnp.array([[1, 2], [1, 2], [3, 4], [5, 6]], dtype=jnp.uint32)
+    filled = jnp.ones((4,), dtype=jnp.bool_)
+    unique_key = jnp.array([2.0, 1.0, 0.0, 0.0], dtype=jnp.float32)
+    colliding_hash = jnp.zeros((4,), dtype=jnp.uint32)
+
+    unique, representatives = _compute_unique_mask_from_uint32eds(
+        rows,
+        filled,
+        unique_key,
+        row_hash=colliding_hash,
+    )
+
+    assert jnp.array_equal(unique, jnp.array([False, True, True, True]))
+    assert jnp.array_equal(representatives, jnp.array([1, 1, 2, 3]))
 
 
 def test_hash_table_lookup():
