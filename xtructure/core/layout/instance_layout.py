@@ -152,15 +152,15 @@ def _build_instance_layout_from_signatures(
     mismatch_reasons: list[str] = []
 
     for field, raw_shape in zip(type_layout.fields, value_shapes):
-        nested_shape_cls = (
-            get_type_layout(field.nested_type).shape_tuple_cls if field.is_nested else None
-        )
+        nested_layout = get_type_layout(field.nested_type) if field.is_nested else None
+        nested_shape_cls = nested_layout.shape_tuple_cls if nested_layout is not None else None
         intrinsic_shape = type_layout.storage_intrinsic_shape_for(field)
         interpreted_shape, batch_shape, reason = _interpret_field_shape(
             field.name, raw_shape, intrinsic_shape, nested_shape_cls
         )
         field_shapes.append(interpreted_shape)
-        batch_shapes.append(batch_shape)
+        if not (nested_layout is not None and intrinsic_shape == () and not nested_layout.leaves):
+            batch_shapes.append(batch_shape)
         if reason is not None:
             mismatch_reasons.append(reason)
         instance_fields.append(

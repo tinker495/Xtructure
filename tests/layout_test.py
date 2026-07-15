@@ -72,6 +72,18 @@ class LayoutNestedEmptyAuto:
 
 
 @xtructure_dataclass(bitpack="off")
+class LayoutNestedEmptyAndData:
+    empty: FieldDescriptor.scalar(dtype=LayoutEmpty)
+    data: FieldDescriptor.scalar(dtype=LayoutInner)
+
+
+@xtructure_dataclass(bitpack="off")
+class LayoutNestedDataPair:
+    left: FieldDescriptor.scalar(dtype=LayoutInner)
+    right: FieldDescriptor.scalar(dtype=LayoutInner)
+
+
+@xtructure_dataclass(bitpack="off")
 class LayoutIntIntrinsicShape:
     value: FieldDescriptor(dtype=jnp.int32, intrinsic_shape=3)
 
@@ -358,6 +370,44 @@ def test_instance_layout_reports_nested_unstructured_tensor_field():
     assert layout.batch_shape == -1
     assert layout.mismatch_reason is not None
     assert "UNSTRUCTURED" in layout.mismatch_reason
+
+
+def test_scalar_nested_zero_leaf_field_is_batch_neutral():
+    outer = LayoutNestedEmptyAndData(
+        empty=LayoutEmpty(),
+        data=LayoutInner(val=jnp.arange(6, dtype=jnp.int32).reshape(2, 3)),
+    )
+
+    layout = get_instance_layout(outer)
+
+    assert layout.structured_type == StructuredType.BATCHED
+    assert layout.batch_shape == (2, 3)
+    assert layout.field_shape_for("empty").batch == ()
+    assert layout.fields[0].batch_shape == ()
+    assert layout.fields[0].mismatch_reason is None
+
+
+def test_data_bearing_nested_fields_still_require_one_batch_shape():
+    outer = LayoutNestedDataPair(
+        left=LayoutInner.default(shape=(2,)),
+        right=LayoutInner.default(shape=(3,)),
+    )
+
+    layout = get_instance_layout(outer)
+
+    assert layout.structured_type == StructuredType.UNSTRUCTURED
+    assert layout.batch_shape == -1
+    assert "field batch shapes disagree" in layout.mismatch_reason
+
+
+def test_all_zero_leaf_composite_remains_single():
+    outer = LayoutNestedEmptyAuto(empty=LayoutEmpty())
+
+    layout = get_instance_layout(outer)
+
+    assert layout.structured_type == StructuredType.SINGLE
+    assert layout.batch_shape == ()
+    assert layout.field_shape_for("empty").batch == ()
 
 
 def test_layout_cache_populates_instance_and_survives_pytree_roundtrip():
