@@ -34,6 +34,29 @@ def test_empty_heap_insert_populates_root_without_buffering():
     assert jnp.all(heap.key_store[0] == jnp.array([1.0, 2.0, 3.0, jnp.inf]))
 
 
+def test_sorted_insert_matches_regular_insert_for_sorted_batches():
+    batch_size = 4
+    regular = BGPQ.build(32, batch_size, HeapValueABC, jnp.float32)
+    presorted = BGPQ.build(32, batch_size, HeapValueABC, jnp.float32)
+    values = HeapValueABC.default((batch_size,)).replace(a=jnp.arange(batch_size, dtype=jnp.uint8))
+    batches = (
+        jnp.array([1.0, 4.0, 7.0, 10.0], dtype=jnp.float32),
+        jnp.array([2.0, 3.0, 8.0, jnp.inf], dtype=jnp.float32),
+        jnp.array([5.0, 5.0, 6.0, 9.0], dtype=jnp.float32),
+    )
+
+    for keys in batches:
+        regular = regular.insert(keys, values)
+        presorted = presorted.insert_sorted(keys, values)
+
+    jax.block_until_ready((regular, presorted))
+
+    regular_leaves = jax.tree_util.tree_leaves(regular)
+    presorted_leaves = jax.tree_util.tree_leaves(presorted)
+    assert len(regular_leaves) == len(presorted_leaves)
+    assert all(jnp.array_equal(lhs, rhs) for lhs, rhs in zip(regular_leaves, presorted_leaves))
+
+
 def test_empty_merge_buffer_stashes_partial_block_without_overflow():
     batch_size = 4
     heap = BGPQ.build(16, batch_size, HeapValueABC, jnp.float32)

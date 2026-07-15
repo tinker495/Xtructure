@@ -141,8 +141,7 @@ def _bgpq_insert_heapify_internal(heap: Any, block_key: chex.Array, block_val: X
 
 
 @jax.jit
-def _bgpq_insert_jit(heap: Any, block_key: chex.Array, block_val: Xtructurable):
-    block_key, block_val = sort_arrays(block_key, block_val)
+def _bgpq_insert_sorted_jit(heap: Any, block_key: chex.Array, block_val: Xtructurable):
     # Merge with root node
     root_key, root_val, block_key, block_val = merge_sort_split(
         heap.key_store[0], heap.val_store[0], block_key, block_val
@@ -165,3 +164,9 @@ def _bgpq_insert_jit(heap: Any, block_key: chex.Array, block_val: Xtructurable):
     )
     heap = heap.replace(heap_size=SIZE_DTYPE(heap.heap_size + added))
     return heap
+
+
+@jax.jit
+def _bgpq_insert_jit(heap: Any, block_key: chex.Array, block_val: Xtructurable):
+    block_key, block_val = sort_arrays(block_key, block_val)
+    return _bgpq_insert_sorted_jit(heap, block_key, block_val)

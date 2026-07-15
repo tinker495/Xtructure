@@ -21,6 +21,7 @@ from ..core.xtructure_numpy.array_ops import _where_no_broadcast
 from ._delete import _bgpq_delete_mins_jit
 from ._insert import (
     _bgpq_insert_jit,
+    _bgpq_insert_sorted_jit,
     _bgpq_make_batched_jit,
     _bgpq_make_batched_like_jit,
     _bgpq_merge_buffer_jit,
@@ -168,6 +169,10 @@ class BGPQ:
             Updated heap instance
         """
         return _bgpq_insert_jit(self, block_key, block_val)
+
+    def insert_sorted(self, block_key: chex.Array, block_val: Xtructurable) -> "BGPQ":
+        """Insert a stable, nondecreasing key/value block without sorting again."""
+        return _bgpq_insert_sorted_jit(self, block_key, block_val)
 
     def delete_mins(self):
         """
