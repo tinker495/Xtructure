@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from functools import partial
 from typing import Any
 
 import chex
@@ -309,13 +310,14 @@ def _hashtable_parallel_insert_internal(
     return table, index
 
 
-@jax.jit
+@partial(jax.jit, static_argnames=("assume_unique",))
 def _hashtable_parallel_insert_jit(
     table: Any,
     inputs: Xtructurable,
     filled: chex.Array | bool = None,
     unique_key: chex.Array = None,
     probe: HashTableProbe = None,
+    assume_unique: bool = False,
 ):
     if filled is None:
         filled = jnp.ones(inputs.shape.batch, dtype=jnp.bool_)
@@ -338,12 +340,20 @@ def _hashtable_parallel_insert_jit(
         uint32eds = local_probe.uint32ed
         fingerprints = local_probe.fingerprint
 
-        unique_filled, representative_indices = _compute_unique_mask_from_uint32eds(
-            uint32eds=uint32eds,
-            filled=filled_mask,
-            unique_key=unique_key,
-            row_hash=fingerprints,
-        )
+        if assume_unique:
+            unique_filled = filled_mask
+            representative_indices = jnp.where(
+                filled_mask,
+                jnp.arange(filled_mask.shape[0], dtype=jnp.int32),
+                0,
+            )
+        else:
+            unique_filled, representative_indices = _compute_unique_mask_from_uint32eds(
+                uint32eds=uint32eds,
+                filled=filled_mask,
+                unique_key=unique_key,
+                row_hash=fingerprints,
+            )
 
         idx = BucketIdx(index=initial_idx, slot_index=jnp.zeros(batch_len, dtype=SLOT_IDX_DTYPE))
 

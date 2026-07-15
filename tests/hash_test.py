@@ -376,6 +376,40 @@ def test_parallel_insert_with_probe_respects_unique_key():
     _assert_tables_bit_identical(table_recompute, table_probe)
 
 
+def test_parallel_insert_assume_unique_is_bit_identical():
+    batch = 4096
+    samples = HashValueAB.random((batch,), key=jax.random.PRNGKey(123))
+    samples = samples.at[batch // 2 :].set(samples[: batch // 2])
+    filled = jnp.ones((batch,), dtype=jnp.bool_)
+    unique_key = jax.random.uniform(jax.random.PRNGKey(124), (batch,))
+
+    regular: HashTable = HashTable.build(HashValueAB, 13, int(1e5))
+    fast: HashTable = HashTable.build(HashValueAB, 13, int(1e5))
+    probe = get_new_idx_byterized_batched(samples, regular._capacity, regular.seed)
+    unique, _ = _compute_unique_mask_from_uint32eds(
+        probe.uint32ed,
+        filled,
+        unique_key,
+        row_hash=probe.fingerprint,
+    )
+
+    regular, inserted_regular, unique_regular, idx_regular = regular.parallel_insert(
+        samples, unique, unique_key, probe
+    )
+    fast, inserted_fast, unique_fast, idx_fast = fast.parallel_insert(
+        samples,
+        unique,
+        unique_key,
+        probe,
+        assume_unique=True,
+    )
+
+    assert bool(jnp.all(inserted_regular == inserted_fast))
+    assert bool(jnp.all(unique_regular == unique_fast))
+    assert bool(jnp.all(idx_regular.index == idx_fast.index))
+    _assert_tables_bit_identical(regular, fast)
+
+
 def test_parallel_insert_probe_shape_mismatch_raises():
     """A probe whose batch length disagrees with the states must fail fast, not recompute."""
     from xtructure import HashTableProbe

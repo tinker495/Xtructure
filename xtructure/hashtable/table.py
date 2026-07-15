@@ -126,6 +126,8 @@ class HashTable:
         filled: chex.Array | bool = None,
         unique_key: chex.Array = None,
         probe: HashTableProbe | None = None,
+        *,
+        assume_unique: bool = False,
     ):
         """Insert a batch of states in parallel.
 
@@ -133,8 +135,18 @@ class HashTable:
         by :meth:`lookup_parallel_with_probe` for this exact batch and table; the
         insert then reuses that hash pass instead of recomputing it, producing
         bit-identical table state. Shape/dtype mismatches raise (no silent recompute).
+
+        Set ``assume_unique=True`` only when every row selected by ``filled`` is
+        already unique. This skips the otherwise redundant intra-batch deduplication.
         """
-        return _hashtable_parallel_insert_jit(self, inputs, filled, unique_key, probe)
+        return _hashtable_parallel_insert_jit(
+            self,
+            inputs,
+            filled,
+            unique_key,
+            probe,
+            assume_unique,
+        )
 
     def __getitem__(self, idx: HashIdx) -> Xtructurable:
         return _hashtable_getitem_jit(self, idx)
