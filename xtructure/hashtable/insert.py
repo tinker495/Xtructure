@@ -342,6 +342,7 @@ def _hashtable_parallel_insert_jit(
             uint32eds=uint32eds,
             filled=filled_mask,
             unique_key=unique_key,
+            row_hash=fingerprints,
         )
 
         idx = BucketIdx(index=initial_idx, slot_index=jnp.zeros(batch_len, dtype=SLOT_IDX_DTYPE))

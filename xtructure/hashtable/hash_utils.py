@@ -96,6 +96,7 @@ def _compute_unique_mask_from_uint32eds(
     uint32eds: chex.Array,
     filled: chex.Array,
     unique_key: chex.Array | None,
+    row_hash: chex.Array | None = None,
 ) -> tuple[chex.Array, chex.Array]:
     filled = jnp.asarray(filled, dtype=jnp.bool_)
     batch_len = filled.shape[0]
@@ -108,7 +109,9 @@ def _compute_unique_mask_from_uint32eds(
     # member. Row-equal rows always hash equal, so groups can only be too
     # coarse — and any coarseness is caught by the verification and routed to
     # the exact full-row unique. Dedup stays EXACT for adversarial inputs.
-    row_hash = hash_fast_uint32ed_batched(uint32eds, _UNIQUE_HASH_SEED)
+    if row_hash is None:
+        row_hash = hash_fast_uint32ed_batched(uint32eds, _UNIQUE_HASH_SEED)
+    row_hash = jnp.asarray(row_hash, dtype=jnp.uint32)
     unfilled_flag = jnp.where(filled, jnp.uint32(0), jnp.uint32(1))
     indices = jnp.arange(batch_len, dtype=jnp.int32)
 
@@ -127,19 +130,24 @@ def _compute_unique_mask_from_uint32eds(
     gid_sorted = jnp.cumsum(new_group.astype(jnp.int32)) - 1
     inverse_fast = jnp.zeros((batch_len,), dtype=jnp.int32).at[sorted_idx].set(gid_sorted)
 
-    # First (lowest-index) member of each hash group, then verify membership.
-    first_member = (
-        jnp.full((batch_len,), batch_len, dtype=jnp.int32).at[inverse_fast].min(indices)
+    has_multi_filled_group = jnp.any(
+        jnp.logical_and(jnp.logical_not(new_group[1:]), sorted_flag[1:] == jnp.uint32(0))
     )
-    rep_rows = uint32eds[first_member[inverse_fast]]
-    row_matches_rep = jnp.all(uint32eds == rep_rows, axis=1)
-    hash_collision = jnp.any(jnp.logical_and(filled, jnp.logical_not(row_matches_rep)))
 
-    inverse = jax.lax.cond(
-        hash_collision,
-        lambda: _unique_groups_exact(uint32eds, filled),
-        lambda: inverse_fast,
-    )
+    def _verified_inverse() -> chex.Array:
+        first_member = (
+            jnp.full((batch_len,), batch_len, dtype=jnp.int32).at[inverse_fast].min(indices)
+        )
+        rep_rows = uint32eds[first_member[inverse_fast]]
+        row_matches_rep = jnp.all(uint32eds == rep_rows, axis=1)
+        hash_collision = jnp.any(jnp.logical_and(filled, jnp.logical_not(row_matches_rep)))
+        return jax.lax.cond(
+            hash_collision,
+            lambda: _unique_groups_exact(uint32eds, filled),
+            lambda: inverse_fast,
+        )
+
+    inverse = jax.lax.cond(has_multi_filled_group, _verified_inverse, lambda: inverse_fast)
     return _unique_mask_from_group_ids(inverse, filled, unique_key)
 
 
