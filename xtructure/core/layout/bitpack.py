@@ -137,11 +137,24 @@ def to_uint8(values: chex.Array, active_bits: int = 1) -> chex.Array:
         packed = jax.vmap(pack_block)(grouped)
         return packed.reshape((-1,))
 
-    shifts = jnp.arange(active_bits, dtype=jnp.uint32)
+    mask = jnp.uint32(0xFFFFFFFF if active_bits == 32 else (1 << active_bits) - 1)
 
     def pack_block(group):
-        bits = (group.astype(jnp.uint32)[:, None] >> shifts) & jnp.uint32(1)
-        return jnp.packbits(bits.astype(jnp.uint8).reshape((-1,)), bitorder="little")
+        group = group.astype(jnp.uint32) & mask
+        packed_bytes = []
+        for output_index in range(num_bytes_per_block):
+            start_bit = output_index * 8
+            value_index = start_bit // active_bits
+            bit_offset = start_bit % active_bits
+            byte = group[value_index] >> jnp.uint32(bit_offset)
+            bits_filled = active_bits - bit_offset
+            value_index += 1
+            while bits_filled < 8:
+                byte = byte | (group[value_index] << jnp.uint32(bits_filled))
+                bits_filled += active_bits
+                value_index += 1
+            packed_bytes.append((byte & jnp.uint32(0xFF)).astype(jnp.uint8))
+        return jnp.stack(packed_bytes)
 
     packed = jax.vmap(pack_block)(grouped)
     return packed.reshape((-1,))
@@ -210,14 +223,23 @@ def from_uint8(
         all_values = blocks.reshape((-1,))
         return all_values[:num_target_elements].reshape(target_shape)
 
-    shifts = jnp.arange(active_bits, dtype=jnp.uint32)
-
     def unpack_block(byte_group):
-        bits = jnp.unpackbits(byte_group, bitorder="little").reshape(
-            (num_values_per_block, active_bits)
-        )
-        values = jnp.sum(bits.astype(jnp.uint32) << shifts, axis=1, dtype=jnp.uint32)
-        return values.astype(default_unpack_dtype(active_bits))
+        values = []
+        for value_index in range(num_values_per_block):
+            start_bit = value_index * active_bits
+            byte_index = start_bit // 8
+            bit_offset = start_bit % 8
+            value = byte_group[byte_index].astype(jnp.uint32) >> jnp.uint32(bit_offset)
+            bits_collected = 8 - bit_offset
+            byte_index += 1
+            while bits_collected < active_bits:
+                value = value | (
+                    byte_group[byte_index].astype(jnp.uint32) << jnp.uint32(bits_collected)
+                )
+                bits_collected += 8
+                byte_index += 1
+            values.append((value & mask).astype(default_unpack_dtype(active_bits)))
+        return jnp.stack(values)
 
     blocks = jax.vmap(unpack_block)(grouped)
     all_values = blocks.reshape((-1,))
