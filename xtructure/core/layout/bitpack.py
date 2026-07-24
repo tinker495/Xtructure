@@ -20,6 +20,7 @@ import chex
 import jax
 import jax.numpy as jnp
 import numpy as np
+from jaxtyping import Bool, DTypeLike, Num, UInt8
 
 from xtructure.core.dtype_facts import DTypeKind, dtype_kind
 from xtructure.core.layout.bitpack_policy import default_unpack_dtype
@@ -136,24 +137,11 @@ def to_uint8(values: chex.Array, active_bits: int = 1) -> chex.Array:
         packed = jax.vmap(pack_block)(grouped)
         return packed.reshape((-1,))
 
+    shifts = jnp.arange(active_bits, dtype=jnp.uint32)
+
     def pack_block(group):
-        packed_bytes = jnp.zeros((num_bytes_per_block,), dtype=jnp.uint8)
-        acc = jnp.uint32(0)
-        bits_in_acc = 0
-        byte_idx = 0
-        for i in range(num_values_per_block):
-            acc = acc | (group[i].astype(jnp.uint32) << jnp.uint32(bits_in_acc))
-            bits_in_acc += active_bits
-            while bits_in_acc >= 8:
-                packed_bytes = packed_bytes.at[byte_idx].set(
-                    (acc & jnp.uint32(0xFF)).astype(jnp.uint8)
-                )
-                acc = acc >> jnp.uint32(8)
-                bits_in_acc -= 8
-                byte_idx += 1
-        if byte_idx < num_bytes_per_block:
-            packed_bytes = packed_bytes.at[byte_idx].set((acc & jnp.uint32(0xFF)).astype(jnp.uint8))
-        return packed_bytes
+        bits = (group.astype(jnp.uint32)[:, None] >> shifts) & jnp.uint32(1)
+        return jnp.packbits(bits.astype(jnp.uint8).reshape((-1,)), bitorder="little")
 
     packed = jax.vmap(pack_block)(grouped)
     return packed.reshape((-1,))
@@ -222,21 +210,14 @@ def from_uint8(
         all_values = blocks.reshape((-1,))
         return all_values[:num_target_elements].reshape(target_shape)
 
+    shifts = jnp.arange(active_bits, dtype=jnp.uint32)
+
     def unpack_block(byte_group):
-        out_dtype = default_unpack_dtype(active_bits)
-        vals = jnp.zeros((num_values_per_block,), dtype=out_dtype)
-        acc = jnp.uint32(0)
-        bits_in_acc = 0
-        byte_idx = 0
-        for i in range(num_values_per_block):
-            while bits_in_acc < active_bits and byte_idx < num_bytes_per_block:
-                acc = acc | (byte_group[byte_idx].astype(jnp.uint32) << jnp.uint32(bits_in_acc))
-                bits_in_acc += 8
-                byte_idx += 1
-            vals = vals.at[i].set((acc & mask).astype(out_dtype))
-            acc = acc >> jnp.uint32(active_bits)
-            bits_in_acc -= active_bits
-        return vals
+        bits = jnp.unpackbits(byte_group, bitorder="little").reshape(
+            (num_values_per_block, active_bits)
+        )
+        values = jnp.sum(bits.astype(jnp.uint32) << shifts, axis=1, dtype=jnp.uint32)
+        return values.astype(default_unpack_dtype(active_bits))
 
     blocks = jax.vmap(unpack_block)(grouped)
     all_values = blocks.reshape((-1,))
@@ -278,16 +259,44 @@ def pack_field(
     return packed_flat.reshape(batch_shape + (expected_packed_len,)).astype(jnp.uint8)
 
 
+def _unpack_rows_host(
+    flat: UInt8[np.ndarray, "rows packed_bytes"],  # noqa: F722
+    num_values: int,
+    active_bits: int,
+    unpacked_dtype: DTypeLike,
+) -> Bool[np.ndarray, "rows values"] | Num[np.ndarray, "rows values"]:  # noqa: F722
+    """Unpack `(rows, packed_bytes)` on the host, mirroring `from_uint8`.
+
+    `to_uint8` emits blocks of `lcm(active_bits, 8)` bits, which hold a whole
+    number of both values and bytes — so the stored bytes are one contiguous
+    LSB-first bit stream and a single regroup covers every width.
+    """
+    bits = np.unpackbits(flat, axis=-1, bitorder="little")[:, : num_values * active_bits]
+    weights = np.uint64(1) << np.arange(active_bits, dtype=np.uint64)
+    values = (bits.reshape(flat.shape[0], num_values, active_bits) * weights).sum(axis=-1)
+    return values.astype(unpacked_dtype)
+
+
 def unpack_field(
     packed_value: Any,
     packed_layout: PackedFieldLayout,
     batch_shape: tuple[int, ...],
 ):
-    """Unpack one field's byte stream back into its logical unpacked array."""
+    """Unpack one field's byte stream back into its logical unpacked array.
+
+    A numpy-backed leaf (e.g. after `jax.device_get`) stays on the host, so
+    host-side consumers such as string parsers are not silently pushed back
+    onto the device.
+    """
     packed_bits = packed_layout.packed_bits
     unpacked_shape = packed_layout.unpacked_intrinsic_shape
     unpacked_dtype = packed_layout.unpacked_dtype
-    packed_arr = jnp.asarray(packed_value, dtype=jnp.uint8)
+    on_host = isinstance(packed_value, np.ndarray)
+    packed_arr = (
+        np.asarray(packed_value, dtype=np.uint8)
+        if on_host
+        else jnp.asarray(packed_value, dtype=jnp.uint8)
+    )
     expected_packed_len = packed_layout.packed_byte_count
 
     if packed_arr.shape[-1] != expected_packed_len:
@@ -307,7 +316,11 @@ def unpack_field(
                 pass
         return out
 
-    unpacked_flat = jax.vmap(_unpack_row)(flat)
+    unpacked_flat = (
+        _unpack_rows_host(flat, int(np.prod(unpacked_shape)), packed_bits, unpacked_dtype)
+        if on_host
+        else jax.vmap(_unpack_row)(flat)
+    )
     return unpacked_flat.reshape(batch_shape + unpacked_shape)
 
 

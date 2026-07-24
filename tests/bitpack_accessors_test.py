@@ -1,4 +1,5 @@
 import chex
+import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -38,6 +39,15 @@ class MixedPackedState:
     counter: FieldDescriptor.scalar(dtype=jnp.int32)
 
 
+@xtructure_dataclass(validate=True)
+class WidePackedState:
+    values: FieldDescriptor.packed_tensor(
+        unpacked_dtype=jnp.uint32,
+        shape=(5,),
+        packed_bits=27,
+    )
+
+
 def test_packed_tensor_logical_descriptor_storage_layout_shape():
     num_values = 6 * 9
     expected = packed_num_bytes(num_values, 3)
@@ -69,6 +79,21 @@ def test_packed_bool_roundtrip():
     state2 = PackedBoolState.from_unpacked(flags=raw)
     assert state2.flags.dtype == jnp.uint8
     chex.assert_trees_all_equal(state2.flags_unpacked, raw)
+
+
+def test_packed_field_unpacks_on_host_without_device_transfer():
+    raw = jnp.array(
+        [0, 1, (1 << 26) - 1, (1 << 27) - 2, (1 << 27) - 1],
+        dtype=jnp.uint32,
+    )
+    state = WidePackedState.from_unpacked(values=raw)
+    host_state = jax.device_get(state)
+
+    with jax.transfer_guard("disallow"):
+        host_values = host_state.values_unpacked
+
+    assert isinstance(host_values, np.ndarray)
+    np.testing.assert_array_equal(host_values, np.asarray(raw))
 
 
 def test_from_unpacked_partial_path_uses_default_for_missing_fields():
