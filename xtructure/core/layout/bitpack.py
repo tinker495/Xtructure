@@ -3,12 +3,17 @@ facts, low-level bit packing, and field-level pack/unpack.
 
 This module owns:
 - `default_unpack_dtype`: the **Packed Data Kind** policy (1/≤8/>8-bit).
-- `packed_num_bytes`: byte-count math shared by **Type Layout** facts and IO.
-- `to_uint8` / `from_uint8`: bit-level packing/unpacking primitives.
+- `packed_num_bytes`: byte-count math consumed by **Type Layout** facts.
+- `to_uint8` / `from_uint8`: bit-level packing/unpacking primitives, shared by
+  the field pack/unpack seam below and the IO save/load adapter.
 - `pack_field` / `unpack_field`: field-level pack/unpack against a
-  **PackedFieldLayout**, used by both the in-memory bitpack accessor adapter
-  and the IO save/load adapter — guaranteeing they cannot diverge.
+  **PackedFieldLayout**, consumed by the in-memory bitpack accessor adapter.
+  IO packs whole leaves off `LeafLayout.io_pack_bits` and enters through
+  `to_uint8` / `from_uint8` instead.
 - `build_aggregate_bitpack_layout`: aggregate eligibility builder.
+
+`__all__` is the Bitpack Layout surface other Modules may cross. Everything
+else here is internal; first-party tests may still observe it.
 """
 
 from __future__ import annotations
@@ -23,8 +28,6 @@ import numpy as np
 from jaxtyping import Bool, DTypeLike, Num, UInt8
 
 from xtructure.core.dtype_facts import DTypeKind, dtype_kind
-from xtructure.core.layout.bitpack_policy import default_unpack_dtype
-from xtructure.core.layout.bitpack_policy import packed_num_bytes as _packed_num_bytes
 
 from .types import (
     AggregateBitpackLayout,
@@ -35,14 +38,48 @@ from .types import (
     PackedFieldLayout,
 )
 
+__all__ = [
+    "default_unpack_dtype",
+    "packed_num_bytes",
+    "to_uint8",
+    "from_uint8",
+    "pack_field",
+    "unpack_field",
+    "build_aggregate_bitpack_layout",
+]
+
 
 def ceil_div(a: int, b: int) -> int:
     return int((a + b - 1) // b)
 
 
+def default_unpack_dtype(bits: int) -> Any:
+    """**Packed Data Kind**: the logical dtype `bits`-wide values unpack into."""
+    if bits == 1:
+        return jnp.bool_
+    if bits <= 8:
+        return jnp.uint8
+    return jnp.uint32
+
+
 def packed_num_bytes(num_values: int, active_bits: int) -> int:
-    """Backward-compatible export for packed byte-count math."""
-    return _packed_num_bytes(num_values, active_bits)
+    """Return the number of uint8 bytes required to pack ``num_values`` values.
+
+    `to_uint8` emits whole blocks of `lcm(active_bits, 8)` bits, so the byte
+    count is the block count times the block's byte width — one formula for
+    every supported width.
+    """
+    if not isinstance(num_values, (int, np.integer)):
+        raise TypeError(f"num_values must be an int, got {type(num_values).__name__}")
+    if num_values < 0:
+        raise ValueError(f"num_values must be non-negative, got {num_values}")
+    if not isinstance(active_bits, int):
+        raise TypeError(f"active_bits must be an int, got {type(active_bits).__name__}")
+    if active_bits < 1 or active_bits > 32:
+        raise ValueError(f"active_bits must be 1-32, got {active_bits}")
+
+    block_bits = int(np.lcm(active_bits, 8))
+    return ceil_div(num_values, block_bits // active_bits) * (block_bits // 8)
 
 
 def compute_word_tail_layout(total_bits: int) -> tuple[int, int, int]:

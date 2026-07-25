@@ -17,11 +17,14 @@ from xtructure.core.dtype_facts import (
     unsigned_integer_dtype_for,
 )
 from xtructure.core.field_descriptors import FieldDescriptor, get_field_descriptors
-from xtructure.core.layout.bitpack_policy import default_unpack_dtype, packed_num_bytes
 from xtructure.core.shape_utils import normalize_shape
 from xtructure.core.type_utils import is_xtructure_dataclass_type
 
-from .bitpack import build_aggregate_bitpack_layout
+from .bitpack import (
+    build_aggregate_bitpack_layout,
+    default_unpack_dtype,
+    packed_num_bytes,
+)
 from .types import (
     AdapterFieldPlan,
     FieldLayout,
