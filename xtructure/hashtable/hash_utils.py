@@ -127,12 +127,42 @@ def _compute_unique_mask_from_uint32eds(
         ],
         axis=0,
     )
-    gid_sorted = jnp.cumsum(new_group.astype(jnp.int32)) - 1
-    inverse_fast = jnp.zeros((batch_len,), dtype=jnp.int32).at[sorted_idx].set(gid_sorted)
-
     has_multi_filled_group = jnp.any(
         jnp.logical_and(jnp.logical_not(new_group[1:]), sorted_flag[1:] == jnp.uint32(0))
     )
+
+    # Smaller shapes lost the saved scans to branch overhead on the GPU gate.
+    use_singleton_shortcut = (
+        unique_key is None
+        and jax.default_backend() == "gpu"
+        and (batch_len >= 8192 or (batch_len >= 4096 and uint32eds.shape[1] >= 8))
+    )
+    if use_singleton_shortcut:
+
+        def _grouped_result() -> tuple[chex.Array, chex.Array]:
+            gid_sorted = jnp.cumsum(new_group.astype(jnp.int32)) - 1
+            inverse_fast = jnp.zeros((batch_len,), dtype=jnp.int32).at[sorted_idx].set(gid_sorted)
+            first_member = (
+                jnp.full((batch_len,), batch_len, dtype=jnp.int32).at[inverse_fast].min(indices)
+            )
+            rep_rows = uint32eds[first_member[inverse_fast]]
+            row_matches_rep = jnp.all(uint32eds == rep_rows, axis=1)
+            hash_collision = jnp.any(jnp.logical_and(filled, jnp.logical_not(row_matches_rep)))
+            inverse = jax.lax.cond(
+                hash_collision,
+                lambda: _unique_groups_exact(uint32eds, filled),
+                lambda: inverse_fast,
+            )
+            return _unique_mask_from_group_ids(inverse, filled, unique_key)
+
+        return jax.lax.cond(
+            has_multi_filled_group,
+            _grouped_result,
+            lambda: (filled, jnp.where(filled, indices, 0)),
+        )
+
+    gid_sorted = jnp.cumsum(new_group.astype(jnp.int32)) - 1
+    inverse_fast = jnp.zeros((batch_len,), dtype=jnp.int32).at[sorted_idx].set(gid_sorted)
 
     def _verified_inverse() -> chex.Array:
         first_member = (
