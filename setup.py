@@ -14,17 +14,19 @@ setuptools.setup(
     url="https://github.com/tinker495/Xtructure",
     packages=setuptools.find_packages(),
     install_requires=[
-        "jax[cuda]>=0.4.0",
+        "jax>=0.4.0",
         "chex>=0.1.0",
         "numpy>=2.2.0",
     ],
     extras_require={
+        "cuda": ["jax[cuda]>=0.4.0"],
+        "tpu": ["jax[tpu]>=0.4.0"],
         "dev": [
             "pytest>=7.0.0",
             "sphinx>=7.0.0",
             "sphinx-rtd-theme>=1.0.0",
             "myst-parser>=2.0.0",
-        ]
+        ],
     },
     classifiers=[
         "Programming Language :: Python :: 3",
