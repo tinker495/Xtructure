@@ -82,6 +82,12 @@ def _bgpq_make_batched_like_jit(heap: Any, key: chex.Array, val: Xtructurable):
     return key, val
 
 
+def _heapify_rounds(branch_size: int) -> int:
+    """Interior levels on any root->leaf path: root is merged before heapify and
+    the target node after it, so only depth-2 rounds can ever be active."""
+    return max(int(branch_size).bit_length() - 2, 0)
+
+
 def _bgpq_insert_heapify_internal(heap: Any, block_key: chex.Array, block_val: Xtructurable):
     is_full = heap.heap_size >= (heap.branch_size - 1)
 
@@ -90,34 +96,35 @@ def _bgpq_insert_heapify_internal(heap: Any, block_key: chex.Array, block_val: X
     worst_leaf = jnp.argmax(heap.key_store[:, -1]).astype(SIZE_DTYPE)
     last_node = jnp.where(is_full, worst_leaf, (heap.heap_size + 1).astype(SIZE_DTYPE))
 
-    def _cond(var):
-        """Continue while not reached last node"""
-        _, _, _, n = var
-        return n < last_node
-
     def insert_heapify(var):
-        """Perform one step of heapification"""
-        heap, keys, values, n = var
-        head, hvalues, keys, values = merge_sort_split(
-            heap.key_store[n], heap.val_store[n], keys, values
-        )
-        # To maintain purity, we need to update the heap instance properly.
-        # But here heap is being updated in a loop.
-        # We can update the components.
-        new_key_store = heap.key_store.at[n].set(head)
-        new_val_store = heap.val_store.at[n].set(hvalues)
-        heap = heap.replace(key_store=new_key_store, val_store=new_val_store)
-        return heap, keys, values, _next(n, last_node)
+        """One masked step down the root->last_node path.
 
-    heap, keys, values, _ = jax.lax.while_loop(
-        _cond,
-        insert_heapify,
-        (
-            heap,
-            block_key,
-            block_val,
-            _next(SIZE_DTYPE(0), last_node),
-        ),
+        The path length is data dependent (log2 of the live branch count), but a
+        data-dependent while_loop pays a host predicate readback per level (~100us
+        of idle GPU for ~16us of merge work). The static bound is the deepest
+        possible path for this heap's branch_size; rounds past the real path write
+        every row/carry back to itself, so the result is bit-identical to the loop.
+        """
+        heap, keys, values, n = var
+        active = n < last_node
+        row_key = heap.key_store[n]
+        row_val = heap.val_store[n]
+        head, hvalues, merged_keys, merged_values = merge_sort_split(row_key, row_val, keys, values)
+        heap = heap.replace(
+            key_store=heap.key_store.at[n].set(jnp.where(active, head, row_key)),
+            val_store=heap.val_store.at[n].set(xnp_where(active, hvalues, row_val)),
+        )
+        keys = jnp.where(active, merged_keys, keys)
+        values = xnp_where(active, merged_values, values)
+        return heap, keys, values, jnp.where(active, _next(n, last_node), n)
+
+    # Static trip count: lowers to an XLA while with a known trip count, which the
+    # GPU runtime executes without host predicate readbacks; keeps the HLO small
+    # (a Python unroll of the same rounds compiled ~45% slower at the benchmark
+    # scale for no runtime gain).
+    var = (heap, block_key, block_val, _next(SIZE_DTYPE(0), last_node))
+    heap, keys, values, _ = jax.lax.fori_loop(
+        0, _heapify_rounds(heap.branch_size), lambda _, v: insert_heapify(v), var
     )
 
     def _update_node(heap, keys, values):
