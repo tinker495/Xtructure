@@ -113,20 +113,28 @@ def update_on_condition(
     indices: Union[jnp.ndarray, tuple[jnp.ndarray, ...]],
     condition: jnp.ndarray,
     values_to_set: Union[Xtructurable, Any],
+    *,
+    unique_indices: bool = False,
 ) -> Xtructurable:
-    """Condtionally update fields with values, ensuring first True wins for duplicates."""
+    """Condtionally update fields with values, ensuring first True wins for duplicates.
+
+    ``unique_indices=True`` promises no duplicate selected index and takes the
+    single-scatter fast path (see ``_update_array_on_condition``).
+    """
     values_leaves = jax.tree_util.tree_leaves(values_to_set)
     if len(values_leaves) > 1 or (
         len(values_leaves) == 1 and hasattr(values_to_set, "__dataclass_fields__")
     ):
         return jax.tree_util.tree_map(
             lambda field, values_field: _update_array_on_condition(
-                field, indices, condition, values_field
+                field, indices, condition, values_field, unique_indices=unique_indices
             ),
             dataclass_instance,
             values_to_set,
         )
     return jax.tree_util.tree_map(
-        lambda field: _update_array_on_condition(field, indices, condition, values_to_set),
+        lambda field: _update_array_on_condition(
+            field, indices, condition, values_to_set, unique_indices=unique_indices
+        ),
         dataclass_instance,
     )

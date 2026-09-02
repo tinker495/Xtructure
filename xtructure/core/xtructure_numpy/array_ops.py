@@ -9,12 +9,20 @@ def _update_array_on_condition(
     indices: Union[jnp.ndarray, tuple[jnp.ndarray, ...]],
     condition: jnp.ndarray,
     values_to_set: Any,
+    *,
+    unique_indices: bool = False,
 ) -> jnp.ndarray:
     """
     Sets values in an array based on a condition, ensuring "first True wins"
     for duplicate indices.
 
     This is an internal utility function for array-level conditional updates.
+
+    ``unique_indices=True`` is the caller's promise that no index is selected
+    twice by ``condition``; the update is then a single masked scatter and skips
+    the first-true-wins resolution, which materialises a
+    ``(len(original_array) + 1,)`` index array per call (80 MB per update on a
+    20M-entry table).
     """
     # For advanced indexing, reshape the array to flatten the batch dimensions
     # and compute on the flattened version, then reshape back.
@@ -29,7 +37,11 @@ def _update_array_on_condition(
         raveled_indices = jnp.ravel_multi_index(indices, batch_shape, mode="clip")
 
         result = _update_array_on_condition(
-            reshaped_array, raveled_indices, condition, values_to_set
+            reshaped_array,
+            raveled_indices,
+            condition,
+            values_to_set,
+            unique_indices=unique_indices,
         )
         return result.reshape(original_array.shape)
 
@@ -44,8 +56,13 @@ def _update_array_on_condition(
     invalid_index = jnp.array(original_array.shape[0], dtype=index_dtype)
     sentinel_value = jnp.array(num_updates, dtype=index_dtype)
 
-    update_order = jnp.arange(num_updates, dtype=index_dtype)
     invalid_fill = jnp.full_like(indices_array, invalid_index)
+    if unique_indices:
+        safe_indices = _where_no_broadcast(condition, indices_array, invalid_fill)
+        value_array = jnp.asarray(values_to_set, dtype=original_array.dtype)
+        return original_array.at[safe_indices].set(value_array, mode="drop")
+
+    update_order = jnp.arange(num_updates, dtype=index_dtype)
     true_indices = _where_no_broadcast(condition, indices_array, invalid_fill)
 
     sentinel_fill = jnp.full_like(update_order, sentinel_value)
