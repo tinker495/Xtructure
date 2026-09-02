@@ -88,7 +88,16 @@ def _heapify_rounds(branch_size: int) -> int:
     return max(int(branch_size).bit_length() - 2, 0)
 
 
-def _bgpq_insert_heapify_internal(heap: Any, block_key: chex.Array, block_val: Xtructurable):
+def _bgpq_insert_heapify_internal(
+    heap: Any, block_key: chex.Array, block_val: Xtructurable, active: chex.Array
+):
+    """Sink `block` down the heap when `active`; an exact no-op otherwise.
+
+    Callers pass the buffer-overflow flag as `active` instead of guarding this
+    function with lax.cond: on GPU the conditional costs a host predicate
+    readback per insert, while the masked rounds below are ~16us of merge work
+    each inside one command buffer.
+    """
     is_full = heap.heap_size >= (heap.branch_size - 1)
 
     # Worst-leaf argmax is a ~branch_size-element reduce; computing it always
@@ -106,7 +115,7 @@ def _bgpq_insert_heapify_internal(heap: Any, block_key: chex.Array, block_val: X
         every row/carry back to itself, so the result is bit-identical to the loop.
         """
         heap, keys, values, n = var
-        active = n < last_node
+        active = jnp.logical_and(active_insert, n < last_node)
         row_key = heap.key_store[n]
         row_val = heap.val_store[n]
         head, hvalues, merged_keys, merged_values = merge_sort_split(row_key, row_val, keys, values)
@@ -118,6 +127,7 @@ def _bgpq_insert_heapify_internal(heap: Any, block_key: chex.Array, block_val: X
         values = xnp_where(active, merged_values, values)
         return heap, keys, values, jnp.where(active, _next(n, last_node), n)
 
+    active_insert = active
     # Static trip count: lowers to an XLA while with a known trip count, which the
     # GPU runtime executes without host predicate readbacks; keeps the HLO small
     # (a Python unroll of the same rounds compiled ~45% slower at the benchmark
@@ -129,11 +139,11 @@ def _bgpq_insert_heapify_internal(heap: Any, block_key: chex.Array, block_val: X
 
     def _update_node(heap, keys, values):
         # Merge with existing content (handles both Inf for new nodes and values for eviction)
-        head, hvalues, _, _ = merge_sort_split(
-            heap.key_store[last_node], heap.val_store[last_node], keys, values
-        )
-        new_key_store = heap.key_store.at[last_node].set(head)
-        new_val_store = heap.val_store.at[last_node].set(hvalues)
+        row_key = heap.key_store[last_node]
+        row_val = heap.val_store[last_node]
+        head, hvalues, _, _ = merge_sort_split(row_key, row_val, keys, values)
+        new_key_store = heap.key_store.at[last_node].set(jnp.where(active_insert, head, row_key))
+        new_val_store = heap.val_store.at[last_node].set(xnp_where(active_insert, hvalues, row_val))
         return heap.replace(key_store=new_key_store, val_store=new_val_store)
 
     # last_node < branch_size always holds: is_full picks an argmax leaf
@@ -143,7 +153,7 @@ def _bgpq_insert_heapify_internal(heap: Any, block_key: chex.Array, block_val: X
     heap = _update_node(heap, keys, values)
 
     # Only increment size if we filled a NEW node (not full)
-    added = ~is_full
+    added = jnp.logical_and(active_insert, ~is_full)
     return heap, added
 
 
@@ -160,16 +170,10 @@ def _bgpq_insert_sorted_jit(heap: Any, block_key: chex.Array, block_val: Xtructu
     # Handle buffer overflow
     heap, block_key, block_val, buffer_overflow = _bgpq_merge_buffer_jit(heap, block_key, block_val)
 
-    # Perform heapification if needed
-    heap, added = jax.lax.cond(
-        buffer_overflow,
-        _bgpq_insert_heapify_internal,
-        lambda heap, block_key, block_val: (heap, False),
-        heap,
-        block_key,
-        block_val,
-    )
-    heap = heap.replace(heap_size=SIZE_DTYPE(heap.heap_size + added))
+    # Heapify only when the buffer overflowed; masked instead of lax.cond so the
+    # whole insert stays one command buffer (no host predicate readback).
+    heap, added = _bgpq_insert_heapify_internal(heap, block_key, block_val, buffer_overflow)
+    heap = heap.replace(heap_size=SIZE_DTYPE(heap.heap_size + added.astype(SIZE_DTYPE)))
     return heap
 
 
