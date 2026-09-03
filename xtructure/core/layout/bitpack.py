@@ -18,6 +18,7 @@ else here is internal; first-party tests may still observe it.
 
 from __future__ import annotations
 
+import functools
 import importlib
 from typing import Any, Callable
 
@@ -310,12 +311,19 @@ def pack_field(
 
     expected_packed_len = packed_layout.packed_byte_count
     flat = arr.reshape((-1,) + unpacked_shape)
-
-    def _pack_row(row):
-        return to_uint8(row, active_bits=packed_bits)
-
-    packed_flat = jax.vmap(_pack_row)(flat)
+    packed_flat = _pack_rows_device(flat, packed_bits)
     return packed_flat.reshape(batch_shape + (expected_packed_len,)).astype(jnp.uint8)
+
+
+@functools.partial(jax.jit, static_argnames=("packed_bits",))
+def _pack_rows_device(flat: chex.Array, packed_bits: int) -> chex.Array:
+    """Pack `(rows, *unpacked_shape)` with one dispatch.
+
+    `to_uint8` is a Python-unrolled chain of shifts/ors; called eagerly (e.g. by
+    `State.from_unpacked` while a benchmark builds its samples) every op was its own
+    dispatch — ~30-40 ms per Rubik state. Inside an outer jit this is inlined.
+    """
+    return jax.vmap(lambda row: to_uint8(row, active_bits=packed_bits))(flat)
 
 
 def _unpack_rows_host(
@@ -365,6 +373,21 @@ def unpack_field(
         )
 
     flat = packed_arr.reshape((-1, expected_packed_len))
+    unpacked_flat = (
+        _unpack_rows_host(flat, int(np.prod(unpacked_shape)), packed_bits, unpacked_dtype)
+        if on_host
+        else _unpack_rows_device(
+            flat, tuple(unpacked_shape), packed_bits, jnp.dtype(unpacked_dtype)
+        )
+    )
+    return unpacked_flat.reshape(batch_shape + unpacked_shape)
+
+
+@functools.partial(jax.jit, static_argnames=("unpacked_shape", "packed_bits", "unpacked_dtype"))
+def _unpack_rows_device(
+    flat: chex.Array, unpacked_shape: tuple[int, ...], packed_bits: int, unpacked_dtype
+) -> chex.Array:
+    """Device counterpart of `_unpack_rows_host`, one dispatch when called eagerly."""
 
     def _unpack_row(row):
         out = from_uint8(row, target_shape=unpacked_shape, active_bits=packed_bits)
@@ -375,12 +398,7 @@ def unpack_field(
                 pass
         return out
 
-    unpacked_flat = (
-        _unpack_rows_host(flat, int(np.prod(unpacked_shape)), packed_bits, unpacked_dtype)
-        if on_host
-        else jax.vmap(_unpack_row)(flat)
-    )
-    return unpacked_flat.reshape(batch_shape + unpacked_shape)
+    return jax.vmap(_unpack_row)(flat)
 
 
 def build_aggregate_bitpack_layout(
