@@ -305,3 +305,24 @@ def test_update_on_condition_empty_condition_noop():
 
     assert jnp.array_equal(result.id, original.id)
     assert jnp.array_equal(result.value, original.value)
+
+
+@pytest.mark.parametrize("values", [1.0, jnp.array([1.0, 2.0, 3.0, 4.0], dtype=jnp.float32)])
+def test_update_on_condition_unique_indices_matches_general_path(values):
+    """The unique-index fast path is bit-identical to the general path when no
+    selected index repeats; masked-out duplicates are ignored either way."""
+    original = _make_simple_default((6,))
+    indices = jnp.array([5, 2, 5, 0], dtype=jnp.uint32)
+    condition = jnp.array([True, True, False, True])
+
+    general = xnp.update_on_condition(original, indices, condition, values)
+    fast = xnp.update_on_condition(original, indices, condition, values, unique_indices=True)
+
+    assert jnp.array_equal(general.id, fast.id)
+    assert jnp.array_equal(general.value, fast.value)
+
+    array_general = xnp.update_on_condition(jnp.zeros(6, jnp.float32), indices, condition, values)
+    array_fast = xnp.update_on_condition(
+        jnp.zeros(6, jnp.float32), indices, condition, values, unique_indices=True
+    )
+    assert jnp.array_equal(array_general, array_fast)

@@ -225,7 +225,9 @@ def unique_mask(
     )
 
 
-def update_on_condition(dataclass_instance, indices, condition, values_to_set):
+def update_on_condition(
+    dataclass_instance, indices, condition, values_to_set, *, unique_indices: bool = False
+):
     if _is_xtructurable(dataclass_instance):
         if _is_xtructurable(values_to_set):
             if jax.tree_util.tree_structure(values_to_set) != jax.tree_util.tree_structure(
@@ -234,10 +236,18 @@ def update_on_condition(dataclass_instance, indices, condition, values_to_set):
                 raise TypeError(
                     "values_to_set must have the same tree structure as dataclass_instance."
                 )
-        return _dc.update_on_condition(dataclass_instance, indices, condition, values_to_set)
+        return _dc.update_on_condition(
+            dataclass_instance,
+            indices,
+            condition,
+            values_to_set,
+            unique_indices=unique_indices,
+        )
     if _is_xtructurable(values_to_set):
         raise TypeError("values_to_set must not be an xtructure dataclass when updating an array.")
-    return _update_array_on_condition(dataclass_instance, indices, condition, values_to_set)
+    return _update_array_on_condition(
+        dataclass_instance, indices, condition, values_to_set, unique_indices=unique_indices
+    )
 
 
 def expand_dims(a, axis: int | Sequence[int]):
