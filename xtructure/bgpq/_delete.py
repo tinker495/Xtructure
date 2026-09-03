@@ -2,11 +2,11 @@
 
 from typing import Any
 
+import chex
 import jax
 import jax.numpy as jnp
 
 from ..core.dtype_facts import SIZE_DTYPE
-from ..core.xtructure_numpy import concatenate as xnp_concatenate
 from ..core.xtructure_numpy import stack as xnp_stack
 from ..core.xtructure_numpy import where as xnp_where
 from ._merge import merge_sort_split
@@ -17,24 +17,40 @@ def _sift_rounds(branch_size: int) -> int:
     return max(int(branch_size).bit_length() - 1, 0)
 
 
-def _bgpq_delete_heapify_internal(heap: Any):
-    last = heap.heap_size
-    heap = heap.replace(heap_size=SIZE_DTYPE(last - 1))
+def _bgpq_delete_heapify_internal(heap: Any, empty: chex.Array):
+    """Pop the root row and restore the heap property.
+
+    `empty` (heap_size == 0) used to select a separate lax.cond branch that
+    refilled the root from the buffer; on GPU that conditional is a host
+    predicate readback plus pass-through copies of the whole store. Instead
+    the empty case merges an all-inf "last node" with the buffer, which yields
+    the same root keys / cleared buffer, and the sift-down rounds stay masked.
+    """
+    last = jnp.where(empty, SIZE_DTYPE(0), heap.heap_size)
+    heap = heap.replace(
+        heap_size=jnp.where(empty, SIZE_DTYPE(0), SIZE_DTYPE(heap.heap_size - 1)),
+    )
 
     # Move last node to root and clear last position
-    last_key = heap.key_store[last]
+    inf_row = jnp.full_like(heap.key_store[0], jnp.inf)
+    last_key = jnp.where(empty, inf_row, heap.key_store[last])
     last_val = heap.val_store[last]
 
     root_key, root_val, key_buffer, val_buffer = merge_sort_split(
         last_key, last_val, heap.key_buffer, heap.val_buffer
     )
-    heap = heap.replace(key_buffer=key_buffer, val_buffer=val_buffer)
-
-    inf_row = jnp.full_like(last_key, jnp.inf)
-    key_indices = jnp.array([last, SIZE_DTYPE(0)], dtype=jnp.int32)
-    key_updates = jnp.stack((inf_row, root_key), axis=0)
+    # The buffer is drained into the root when the heap was empty.
     heap = heap.replace(
-        key_store=heap.key_store.at[key_indices].set(key_updates),
+        key_buffer=key_buffer,
+        val_buffer=val_buffer,
+        buffer_size=jnp.where(empty, SIZE_DTYPE(0), heap.buffer_size),
+    )
+
+    # last != 0 whenever the heap was non-empty; when empty both writes hit row 0
+    # and the root write below wins.
+    key_store = heap.key_store.at[last].set(inf_row)
+    heap = heap.replace(
+        key_store=key_store.at[0].set(root_key),
         val_store=heap.val_store.at[0].set(root_val),
     )
 
@@ -97,7 +113,7 @@ def _bgpq_delete_heapify_internal(heap: Any):
 
     c = SIZE_DTYPE(0)
     left, right = _lr(c)
-    var = (heap, c, left, right, jnp.bool_(True))
+    var = (heap, c, left, right, jnp.logical_not(empty))
     # Static trip count -> XLA while with a known trip count (no host readback).
     var = jax.lax.fori_loop(0, _sift_rounds(heap.branch_size), lambda _, v: _round(v), var)
     heap = var[0]
@@ -108,31 +124,5 @@ def _bgpq_delete_heapify_internal(heap: Any):
 def _bgpq_delete_mins_jit(heap: Any):
     min_keys = heap.key_store[0]
     min_values = heap.val_store[0]
-
-    def make_empty(heap: Any):
-        """Handle case where heap becomes empty"""
-
-        def clear_root(heap: Any):
-            return heap.replace(
-                key_store=heap.key_store.at[0].set(jnp.full_like(heap.key_store[0], jnp.inf)),
-                buffer_size=SIZE_DTYPE(0),
-                key_buffer=jnp.full_like(heap.key_buffer, jnp.inf),
-            )
-
-        def refill_root_from_buffer(heap: Any):
-            root_key = jnp.concatenate(
-                [heap.key_buffer, jnp.full_like(heap.key_store[0][:1], jnp.inf)],
-                axis=0,
-            )
-            root_val = xnp_concatenate([heap.val_buffer, heap.val_store[0][:1]], axis=0)
-            return heap.replace(
-                key_store=heap.key_store.at[0].set(root_key),
-                val_store=heap.val_store.at[0].set(root_val),
-                buffer_size=SIZE_DTYPE(0),
-                key_buffer=jnp.full_like(heap.key_buffer, jnp.inf),
-            )
-
-        return jax.lax.cond(heap.buffer_size == 0, clear_root, refill_root_from_buffer, heap)
-
-    heap = jax.lax.cond(heap.heap_size == 0, make_empty, _bgpq_delete_heapify_internal, heap)
+    heap = _bgpq_delete_heapify_internal(heap, heap.heap_size == 0)
     return heap, min_keys, min_values
