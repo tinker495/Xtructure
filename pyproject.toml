@@ -1,6 +1,57 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "xtructure"
+version = "0.1.3"
+description = "JAX-optimized data structures"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "tinker495", email = "wjdrbtjr495@gmail.com" },
+]
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "absl-py",
+    "jax>=0.4.0,<=0.8.1",
+    "chex>=0.1.0",
+    "jaxtyping>=0.2.36",
+    "numpy>=2.2.0",
+    "typing-extensions",
+]
+
+[project.urls]
+Homepage = "https://github.com/tinker495/Xtructure"
+
+[project.optional-dependencies]
+benchmark = [
+    "matplotlib",
+    "tyro>=1.0.16,<2",
+]
+cuda = ["jax[cuda]>=0.4.0,<=0.8.1"]
+dev = [
+    "matplotlib",
+    "myst-parser>=2.0.0",
+    "pytest>=7.0.0",
+    "sphinx>=7.0.0",
+    "sphinx-rtd-theme>=1.0.0",
+    "tyro>=1.0.16,<2",
+]
+tpu = ["jax[tpu]>=0.4.0,<=0.8.1"]
+
+[dependency-groups]
+dev = ["xtructure[dev]"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["xtructure*", "xtructure_benchmarks*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "."]
@@ -8,4 +59,21 @@ pythonpath = ["."]
 addopts = "-v --tb=short"
 markers = [
     "pallas_heap: hardware-specific BGPQ/Pallas heap stress tests; opt in with XTRUCTURE_RUN_PALLAS_HEAP_TESTS=1",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E501"]
+per-file-ignores = { "__init__.py" = ["F401"] }
+
+[tool.uv]
+conflicts = [
+    [
+        { extra = "cuda" },
+        { extra = "tpu" },
+    ],
 ]

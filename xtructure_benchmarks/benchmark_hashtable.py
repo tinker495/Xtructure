@@ -1,14 +1,15 @@
-import argparse
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 import jax
+import tyro
 
 from xtructure import HashTable
 from xtructure_benchmarks.common import (
     BenchmarkValue,
     check_system_load,
     get_system_info,
+    parse_batch_sizes,
     print_results_table,
     run_jax_trials,
     run_python_trials,
@@ -161,20 +162,20 @@ def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional
     print_results_table(results, "HashTable Performance Results")
 
 
+def main(
+    mode: Literal["kernel", "e2e"] = "kernel",
+    trials: int = 10,
+    batch_sizes: str = "",
+) -> None:
+    """Run HashTable benchmarks.
+
+    Args:
+        mode: Measure kernel execution or end-to-end transfer costs.
+        trials: Number of timing trials.
+        batch_sizes: Comma-separated batch sizes (e.g. 1024,4096,16384).
+    """
+    run_benchmarks(mode=mode, trials=trials, batch_sizes=parse_batch_sizes(batch_sizes))
+
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="HashTable benchmarks")
-    parser.add_argument("--mode", choices=["kernel", "e2e"], default="kernel")
-    parser.add_argument("--trials", type=int, default=10)
-    parser.add_argument(
-        "--batch-sizes",
-        type=str,
-        default="",
-        help="Comma-separated batch sizes (e.g. 1024,4096,16384)",
-    )
-    args = parser.parse_args()
-
-    batch_sizes_arg: Optional[List[int]] = None
-    if args.batch_sizes:
-        batch_sizes_arg = [int(x.strip()) for x in args.batch_sizes.split(",") if x.strip()]
-
-    run_benchmarks(mode=args.mode, trials=args.trials, batch_sizes=batch_sizes_arg)
+    tyro.cli(main)

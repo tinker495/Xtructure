@@ -1,12 +1,13 @@
-import argparse
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Literal, Optional
 
-from common import human_format
+import tyro
+
+from xtructure_benchmarks.common import human_format
 
 
 def display_summary_table():
@@ -118,9 +119,22 @@ def run_script(script_path: Path, extra_args: Optional[List[str]] = None):
         raise
 
 
-def main():
+def main(
+    mode: Literal["kernel", "e2e"] = "e2e",
+    trials: int = 10,
+    batch_sizes: str = "",
+    python_heap_insert_mode: Literal["auto", "bulk", "incremental"] = "auto",
+    use_float32: bool = False,
+) -> None:
     """
     Finds and runs all benchmark scripts, then runs the visualization script.
+
+    Args:
+        mode: Measure kernel execution or end-to-end transfer costs.
+        trials: Number of timing trials per benchmark.
+        batch_sizes: Comma-separated batch sizes (e.g. 1024,4096,16384).
+        python_heap_insert_mode: Choose the Python heap insert algorithm for fairness.
+        use_float32: Use JAX default precision instead of strict float64 fairness mode.
     """
     benchmarks_dir = Path(__file__).parent
 
@@ -132,34 +146,11 @@ def main():
     benchmark_scripts = sorted(benchmarks_dir.glob("benchmark_*.py"))
     print(f"Found {len(benchmark_scripts)} benchmark scripts to run.")
 
-    # Build pass-through args for each benchmark
-    parser = argparse.ArgumentParser(description="Run all xtructure benchmarks")
-    parser.add_argument("--mode", choices=["kernel", "e2e"], default="e2e")
-    parser.add_argument("--trials", type=int, default=10)
-    parser.add_argument(
-        "--batch-sizes",
-        type=str,
-        default="",
-        help="Comma-separated batch sizes (e.g. 1024,4096,16384)",
-    )
-    parser.add_argument(
-        "--python-heap-insert-mode",
-        choices=["auto", "bulk", "incremental"],
-        default="auto",
-        help="Choose Python heap insert algorithm for fairness",
-    )
-    parser.add_argument(
-        "--use-float32",
-        action="store_true",
-        help="Use JAX default precision (float32) instead of strict float64 (Default is strict mode)",
-    )
-    args, _ = parser.parse_known_args()
+    common_args: List[str] = ["--mode", mode, "--trials", str(trials)]
+    if batch_sizes:
+        common_args += ["--batch-sizes", batch_sizes]
 
-    common_args: List[str] = ["--mode", args.mode, "--trials", str(args.trials)]
-    if args.batch_sizes:
-        common_args += ["--batch-sizes", args.batch_sizes]
-
-    if not args.use_float32:
+    if not use_float32:
         # Set environment variable for this process and all subprocesses
         os.environ["JAX_ENABLE_X64"] = "True"
         print("🚀 Strict Fairness Mode (Default): JAX 64-bit floats ENABLED")
@@ -169,7 +160,7 @@ def main():
     for script in benchmark_scripts:
         extra = list(common_args)
         if script.name == "benchmark_heap.py":
-            extra += ["--python-heap-insert-mode", args.python_heap_insert_mode]
+            extra += ["--python-heap-insert-mode", python_heap_insert_mode]
         run_script(script, extra_args=extra)
 
     # 2. Run the visualization script
@@ -185,4 +176,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    tyro.cli(main)

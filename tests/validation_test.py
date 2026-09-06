@@ -1,7 +1,7 @@
 import jax.numpy as jnp
 import pytest
 
-from xtructure import xtructure_dataclass, FieldDescriptor
+from xtructure import FieldDescriptor, xtructure_dataclass
 
 
 def test_check_invariants_manual_call():
@@ -60,8 +60,7 @@ def test_check_invariants_custom_validator_manual():
 
     # validate=False, so init should pass even with invalid data
     obj = ValidatedDataManual(val=jnp.array(-1, dtype=jnp.int32))
-    
+
     # Manual check should raise
     with pytest.raises(ValueError, match="Must be non-negative"):
         obj.check_invariants()
-

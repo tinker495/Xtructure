@@ -1,10 +1,12 @@
-import argparse
 from collections import deque
-from typing import List, Optional
+from typing import List, Literal, Optional
+
+import tyro
 
 from xtructure import Queue
 from xtructure_benchmarks.common import (
     PythonBenchmarkValue,
+    parse_batch_sizes,
     run_linear_container_benchmarks,
 )
 
@@ -41,20 +43,20 @@ def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional
     )
 
 
+def main(
+    mode: Literal["kernel", "e2e"] = "kernel",
+    trials: int = 10,
+    batch_sizes: str = "",
+) -> None:
+    """Run Queue benchmarks.
+
+    Args:
+        mode: Measure kernel execution or end-to-end transfer costs.
+        trials: Number of timing trials.
+        batch_sizes: Comma-separated batch sizes (e.g. 1024,4096,16384).
+    """
+    run_benchmarks(mode=mode, trials=trials, batch_sizes=parse_batch_sizes(batch_sizes))
+
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Queue benchmarks")
-    parser.add_argument("--mode", choices=["kernel", "e2e"], default="kernel")
-    parser.add_argument("--trials", type=int, default=10)
-    parser.add_argument(
-        "--batch-sizes",
-        type=str,
-        default="",
-        help="Comma-separated batch sizes (e.g. 1024,4096,16384)",
-    )
-    args = parser.parse_args()
-
-    batch_sizes_arg: Optional[List[int]] = None
-    if args.batch_sizes:
-        batch_sizes_arg = [int(x.strip()) for x in args.batch_sizes.split(",") if x.strip()]
-
-    run_benchmarks(mode=args.mode, trials=args.trials, batch_sizes=batch_sizes_arg)
+    tyro.cli(main)

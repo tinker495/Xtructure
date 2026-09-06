@@ -3,10 +3,7 @@
 
 echo "Setting up development environment..."
 
-# Uninstall existing installation
-pip uninstall xtructure -y 2>/dev/null || true
-
-# Install in editable mode with development dependencies
-pip install -e ".[dev]"
+# Create the project environment and install development dependencies.
+uv sync --group dev
 
 echo "✅ Development environment ready!"

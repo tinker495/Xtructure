@@ -1,16 +1,17 @@
-import argparse
 import heapq
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 import jax
 import jax.numpy as jnp
+import tyro
 
 from xtructure import BGPQ
 from xtructure_benchmarks.common import (
     BenchmarkValue,
     check_system_load,
     get_system_info,
+    parse_batch_sizes,
     print_results_table,
     run_jax_trials,
     run_python_trials,
@@ -227,31 +228,27 @@ def run_benchmarks(
     print_results_table(results, "Heap (BGPQ) Performance Results")
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Heap (BGPQ) benchmarks")
-    parser.add_argument("--mode", choices=["kernel", "e2e"], default="kernel")
-    parser.add_argument("--trials", type=int, default=10)
-    parser.add_argument(
-        "--batch-sizes",
-        type=str,
-        default="",
-        help="Comma-separated batch sizes (e.g. 1024,4096,16384)",
-    )
-    parser.add_argument(
-        "--python-heap-insert-mode",
-        choices=["auto", "bulk", "incremental"],
-        default="auto",
-        help="Choose Python heap insert algorithm for fairness",
-    )
-    args = parser.parse_args()
+def main(
+    mode: Literal["kernel", "e2e"] = "kernel",
+    trials: int = 10,
+    batch_sizes: str = "",
+    python_heap_insert_mode: Literal["auto", "bulk", "incremental"] = "auto",
+) -> None:
+    """Run Heap (BGPQ) benchmarks.
 
-    batch_sizes_arg: Optional[List[int]] = None
-    if args.batch_sizes:
-        batch_sizes_arg = [int(x.strip()) for x in args.batch_sizes.split(",") if x.strip()]
-
+    Args:
+        mode: Measure kernel execution or end-to-end transfer costs.
+        trials: Number of timing trials.
+        batch_sizes: Comma-separated batch sizes (e.g. 1024,4096,16384).
+        python_heap_insert_mode: Choose the Python heap insert algorithm for fairness.
+    """
     run_benchmarks(
-        mode=args.mode,
-        trials=args.trials,
-        batch_sizes=batch_sizes_arg,
-        python_heap_insert_mode=args.python_heap_insert_mode,
+        mode=mode,
+        trials=trials,
+        batch_sizes=parse_batch_sizes(batch_sizes),
+        python_heap_insert_mode=python_heap_insert_mode,
     )
+
+
+if __name__ == "__main__":
+    tyro.cli(main)

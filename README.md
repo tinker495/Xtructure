@@ -25,11 +25,12 @@ full rationale, breakdown of supporting utilities, and a worked example.
 ## Installation
 
 ```bash
-pip install xtructure
-pip install git+https://github.com/tinker495/xtructure.git # recommended
+uv add "xtructure @ git+https://github.com/tinker495/xtructure.git" # recommended
 ```
 
 Currently under active development, with frequent updates and potential bug fixes. For the most up-to-date version, it is recommended to install directly from the Git repository.
+
+For local development, run `uv sync --group dev`, then use `uv run pytest`.
 
 ## Documentation
 

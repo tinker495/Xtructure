@@ -3,6 +3,7 @@ from pathlib import Path
 
 import matplotlib
 import matplotlib.pyplot as plt
+import tyro
 from matplotlib.ticker import FuncFormatter
 
 from xtructure_benchmarks.common import human_format
@@ -107,4 +108,4 @@ def visualize_all():
 
 
 if __name__ == "__main__":
-    visualize_all()
+    tyro.cli(visualize_all)

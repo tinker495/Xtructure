@@ -14,6 +14,13 @@ import numpy as np
 from xtructure import FieldDescriptor, xtructure_dataclass
 
 
+def parse_batch_sizes(value: str) -> Optional[List[int]]:
+    """Parse the benchmark CLI's comma-separated batch-size option."""
+    if not value:
+        return None
+    return [int(item.strip()) for item in value.split(",") if item.strip()]
+
+
 def human_format(num, pos=None):
     num = float("{:.3g}".format(num))
     magnitude = 0
