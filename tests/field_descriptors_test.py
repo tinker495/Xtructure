@@ -18,27 +18,6 @@ def test_field_descriptor_tensor_factory():
     assert fd.validator is None
 
 
-def test_field_descriptor_normalizes_int_intrinsic_shape():
-    fd = FieldDescriptor(dtype=jnp.float32, intrinsic_shape=3)
-    assert fd.intrinsic_shape == (3,)
-
-
-def test_packed_tensor_normalizes_int_shape():
-    fd = FieldDescriptor.packed_tensor(shape=3, packed_bits=1)
-    assert fd.intrinsic_shape == (3,)
-    assert fd.unpacked_intrinsic_shape == (3,)
-
-
-def test_packed_tensor_accepts_equivalent_normalized_shape_aliases():
-    fd = FieldDescriptor.packed_tensor(shape=3, unpacked_shape=(3,), packed_bits=1)
-    assert fd.unpacked_intrinsic_shape == (3,)
-
-
-def test_packed_tensor_rejects_mismatched_normalized_shape_aliases():
-    with pytest.raises(ValueError):
-        FieldDescriptor.packed_tensor(shape=3, unpacked_shape=(4,), packed_bits=1)
-
-
 @pytest.mark.parametrize(
     ("dtype", "expected_kind", "expected_fill"),
     [

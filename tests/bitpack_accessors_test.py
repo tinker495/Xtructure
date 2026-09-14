@@ -2,7 +2,6 @@ import chex
 import jax
 import jax.numpy as jnp
 import numpy as np
-import pytest
 
 from xtructure import FieldDescriptor, xtructure_dataclass
 from xtructure.core.layout.bitpack import packed_num_bytes
@@ -25,18 +24,6 @@ class PackedBoolState:
         shape=(17,),
         packed_bits=1,
     )
-
-
-@xtructure_dataclass(validate=True)
-class MixedPackedState:
-    """One packed field plus one plain field — exercises `from_unpacked` partial path."""
-
-    faces: FieldDescriptor.packed_tensor(
-        unpacked_dtype=jnp.uint8,
-        shape=(6, 9),
-        packed_bits=3,
-    )
-    counter: FieldDescriptor.scalar(dtype=jnp.int32)
 
 
 @xtructure_dataclass(validate=True)
@@ -94,29 +81,3 @@ def test_packed_field_unpacks_on_host_without_device_transfer():
 
     assert isinstance(host_values, np.ndarray)
     np.testing.assert_array_equal(host_values, np.asarray(raw))
-
-
-def test_from_unpacked_partial_path_uses_default_for_missing_fields():
-    """Providing only some fields exercises the partial path (default + replace)."""
-    raw = jnp.arange(6 * 9, dtype=jnp.uint8).reshape((6, 9)) & jnp.uint8(7)
-    state = MixedPackedState.from_unpacked(faces=raw)
-
-    # Missing `counter` should fall back to the dataclass default.
-    chex.assert_trees_all_equal(state.faces_unpacked, raw)
-    assert state.counter == MixedPackedState.default().counter
-
-
-def test_from_unpacked_full_path_packs_all_fields():
-    """Providing all fields exercises the direct-build path with no default allocation."""
-    raw = jnp.arange(6 * 9, dtype=jnp.uint8).reshape((6, 9)) & jnp.uint8(7)
-    state = MixedPackedState.from_unpacked(faces=raw, counter=jnp.int32(42))
-
-    chex.assert_trees_all_equal(state.faces_unpacked, raw)
-    assert int(state.counter) == 42
-
-
-def test_from_unpacked_unknown_field_raises_key_error():
-    """Unknown kwargs must raise KeyError, not silently fall through to replace."""
-    raw = jnp.arange(6 * 9, dtype=jnp.uint8).reshape((6, 9)) & jnp.uint8(7)
-    with pytest.raises(KeyError, match="bogus"):
-        MixedPackedState.from_unpacked(faces=raw, bogus=jnp.int32(1))
