@@ -2,10 +2,19 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Callable, List, Optional
 
 import jax.numpy as jnp
 import numpy as np
+
+# Cell text may carry ANSI SGR colors (e.g. PuXle boards); they take no columns.
+# ponytail: width counts code points, so wide (CJK/emoji) glyphs misalign; use wcwidth if needed.
+_SGR_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _visible_len(line: str) -> int:
+    return len(_SGR_RE.sub("", line))
 
 
 class BatchedRenderer:
@@ -125,5 +134,21 @@ class BatchedRenderer:
 
     @staticmethod
     def _frame(rows: list[tuple[str, ...]], *, title: str, subtitle: str) -> str:
-        body = [" | ".join(cells) for cells in rows]
+        # Cells are usually multi-line (records, boards): lay them out as columns
+        # joined line by line, each cell centered vertically and padded to its column.
+        grid = [[cell.splitlines() for cell in cells] for cells in rows]
+        widths = [
+            max((_visible_len(line) for cells in grid for line in cells[col]), default=0)
+            for col in range(max((len(cells) for cells in grid), default=0))
+        ]
+        body = []
+        for cells in grid:
+            height = max((len(cell) for cell in cells), default=0)
+            for i in range(height):
+                parts = []
+                for col, cell in enumerate(cells):
+                    j = i - (height - len(cell)) // 2
+                    line = cell[j] if 0 <= j < len(cell) else ""
+                    parts.append(line + " " * (widths[col] - _visible_len(line)))
+                body.append(" | ".join(parts).rstrip())
         return "\n".join([title, subtitle, *body]) + "\n"
