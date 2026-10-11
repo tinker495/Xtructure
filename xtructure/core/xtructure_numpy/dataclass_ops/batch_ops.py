@@ -188,8 +188,15 @@ def take(dataclass_instance: T, indices: jnp.ndarray, axis: int = 0) -> T:
     return jax.tree_util.tree_map(lambda x: jnp.take(x, indices, axis=axis), dataclass_instance)
 
 
-def take_along_axis(dataclass_instance: T, indices: jnp.ndarray, axis: int) -> T:
-    """Gather values along a given axis for each field."""
+def take_along_axis(
+    dataclass_instance: T,
+    indices: jnp.ndarray,
+    axis: int,
+    mode=None,
+    fill_value=None,
+    wrap_negative_indices: bool = True,
+) -> T:
+    """Gather values along a given axis for each field (gather options as in jnp)."""
     indices_array = jnp.asarray(indices)
 
     def _reorder_leaf(leaf: jnp.ndarray) -> jnp.ndarray:
@@ -217,7 +224,14 @@ def take_along_axis(dataclass_instance: T, indices: jnp.ndarray, axis: int) -> T
                 f"{leaf.shape} outside axis {axis}. Original indices shape: {indices_array.shape}."
             ) from err
 
-        return jnp.take_along_axis(leaf, expanded, axis=axis_in_leaf)
+        return jnp.take_along_axis(
+            leaf,
+            expanded,
+            axis=axis_in_leaf,
+            mode=mode,
+            fill_value=fill_value,
+            wrap_negative_indices=wrap_negative_indices,
+        )
 
     return jax.tree_util.tree_map(_reorder_leaf, dataclass_instance)
 
