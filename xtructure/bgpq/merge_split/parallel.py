@@ -3,6 +3,7 @@ from typing import Tuple
 import jax
 import jax.numpy as jnp
 from jax.experimental import pallas as pl
+from jax.experimental.pallas import triton as pltriton
 
 from xtructure.core.xtructure_numpy.array_ops import _where_no_broadcast
 
@@ -11,7 +12,7 @@ from .common import binary_search_partition
 BLOCK_SIZE = 64
 
 
-def merge_parallel_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref):
+def _merge_interleaved_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref):
     """
     Pallas kernel that merges two sorted arrays in parallel using the
     Merge Path algorithm for block-level partitioning.
@@ -102,6 +103,34 @@ def merge_parallel_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref):
         return current_idx_b + 1, current_out_ptr + 1
 
     jax.lax.while_loop(bk_loop_cond, bk_loop_body, initial_bk_loop_state)
+
+
+def merge_parallel_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref):
+    n, m = ak_ref.shape[0], bk_ref.shape[0]
+    if not n or not m:
+        return _merge_interleaved_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref)
+
+    def concatenate(b_first):
+        lane = pl.program_id(0) * BLOCK_SIZE + jnp.arange(BLOCK_SIZE)
+        valid = lane < n + m
+        a_index = lane - b_first.astype(jnp.int32) * m
+        b_index = lane - (~b_first).astype(jnp.int32) * n
+        from_a = jnp.where(b_first, lane >= m, lane < n)
+        a_value = pltriton.load(ak_ref.at[a_index], mask=valid & from_a, other=0)
+        b_value = pltriton.load(bk_ref.at[b_index], mask=valid & ~from_a, other=0)
+        keys = jnp.where(from_a, a_value, b_value).astype(merged_keys_ref.dtype)
+        indices = jnp.where(from_a, a_index, n + b_index).astype(jnp.int32)
+        pltriton.store(merged_keys_ref.at[lane], keys, mask=valid)
+        pltriton.store(merged_indices_ref.at[lane], indices, mask=valid)
+
+    def merge(_):
+        _merge_interleaved_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref)
+
+    # Only A-first concatenation permits equality, preserving stable ties.
+    # These device-local branches avoid a host predicate readback.
+    a_first = ak_ref[n - 1] <= bk_ref[0]
+    b_first = bk_ref[m - 1] < ak_ref[0]
+    jax.lax.cond(a_first | b_first, concatenate, merge, operand=b_first)
 
 
 @jax.jit
