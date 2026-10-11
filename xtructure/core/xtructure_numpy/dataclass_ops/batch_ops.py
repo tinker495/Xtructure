@@ -188,11 +188,23 @@ def take(dataclass_instance: T, indices: jnp.ndarray, axis: int = 0) -> T:
     return jax.tree_util.tree_map(lambda x: jnp.take(x, indices, axis=axis), dataclass_instance)
 
 
-def take_along_axis(dataclass_instance: T, indices: jnp.ndarray, axis: int) -> T:
-    """Gather values along a given axis for each field."""
+def take_along_axis(
+    dataclass_instance: T,
+    indices: jnp.ndarray,
+    axis: int | None,
+    mode=None,
+    fill_value=None,
+    wrap_negative_indices: bool = True,
+) -> T:
+    """Gather values along a given axis for each field (gather options as in jnp)."""
     indices_array = jnp.asarray(indices)
+    options = dict(mode=mode, fill_value=fill_value, wrap_negative_indices=wrap_negative_indices)
 
     def _reorder_leaf(leaf: jnp.ndarray) -> jnp.ndarray:
+        # axis=None flattens and equal ranks broadcast both operands: jnp handles these as is.
+        # Only lower-rank indices (fields with intrinsic dimensions) need the expansion below.
+        if axis is None or indices_array.ndim == leaf.ndim:
+            return jnp.take_along_axis(leaf, indices_array, axis=axis, **options)
         axis_in_leaf = axis if axis >= 0 else axis + leaf.ndim
         if axis_in_leaf < 0 or axis_in_leaf >= leaf.ndim:
             raise ValueError(f"`axis` {axis} is out of bounds for array with ndim {leaf.ndim}.")
@@ -217,7 +229,7 @@ def take_along_axis(dataclass_instance: T, indices: jnp.ndarray, axis: int) -> T
                 f"{leaf.shape} outside axis {axis}. Original indices shape: {indices_array.shape}."
             ) from err
 
-        return jnp.take_along_axis(leaf, expanded, axis=axis_in_leaf)
+        return jnp.take_along_axis(leaf, expanded, axis=axis_in_leaf, **options)
 
     return jax.tree_util.tree_map(_reorder_leaf, dataclass_instance)
 
