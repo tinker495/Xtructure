@@ -274,6 +274,8 @@ def _insert_rows_wavefront(heap: Any, block_keys: chex.Array, block_vals: Xtruct
 def _bgpq_insert_sorted_rows_jit(
     heap: Any, block_keys: chex.Array, block_vals: Xtructurable, n_rows: chex.Array
 ):
+    if block_keys.shape[0] == 0:  # no rows: a no-op (the reductions below need k > 0)
+        return heap
     n_rows = jnp.clip(n_rows, 0, block_keys.shape[0]).astype(jnp.int32)
 
     # Narrower rows are promoted to the store dtype; wider rows stay wide and are cast only when
@@ -306,5 +308,7 @@ def _bgpq_insert_sorted_rows_jit(
 def _bgpq_insert_rows_jit(
     heap: Any, block_keys: chex.Array, block_vals: Xtructurable, n_rows: chex.Array
 ):
+    if block_keys.shape[0] == 0:
+        return heap
     block_keys, block_vals = jax.vmap(sort_arrays)(block_keys, block_vals)
     return _bgpq_insert_sorted_rows_jit(heap, block_keys, block_vals, n_rows)
