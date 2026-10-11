@@ -183,14 +183,10 @@ def take_along_axis(
     *,
     wrap_negative_indices: bool = True,
 ):
-    kwargs = dict(
-        axis=axis, mode=mode, fill_value=fill_value, wrap_negative_indices=wrap_negative_indices
-    )
+    kwargs = dict(mode=mode, fill_value=fill_value, wrap_negative_indices=wrap_negative_indices)
     if _is_xtructurable(arr):
-        if mode is not None or fill_value is not None or not wrap_negative_indices:
-            return jax.tree_util.tree_map(lambda x: jnp.take_along_axis(x, indices, **kwargs), arr)
-        return _dc.take_along_axis(arr, indices, axis=axis)
-    return jnp.take_along_axis(arr, indices, **kwargs)
+        return _dc.take_along_axis(arr, indices, axis=axis, **kwargs)
+    return jnp.take_along_axis(arr, indices, axis=axis, **kwargs)
 
 
 def tile(A, reps):
