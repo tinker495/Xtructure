@@ -275,9 +275,19 @@ def _bgpq_insert_sorted_rows_jit(
     heap: Any, block_keys: chex.Array, block_vals: Xtructurable, n_rows: chex.Array
 ):
     n_rows = jnp.clip(n_rows, 0, block_keys.shape[0]).astype(jnp.int32)
-    # Store dtypes up front (as one insert per row would), so the wavefront carries keep them.
-    block_keys = block_keys.astype(heap.key_store.dtype)
-    block_vals = jax.tree_util.tree_map(lambda v, s: v.astype(s.dtype), block_vals, heap.val_store)
+
+    # Narrower rows are promoted to the store dtype; wider rows stay wide and are cast only when
+    # stored. One insert per row leaves the buffer at the wider dtype, so promote it up front:
+    # the wavefront and fallback loop carries then keep one dtype.
+    def promote(x, other):
+        return x.astype(jnp.promote_types(x.dtype, other.dtype))
+
+    block_keys = promote(block_keys, heap.key_store)
+    block_vals = jax.tree_util.tree_map(promote, block_vals, heap.val_store)
+    heap = heap.replace(
+        key_buffer=promote(heap.key_buffer, block_keys),
+        val_buffer=jax.tree_util.tree_map(promote, heap.val_buffer, block_vals),
+    )
     # Rows only see a full heap if heap_size can reach branch_size - 1 during the call;
     # those calls take the sequential row loop instead.
     fits = heap.heap_size + n_rows.astype(SIZE_DTYPE) < heap.branch_size
