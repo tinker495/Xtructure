@@ -35,6 +35,8 @@ def _bgpq_delete_heapify_internal(heap: Any, empty: chex.Array):
     inf_row = jnp.full_like(heap.key_store[0], jnp.inf)
     last_key = jnp.where(empty, inf_row, heap.key_store[last])
     last_val = heap.val_store[last]
+    # Order these reads before `.at[last].set(inf_row)` below (else XLA copies the key store).
+    last_key, last_val, heap = jax.lax.optimization_barrier((last_key, last_val, heap))
 
     root_key, root_val, key_buffer, val_buffer = merge_sort_split(
         last_key, last_val, heap.key_buffer, heap.val_buffer
@@ -122,7 +124,10 @@ def _bgpq_delete_heapify_internal(heap: Any, empty: chex.Array):
 
 @jax.jit
 def _bgpq_delete_mins_jit(heap: Any):
-    min_keys = heap.key_store[0]
-    min_values = heap.val_store[0]
+    # Materialize the root row before the in-place sift-down: without the barrier XLA may
+    # schedule these reads after the store's dynamic-update-slice and copy the whole store.
+    min_keys, min_values, heap = jax.lax.optimization_barrier(
+        (heap.key_store[0], heap.val_store[0], heap)
+    )
     heap = _bgpq_delete_heapify_internal(heap, heap.heap_size == 0)
     return heap, min_keys, min_values
