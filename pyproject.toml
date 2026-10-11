@@ -12,7 +12,7 @@ license-files = ["LICENSE"]
 authors = [
     { name = "tinker495", email = "wjdrbtjr495@gmail.com" },
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
@@ -20,7 +20,7 @@ classifiers = [
 ]
 dependencies = [
     "absl-py",
-    "jax>=0.4.0,<=0.8.1",
+    "jax>=0.11.2",
     "chex>=0.1.0",
     "jaxtyping>=0.2.36",
     "numpy>=2.2.0",
@@ -35,7 +35,7 @@ benchmark = [
     "matplotlib",
     "tyro>=1.0.16,<2",
 ]
-cuda = ["jax[cuda]>=0.4.0,<=0.8.1"]
+cuda = ["jax[cuda]>=0.11.2"]
 dev = [
     "matplotlib",
     "myst-parser>=2.0.0",
@@ -44,7 +44,7 @@ dev = [
     "sphinx-rtd-theme>=1.0.0",
     "tyro>=1.0.16,<2",
 ]
-tpu = ["jax[tpu]>=0.4.0,<=0.8.1"]
+tpu = ["jax[tpu]>=0.11.2"]
 
 [dependency-groups]
 dev = ["xtructure[dev]"]
