@@ -191,10 +191,11 @@ def _insert_rows_wavefront(heap: Any, block_keys: chex.Array, block_vals: Xtruct
     are known up front. Phase A runs each row's root and buffer merges in order;
     they touch only node 0 and the buffer. Phase B starts row j's sink at depth 1
     on step j, so live rows sit at distinct depths (never the same node) and every
-    node sees rows in order. ~k + depth batched merges replace ~k * depth merges.
+    node sees rows in order. A row sinks on steps [j, j + rounds], so at most
+    ``rounds + 1`` rows are live at once: each step merges only that lane window,
+    and both loops stop at the last inserted / overflowing row.
     """
     k = block_keys.shape[0]
-    valid = jnp.arange(k) < n_rows
 
     def root_and_buffer(j, carry):
         heap, keys, vals, overflow = carry
@@ -202,57 +203,70 @@ def _insert_rows_wavefront(heap: Any, block_keys: chex.Array, block_vals: Xtruct
             heap.key_store[0], heap.val_store[0], block_keys[j], block_vals[j]
         )
         merged, key, val, buffer_overflow = _bgpq_merge_buffer_jit(heap, key, val)
-        keep = valid[j]
         heap = heap.replace(
-            key_store=heap.key_store.at[0].set(jnp.where(keep, root_key, heap.key_store[0])),
-            val_store=heap.val_store.at[0].set(xnp_where(keep, root_val, heap.val_store[0])),
-            key_buffer=jnp.where(keep, merged.key_buffer, heap.key_buffer),
-            val_buffer=xnp_where(keep, merged.val_buffer, heap.val_buffer),
-            buffer_size=jnp.where(keep, merged.buffer_size, heap.buffer_size),
+            key_store=heap.key_store.at[0].set(root_key),
+            val_store=heap.val_store.at[0].set(root_val),
+            key_buffer=merged.key_buffer,
+            val_buffer=merged.val_buffer,
+            buffer_size=merged.buffer_size,
         )
-        overflow = overflow.at[j].set(jnp.logical_and(keep, buffer_overflow))
+        overflow = overflow.at[j].set(buffer_overflow)
         return heap, keys.at[j].set(key), vals.at[j].set(val), overflow
 
     heap, keys, vals, active = jax.lax.fori_loop(
-        0, k, root_and_buffer, (heap, block_keys, block_vals, jnp.zeros((k,), jnp.bool_))
+        0, n_rows, root_and_buffer, (heap, block_keys, block_vals, jnp.zeros((k,), jnp.bool_))
     )
+    rounds = _heapify_rounds(heap.branch_size)
+    width = min(k, rounds + 1)
     last = heap.heap_size + jnp.cumsum(active, dtype=SIZE_DTYPE)
-    lane = jnp.arange(k, dtype=SIZE_DTYPE)
     lane_where = jax.vmap(xnp_where)
 
     def sink(step, carry):
         heap, keys, vals, node, sinking = carry
-        live = jnp.logical_and(sinking, lane <= step)
+        start = jnp.clip(step - rounds, 0, k - width)
+        lane = start + jnp.arange(width, dtype=start.dtype)
+
+        def window(x):
+            return jax.lax.dynamic_slice_in_dim(x, start, width)
+
+        def put(x, w):
+            return jax.lax.dynamic_update_slice_in_dim(x, w, start, axis=0)
+
+        w_keys, w_node, w_sinking, w_last = map(window, (keys, node, sinking, last))
+        w_vals = jax.tree_util.tree_map(window, vals)
+        live = jnp.logical_and(w_sinking, lane <= step)
         # Idle lanes merge an all-inf block, which takes the merge kernel's copy path.
         head_key, head_val, tail_key, tail_val = jax.vmap(merge_sort_split)(
-            heap.key_store[node],
-            heap.val_store[node],
-            jnp.where(live[:, None], keys, jnp.inf),
-            vals,
+            heap.key_store[w_node],
+            heap.val_store[w_node],
+            jnp.where(live[:, None], w_keys, jnp.inf),
+            w_vals,
         )
         # Idle lanes write distinct out-of-range rows, which are dropped.
-        rows = jnp.where(live, node, heap.branch_size + lane)
+        rows = jnp.where(live, w_node, heap.branch_size + lane.astype(SIZE_DTYPE))
 
         def scatter(store, head):
             return store.at[rows].set(head, mode="drop", unique_indices=True)
 
         heap = heap.replace(
             key_store=scatter(heap.key_store, head_key),
-            val_store=jax.tree.map(scatter, heap.val_store, head_val),
+            val_store=jax.tree_util.tree_map(scatter, heap.val_store, head_val),
         )
-        at_last = node == last
+        at_last = w_node == w_last
         move = jnp.logical_and(live, ~at_last)
         return (
             heap,
-            lane_where(move, tail_key, keys),
-            lane_where(move, tail_val, vals),
-            jnp.where(move, _next(node, last), node),
-            jnp.logical_and(sinking, ~jnp.logical_and(live, at_last)),
+            put(keys, lane_where(move, tail_key, w_keys)),
+            jax.tree_util.tree_map(put, vals, lane_where(move, tail_val, w_vals)),
+            put(node, jnp.where(move, _next(w_node, w_last), w_node)),
+            put(sinking, jnp.logical_and(w_sinking, ~jnp.logical_and(live, at_last))),
         )
 
+    last_active = jnp.max(jnp.where(active, jnp.arange(k, dtype=jnp.int32), -1))
+    steps = jnp.where(last_active >= 0, last_active + 1 + rounds, 0)
     added = jnp.sum(active, dtype=SIZE_DTYPE)
     carry = (heap, keys, vals, _next(jnp.zeros((k,), SIZE_DTYPE), last), active)
-    heap = jax.lax.fori_loop(0, k + _heapify_rounds(heap.branch_size), sink, carry)[0]
+    heap = jax.lax.fori_loop(0, steps, sink, carry)[0]
     return heap.replace(heap_size=SIZE_DTYPE(heap.heap_size + added))
 
 
@@ -260,14 +274,14 @@ def _insert_rows_wavefront(heap: Any, block_keys: chex.Array, block_vals: Xtruct
 def _bgpq_insert_sorted_rows_jit(
     heap: Any, block_keys: chex.Array, block_vals: Xtructurable, n_rows: chex.Array
 ):
-    n_rows = jnp.minimum(n_rows, block_keys.shape[0])
+    n_rows = jnp.clip(n_rows, 0, block_keys.shape[0]).astype(jnp.int32)
     # Store dtypes up front (as one insert per row would), so the wavefront carries keep them.
     block_keys = block_keys.astype(heap.key_store.dtype)
-    block_vals = jax.tree.map(lambda v, s: v.astype(s.dtype), block_vals, heap.val_store)
+    block_vals = jax.tree_util.tree_map(lambda v, s: v.astype(s.dtype), block_vals, heap.val_store)
     # Rows only see a full heap if heap_size can reach branch_size - 1 during the call;
     # those calls take the sequential row loop instead.
     fits = heap.heap_size + n_rows.astype(SIZE_DTYPE) < heap.branch_size
-    # Both paths always run, the unused one with zero rows: a lax.cond here makes XLA
+    # Both paths always run, the unused one with zero trips: a lax.cond here makes XLA
     # copy the whole store into and out of its branches (~1 ms per call measured).
     heap = _insert_rows_wavefront(heap, block_keys, block_vals, jnp.where(fits, n_rows, 0))
     return jax.lax.fori_loop(
