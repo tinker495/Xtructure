@@ -174,17 +174,23 @@ def take(
     )
 
 
-def take_along_axis(arr, indices, axis: int | None = -1, mode=None, fill_value=None):
+def take_along_axis(
+    arr,
+    indices,
+    axis: int | None = -1,
+    mode=None,
+    fill_value=None,
+    *,
+    wrap_negative_indices: bool = True,
+):
+    kwargs = dict(
+        axis=axis, mode=mode, fill_value=fill_value, wrap_negative_indices=wrap_negative_indices
+    )
     if _is_xtructurable(arr):
-        if mode is not None or fill_value is not None:
-            return jax.tree_util.tree_map(
-                lambda x: jnp.take_along_axis(
-                    x, indices, axis=axis, mode=mode, fill_value=fill_value
-                ),
-                arr,
-            )
+        if mode is not None or fill_value is not None or not wrap_negative_indices:
+            return jax.tree_util.tree_map(lambda x: jnp.take_along_axis(x, indices, **kwargs), arr)
         return _dc.take_along_axis(arr, indices, axis=axis)
-    return jnp.take_along_axis(arr, indices, axis=axis, mode=mode, fill_value=fill_value)
+    return jnp.take_along_axis(arr, indices, **kwargs)
 
 
 def tile(A, reps):
@@ -290,11 +296,32 @@ def split(ary, indices_or_sections, axis: int = 0):
     return list(jnp.split(ary, indices_or_sections, axis=axis))
 
 
-def full_like(a, fill_value, dtype: Any | None = None, shape: Any = None, *, device=None):
+def full_like(
+    a,
+    fill_value,
+    dtype: Any | None = None,
+    shape: Any = None,
+    *,
+    device=None,
+    out_sharding=None,
+):
     if _is_xtructurable(a):
-        _reject_dataclass_kwargs("full_like", dtype=dtype, shape=shape, device=device)
+        _reject_dataclass_kwargs(
+            "full_like", dtype=dtype, shape=shape, device=device, out_sharding=out_sharding
+        )
         return _dc.full_like(a, fill_value)
-    return jnp.full_like(a, fill_value, dtype=dtype, shape=shape, device=device)
+    return jnp.full_like(
+        a,
+        fill_value,
+        **_like_kwargs(
+            "full_like",
+            jnp.full_like,
+            dtype=dtype,
+            shape=shape,
+            device=device,
+            out_sharding=out_sharding,
+        ),
+    )
 
 
 def zeros_like(
