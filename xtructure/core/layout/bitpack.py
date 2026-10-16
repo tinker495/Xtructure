@@ -310,7 +310,7 @@ def pack_field(
         )
 
     expected_packed_len = packed_layout.packed_byte_count
-    flat = arr.reshape((-1,) + unpacked_shape)
+    flat = arr.reshape((int(np.prod(batch_shape)),) + unpacked_shape)
     packed_flat = _pack_rows_device(flat, packed_bits)
     return packed_flat.reshape(batch_shape + (expected_packed_len,)).astype(jnp.uint8)
 
@@ -372,7 +372,7 @@ def unpack_field(
             f"got {packed_arr.shape[-1]}."
         )
 
-    flat = packed_arr.reshape((-1, expected_packed_len))
+    flat = packed_arr.reshape((int(np.prod(batch_shape)), expected_packed_len))
     unpacked_flat = (
         _unpack_rows_host(flat, int(np.prod(unpacked_shape)), packed_bits, unpacked_dtype)
         if on_host
