@@ -1,0 +1,4 @@
+project-includes = ["xtructure/**/*.py", "xtructure_benchmarks/**/*.py"]
+python-version = "3.12"
+search-path = ["."]
+disable-search-path-heuristics = true
