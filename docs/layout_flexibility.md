@@ -46,9 +46,9 @@ class AgentState:
 
 
 key = jax.random.PRNGKey(0)
-agents = AgentState.random((128,), key=key)          # SoA storage for JIT speed
-frontiers = agents.reshape((16, 8))                  # reshape touches each field array
-first = frontiers[0]                                 # AoS-style instance
+agents = AgentState.random((128,), key=key)  # SoA storage for JIT speed
+frontiers = agents.reshape((16, 8))  # reshape touches each field array
+first = frontiers[0]  # AoS-style instance
 updated = frontiers.at[0].set(first.replace(cost=jnp.zeros_like(first.cost)))
 ```
 
