@@ -103,9 +103,9 @@ def _ops_stats(num_ops: int, durations: Iterable[float]) -> Dict[str, float]:
     return {"median": median_ops, "iqr": float(q75 - q25), "p99_ops": p99_ops}
 
 
-def get_system_info() -> Dict[str, Any]:
+def get_system_info() -> dict[str, str | float | list[str]]:
     """Captures system environment information for reproducibility."""
-    info = {
+    info: dict[str, str | float | list[str]] = {
         "system": platform.system(),
         "release": platform.release(),
         "version": platform.version(),
