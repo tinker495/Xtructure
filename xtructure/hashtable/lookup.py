@@ -19,8 +19,8 @@ def _hashtable_lookup_internal(
     table: Any,
     input: Xtructurable,
     idx: BucketIdx,
-    probe_step: chex.Array,
-    input_fingerprint: chex.Array,
+    probe_step: jax.Array,
+    input_fingerprint: jax.Array,
     found: bool | jax.Array,
 ) -> tuple[BucketIdx, jax.Array]:
     found = jnp.asarray(found, dtype=jnp.bool_)
@@ -135,11 +135,11 @@ def _hashtable_lookup_parallel_internal(
     table: Any,
     inputs: Xtructurable,
     idxs: BucketIdx,
-    probe_steps: chex.Array,
+    probe_steps: jax.Array,
     fingerprints: jax.Array,
     founds: jax.Array,
     active: jax.Array | None = None,
-) -> tuple[BucketIdx, chex.Array]:
+) -> tuple[BucketIdx, jax.Array]:
     if active is None:
         active = jnp.ones(inputs.shape.batch, dtype=jnp.bool_)
 
@@ -154,7 +154,7 @@ def _hashtable_lookup_parallel_internal(
 
     probes = jnp.zeros(inputs.shape.batch, dtype=SIZE_DTYPE)
 
-    def _cond(val: tuple[BucketIdx, jax.Array, jax.Array, jax.Array]) -> chex.Array:
+    def _cond(val: tuple[BucketIdx, jax.Array, jax.Array, jax.Array]) -> jax.Array:
         _, _, _, active = val
         return jnp.any(active)
 
@@ -183,7 +183,7 @@ def _hashtable_lookup_parallel_internal(
         first_match_slot = jnp.argmax(fp_matches, axis=1).astype(SLOT_IDX_DTYPE)
         candidate_flat = bucket_indices * bucket_size_u32 + first_match_slot.astype(SIZE_DTYPE)
 
-        def _maybe_compare(has_match: chex.Array, flat: chex.Array, inp: Xtructurable) -> jax.Array:
+        def _maybe_compare(has_match: jax.Array, flat: jax.Array, inp: Xtructurable) -> jax.Array:
             return jax.lax.cond(
                 has_match,
                 lambda: jnp.asarray(table.table[flat] == inp, dtype=jnp.bool_),

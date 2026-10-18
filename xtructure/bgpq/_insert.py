@@ -89,7 +89,7 @@ def _heapify_rounds(branch_size: int) -> int:
 
 
 def _bgpq_insert_heapify_internal(
-    heap: Any, block_key: jax.Array, block_val: Xtructurable, active: chex.Array
+    heap: Any, block_key: jax.Array, block_val: Xtructurable, active: jax.Array
 ):
     """Sink `block` down the heap when `active`; an exact no-op otherwise.
 
@@ -272,7 +272,7 @@ def _insert_rows_wavefront(heap: Any, block_keys: jax.Array, block_vals: Xtructu
 
 @jax.jit
 def _bgpq_insert_sorted_rows_jit(
-    heap: Any, block_keys: jax.Array, block_vals: Xtructurable, n_rows: chex.Array
+    heap: Any, block_keys: jax.Array, block_vals: Xtructurable, n_rows: jax.Array
 ):
     if block_keys.shape[0] == 0:  # no rows: a no-op (the reductions below need k > 0)
         return heap
@@ -306,7 +306,7 @@ def _bgpq_insert_sorted_rows_jit(
 
 @jax.jit
 def _bgpq_insert_rows_jit(
-    heap: Any, block_keys: jax.Array, block_vals: Xtructurable, n_rows: chex.Array
+    heap: Any, block_keys: jax.Array, block_vals: Xtructurable, n_rows: jax.Array
 ):
     if block_keys.shape[0] == 0:
         return heap

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import chex
 import jax
 import jax.numpy as jnp
 
@@ -40,10 +39,10 @@ def _mix_fingerprint(primary: jax.Array, secondary: jax.Array, length: jax.Array
 
 
 def _unique_mask_from_group_ids(
-    inverse: chex.Array,
-    filled: chex.Array,
-    unique_key: chex.Array | None,
-) -> tuple[chex.Array, chex.Array]:
+    inverse: jax.Array,
+    filled: jax.Array,
+    unique_key: jax.typing.ArrayLike | None,
+) -> tuple[jax.Array, jax.Array]:
     """Representative selection shared by the exact and fast dedup paths.
 
     ``inverse`` assigns one group id per batch row; rows in the same group are
@@ -76,7 +75,7 @@ def _unique_mask_from_group_ids(
     return unique_mask, representative_indices
 
 
-def _unique_groups_exact(uint32eds: jax.Array, filled: jax.Array) -> chex.Array:
+def _unique_groups_exact(uint32eds: jax.Array, filled: jax.Array) -> jax.Array:
     """Exact row grouping via full-row unique (multi-column lexsort)."""
     batch_len = filled.shape[0]
     sentinel_row = jnp.full_like(uint32eds, jnp.uint32(0xFFFFFFFF))
@@ -94,10 +93,10 @@ def _unique_groups_exact(uint32eds: jax.Array, filled: jax.Array) -> chex.Array:
 
 def _compute_unique_mask_from_uint32eds(
     uint32eds: jax.Array,
-    filled: chex.Array,
-    unique_key: chex.Array | None,
-    row_hash: chex.Array | None = None,
-) -> tuple[chex.Array, chex.Array]:
+    filled: jax.Array,
+    unique_key: jax.typing.ArrayLike | None,
+    row_hash: jax.Array | None = None,
+) -> tuple[jax.Array, jax.Array]:
     filled = jnp.asarray(filled, dtype=jnp.bool_)
     batch_len = filled.shape[0]
 
@@ -139,7 +138,7 @@ def _compute_unique_mask_from_uint32eds(
     )
     if use_singleton_shortcut:
 
-        def _grouped_result() -> tuple[chex.Array, chex.Array]:
+        def _grouped_result() -> tuple[jax.Array, jax.Array]:
             gid_sorted = jnp.cumsum(new_group.astype(jnp.int32)) - 1
             inverse_fast = jnp.zeros((batch_len,), dtype=jnp.int32).at[sorted_idx].set(gid_sorted)
             first_member = (
@@ -164,7 +163,7 @@ def _compute_unique_mask_from_uint32eds(
     gid_sorted = jnp.cumsum(new_group.astype(jnp.int32)) - 1
     inverse_fast = jnp.zeros((batch_len,), dtype=jnp.int32).at[sorted_idx].set(gid_sorted)
 
-    def _verified_inverse() -> chex.Array:
+    def _verified_inverse() -> jax.Array:
         first_member = (
             jnp.full((batch_len,), batch_len, dtype=jnp.int32).at[inverse_fast].min(indices)
         )
