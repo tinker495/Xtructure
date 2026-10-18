@@ -15,7 +15,7 @@ Rules:
 from __future__ import annotations
 
 import importlib
-from typing import Any, Callable, Type, TypeVar
+from typing import Any, Callable, Protocol, Type, TypeVar, runtime_checkable
 
 import jax
 import jax.numpy as jnp
@@ -37,6 +37,13 @@ from .bits import _extract_bits, _insert_bits
 from .generated import GENERATED_PACKED_ROLE, register_generated_class
 
 T = TypeVar("T")
+
+
+@runtime_checkable
+class _BitpackSchemaOwner(Protocol):
+    @classmethod
+    def bitpack_schema(cls) -> dict[str, object]:
+        ...
 
 
 def add_aggregate_bitpack(
@@ -170,6 +177,7 @@ def add_aggregate_bitpack(
         }
 
     setattr(cls, "bitpack_schema", classmethod(bitpack_schema))
+    assert isinstance(cls, _BitpackSchemaOwner)
 
     def _words_all_from_packed(packed: Any) -> jax.Array:
         """Return (flat_n, words_all_len) uint32 words, reconstructing last word from tail if needed."""
