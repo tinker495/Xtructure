@@ -5,7 +5,7 @@ import platform
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Annotated, Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 import jax
 import jax.numpy as jnp
@@ -156,10 +156,10 @@ class BenchmarkValue:
     representative workload.
     """
 
-    id: FieldDescriptor.scalar(dtype=jnp.uint32)
-    timestamp: FieldDescriptor.scalar(dtype=jnp.uint32)
-    position: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))
-    embedding: FieldDescriptor.tensor(dtype=jnp.float16, shape=(128,))
+    id: Annotated[jax.Array, FieldDescriptor.scalar(dtype=jnp.uint32)]
+    timestamp: Annotated[jax.Array, FieldDescriptor.scalar(dtype=jnp.uint32)]
+    position: Annotated[jax.Array, FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))]
+    embedding: Annotated[jax.Array, FieldDescriptor.tensor(dtype=jnp.float16, shape=(128,))]
 
 
 @dataclass(frozen=True, slots=True)

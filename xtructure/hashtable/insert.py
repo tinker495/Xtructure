@@ -239,7 +239,7 @@ def _allocate_bucket_slots(
 
 
 @jax.jit
-def _hashtable_insert_jit(table: Any, input: Xtructurable) -> tuple[Any, bool, HashIdx]:
+def _hashtable_insert_jit(table: Any, input: Xtructurable) -> tuple[Any, jax.Array, HashIdx]:
     def _update_table(table: Any, input: Xtructurable, idx: BucketIdx, fingerprint: chex.Array):
         table = table.replace(
             table=table.table.at[idx.index * table.bucket_size + idx.slot_index].set(input),
