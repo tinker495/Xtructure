@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import inspect
-from typing import Any, Sequence, TypeVar, overload
+from typing import Any, Iterable, Sequence, TypeVar, overload
 
 import jax
 import jax.numpy as jnp
-from jax.typing import ArrayLike
+from jax.typing import ArrayLike, DTypeLike
 
 from xtructure.core.protocol import Xtructurable
 from xtructure.core.type_utils import (
@@ -14,6 +14,8 @@ from xtructure.core.type_utils import (
 
 from . import dataclass_ops as _dc
 from .array_ops import _update_array_on_condition
+
+_XtructureT = TypeVar("_XtructureT", bound=Xtructurable)
 
 
 def _check_homogeneous_inputs(func_name: str, arrays_list: list[Any]) -> bool:
@@ -72,7 +74,21 @@ def concat(arrays, /, *, axis: int | None = 0):
     return jnp.concat(arrays_list, axis=axis)
 
 
-def concatenate(arrays, axis: int | None = 0, dtype: Any | None = None):
+@overload
+def concatenate(
+    arrays: Iterable[_XtructureT], axis: int | None = 0, dtype: None = None
+) -> _XtructureT:
+    ...
+
+
+@overload
+def concatenate(
+    arrays: Iterable[ArrayLike], axis: int | None = 0, dtype: DTypeLike | None = None
+) -> jax.Array:
+    ...
+
+
+def concatenate(arrays, axis: int | None = 0, dtype: Any | None = None) -> Xtructurable | jax.Array:
     arrays_list = list(arrays)
     if _check_homogeneous_inputs("concatenate", arrays_list):
         if dtype is not None:
@@ -120,27 +136,92 @@ def flatten(array: Any, order: str = "C") -> Any:
     return ravel(array, order=order)
 
 
-def where(condition, x=None, y=None, /, *, size=None, fill_value=None):
+@overload
+def where(
+    condition: ArrayLike,
+    x: _XtructureT,
+    y: _XtructureT,
+    /,
+    *,
+    size: None = None,
+    fill_value: None = None,
+) -> _XtructureT:
+    ...
+
+
+@overload
+def where(
+    condition: ArrayLike,
+    x: _XtructureT,
+    y: ArrayLike,
+    /,
+    *,
+    size: None = None,
+    fill_value: None = None,
+) -> _XtructureT:
+    ...
+
+
+@overload
+def where(
+    condition: ArrayLike,
+    x: ArrayLike,
+    y: ArrayLike,
+    /,
+    *,
+    size: None = None,
+    fill_value: None = None,
+) -> jax.Array:
+    ...
+
+
+@overload
+def where(
+    condition: ArrayLike,
+    x: None = None,
+    y: None = None,
+    /,
+    *,
+    size: int | None = None,
+    fill_value: ArrayLike | tuple[ArrayLike, ...] | None = None,
+) -> tuple[jax.Array, ...]:
+    ...
+
+
+def where(
+    condition: ArrayLike,
+    x: _XtructureT | ArrayLike | None = None,
+    y: _XtructureT | ArrayLike | None = None,
+    /,
+    *,
+    size: int | None = None,
+    fill_value: ArrayLike | tuple[ArrayLike, ...] | None = None,
+) -> _XtructureT | jax.Array | tuple[jax.Array, ...]:
     if x is None and y is None:
-        return jnp.where(condition, x, y, size=size, fill_value=fill_value)
-    if _is_xtructurable(x) or _is_xtructurable(y):
-        if x is None or y is None:
+        return jnp.where(condition, size=size, fill_value=fill_value)
+    if isinstance(x, Xtructurable):
+        if y is None:
             raise TypeError("x and y must be provided for xtructure dataclass inputs.")
-        if _is_xtructurable(y) and not _is_xtructurable(x):
-            raise TypeError("x and y must both be xtructure dataclasses for dataclass where.")
-        if _is_xtructurable(x) and _is_xtructurable(y):
+        if isinstance(y, Xtructurable):
             if jax.tree_util.tree_structure(x) != jax.tree_util.tree_structure(y):
                 raise TypeError("x and y must have the same tree structure.")
         _reject_dataclass_kwargs("where", size=size, fill_value=fill_value)
         return _dc.where(condition, x, y)
-    return jnp.where(condition, x, y, size=size, fill_value=fill_value)
+    if isinstance(y, Xtructurable):
+        if x is None:
+            raise TypeError("x and y must be provided for xtructure dataclass inputs.")
+        raise TypeError("x and y must both be xtructure dataclasses for dataclass where.")
+    if x is None or y is None:
+        raise TypeError("x and y must be provided together for array inputs.")
+    if size is not None or fill_value is not None:
+        raise ValueError(
+            "size and fill_value arguments cannot be used in three-term where function."
+        )
+    return jnp.where(condition, x, y)
 
 
 def where_no_broadcast(condition: Any, x: Any, y: Any) -> Any:
     return _dc.where_no_broadcast(condition, x, y)
-
-
-_XtructureT = TypeVar("_XtructureT", bound=Xtructurable)
 
 
 @overload

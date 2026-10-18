@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
-from typing import Any, Union
+from typing import Any, TypeVar, Union
 
 import jax
 import jax.numpy as jnp
+from jax.typing import ArrayLike
 
 from ...xtructure_decorators import Xtructurable
 from ...xtructure_numpy.array_ops import _update_array_on_condition, _where_no_broadcast
 
+T = TypeVar("T", bound=Xtructurable)
 
-def where(condition: jnp.ndarray, x: Xtructurable, y: Union[Xtructurable, Any]) -> Xtructurable:
+
+def where(condition: ArrayLike, x: T, y: T | ArrayLike) -> T:
     """Apply jnp.where across every field of a dataclass."""
     condition_array = jnp.asarray(condition, dtype=jnp.bool_)
 
