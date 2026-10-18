@@ -1,6 +1,5 @@
 from typing import Annotated, NamedTuple
 
-import chex
 import jax
 
 from ..core.dtype_facts import SIZE_DTYPE
@@ -37,6 +36,6 @@ class HashTableProbe(NamedTuple):
     """
 
     index: jax.Array
-    step: chex.Array
-    uint32ed: chex.Array
-    fingerprint: chex.Array
+    step: jax.Array
+    uint32ed: jax.Array
+    fingerprint: jax.Array

@@ -3,6 +3,7 @@ from typing import Tuple as TypingTuple
 from typing import Type, TypeVar, runtime_checkable
 
 import chex
+import jax
 
 from .structuredtype import StructuredType
 
@@ -116,7 +117,7 @@ class Xtructurable(Protocol[T], metaclass=_XtructurableMeta):
     def hash(self: T, seed: int = 0) -> int:
         ...
 
-    def hash_with_uint32ed(self: T, seed: int = 0) -> TypingTuple[int, chex.Array]:
+    def hash_with_uint32ed(self: T, seed: int = 0) -> TypingTuple[jax.Array, jax.Array]:
         ...
 
     # Method added by add_comparison_operators
