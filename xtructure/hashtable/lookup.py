@@ -21,8 +21,9 @@ def _hashtable_lookup_internal(
     idx: BucketIdx,
     probe_step: chex.Array,
     input_fingerprint: chex.Array,
-    found: bool,
-) -> tuple[BucketIdx, bool]:
+    found: bool | jax.Array,
+) -> tuple[BucketIdx, jax.Array]:
+    found = jnp.asarray(found, dtype=jnp.bool_)
     probe_step = jnp.asarray(probe_step, dtype=SIZE_DTYPE)
     bucket_size = int(table.bucket_size)
     max_probes_u32 = SIZE_DTYPE(int(table.max_probes))
@@ -33,11 +34,13 @@ def _hashtable_lookup_internal(
     slot_offsets_u32 = slot_offsets.astype(SIZE_DTYPE)
     bucket_size_u32 = SIZE_DTYPE(bucket_size)
 
-    def _cond(val: tuple[BucketIdx, bool, chex.Array]) -> bool:
+    def _cond(val: tuple[BucketIdx, jax.Array, jax.Array]) -> jax.Array:
         _, found, probes = val
         return jnp.logical_and(~found, probes < max_probes_u32)
 
-    def _body(val: tuple[BucketIdx, bool, chex.Array]) -> tuple[BucketIdx, bool, chex.Array]:
+    def _body(
+        val: tuple[BucketIdx, jax.Array, jax.Array]
+    ) -> tuple[BucketIdx, jax.Array, jax.Array]:
         idx, found, probes = val
         bucket_idx = jnp.asarray(idx.index, dtype=SIZE_DTYPE)
         filled_limit = table.bucket_fill_levels[bucket_idx].astype(SLOT_IDX_DTYPE)
@@ -107,7 +110,7 @@ def _hashtable_lookup_internal(
 @jax.jit
 def _hashtable_lookup_bucket_jit(
     table: Any, input: Xtructurable
-) -> tuple[BucketIdx, bool, chex.Array]:
+) -> tuple[BucketIdx, jax.Array, jax.Array]:
     index, step, _uint32ed, fingerprint = get_new_idx_byterized(input, table._capacity, table.seed)
     idx = BucketIdx(index=index, slot_index=SLOT_IDX_DTYPE(0))
     idx, found = _hashtable_lookup_internal(table, input, idx, step, fingerprint, False)
@@ -115,7 +118,7 @@ def _hashtable_lookup_bucket_jit(
 
 
 @jax.jit
-def _hashtable_lookup_jit(table: Any, input: Xtructurable) -> tuple[HashIdx, bool]:
+def _hashtable_lookup_jit(table: Any, input: Xtructurable) -> tuple[HashIdx, jax.Array]:
     idx, found, _ = _hashtable_lookup_bucket_jit(table, input)
     bucket_size_u32 = SIZE_DTYPE(table.bucket_size)
     return HashIdx(index=idx.index * bucket_size_u32 + idx.slot_index), found
@@ -133,9 +136,9 @@ def _hashtable_lookup_parallel_internal(
     inputs: Xtructurable,
     idxs: BucketIdx,
     probe_steps: chex.Array,
-    fingerprints: chex.Array,
-    founds: chex.Array,
-    active: chex.Array | None = None,
+    fingerprints: jax.Array,
+    founds: jax.Array,
+    active: jax.Array | None = None,
 ) -> tuple[BucketIdx, chex.Array]:
     if active is None:
         active = jnp.ones(inputs.shape.batch, dtype=jnp.bool_)
@@ -151,13 +154,13 @@ def _hashtable_lookup_parallel_internal(
 
     probes = jnp.zeros(inputs.shape.batch, dtype=SIZE_DTYPE)
 
-    def _cond(val: tuple[BucketIdx, chex.Array, chex.Array, chex.Array]) -> chex.Array:
+    def _cond(val: tuple[BucketIdx, jax.Array, jax.Array, jax.Array]) -> chex.Array:
         _, _, _, active = val
         return jnp.any(active)
 
     def _body(
-        val: tuple[BucketIdx, chex.Array, chex.Array, chex.Array],
-    ) -> tuple[BucketIdx, chex.Array, chex.Array, chex.Array]:
+        val: tuple[BucketIdx, jax.Array, jax.Array, jax.Array],
+    ) -> tuple[BucketIdx, jax.Array, jax.Array, jax.Array]:
         idxs, founds, probes, active = val
 
         bucket_indices = jnp.asarray(idxs.index, dtype=SIZE_DTYPE)
@@ -180,9 +183,7 @@ def _hashtable_lookup_parallel_internal(
         first_match_slot = jnp.argmax(fp_matches, axis=1).astype(SLOT_IDX_DTYPE)
         candidate_flat = bucket_indices * bucket_size_u32 + first_match_slot.astype(SIZE_DTYPE)
 
-        def _maybe_compare(
-            has_match: chex.Array, flat: chex.Array, inp: Xtructurable
-        ) -> chex.Array:
+        def _maybe_compare(has_match: chex.Array, flat: chex.Array, inp: Xtructurable) -> jax.Array:
             return jax.lax.cond(
                 has_match,
                 lambda: jnp.asarray(table.table[flat] == inp, dtype=jnp.bool_),
@@ -257,7 +258,7 @@ def _lookup_parallel_from_probe(
     table: Any,
     inputs: Xtructurable,
     probe: HashTableProbe,
-    filled: chex.Array,
+    filled: chex.Array | bool,
 ) -> tuple[HashIdx, chex.Array]:
     """Run the parallel probe scan from an already-computed :class:`HashTableProbe`.
 

@@ -76,7 +76,7 @@ def _unique_mask_from_group_ids(
     return unique_mask, representative_indices
 
 
-def _unique_groups_exact(uint32eds: chex.Array, filled: chex.Array) -> chex.Array:
+def _unique_groups_exact(uint32eds: jax.Array, filled: jax.Array) -> chex.Array:
     """Exact row grouping via full-row unique (multi-column lexsort)."""
     batch_len = filled.shape[0]
     sentinel_row = jnp.full_like(uint32eds, jnp.uint32(0xFFFFFFFF))
@@ -93,7 +93,7 @@ def _unique_groups_exact(uint32eds: chex.Array, filled: chex.Array) -> chex.Arra
 
 
 def _compute_unique_mask_from_uint32eds(
-    uint32eds: chex.Array,
+    uint32eds: jax.Array,
     filled: chex.Array,
     unique_key: chex.Array | None,
     row_hash: chex.Array | None = None,

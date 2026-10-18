@@ -94,10 +94,10 @@ class HashTable:
             dataclass, seed, capacity, bucket_size, hash_size_multiplier, max_probes
         )
 
-    def lookup_bucket(self, input: Xtructurable) -> tuple[BucketIdx, bool, chex.Array]:
+    def lookup_bucket(self, input: Xtructurable) -> tuple[BucketIdx, jax.Array, jax.Array]:
         return _hashtable_lookup_bucket_jit(self, input)
 
-    def lookup(self, input: Xtructurable) -> tuple[HashIdx, bool]:
+    def lookup(self, input: Xtructurable) -> tuple[HashIdx, jax.Array]:
         return _hashtable_lookup_jit(self, input)
 
     def lookup_parallel(
@@ -117,7 +117,7 @@ class HashTable:
         """
         return _hashtable_lookup_parallel_with_probe_jit(self, inputs, filled)
 
-    def insert(self, input: Xtructurable) -> tuple["HashTable", bool, HashIdx]:
+    def insert(self, input: Xtructurable) -> tuple["HashTable", jax.Array, HashIdx]:
         return _hashtable_insert_jit(self, input)
 
     def parallel_insert(

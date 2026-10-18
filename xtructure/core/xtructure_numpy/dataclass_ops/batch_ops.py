@@ -110,7 +110,7 @@ def pad(
         target_size = 1 + pad_before + pad_after
 
         if mode == "constant" and "constant_values" not in kwargs:
-            result = type(dataclass_instance).default((target_size,))
+            result = dataclass_instance.default((target_size,))
             return result.at[pad_before].set(dataclass_instance)
 
         expanded = jax.tree_util.tree_map(lambda x: jnp.expand_dims(x, axis=0), dataclass_instance)
@@ -143,7 +143,7 @@ def pad(
                 slice(before, before + dim)
                 for dim, (before, after) in zip(batch_shape, normalized_pad_width)
             )
-            result = type(dataclass_instance).default(target_shape)
+            result = dataclass_instance.default(target_shape)
             return result.at[insert_slices].set(dataclass_instance)
 
         pad_width_spec = normalized_pad_width
