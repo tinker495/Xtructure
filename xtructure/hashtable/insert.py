@@ -314,9 +314,9 @@ def _hashtable_parallel_insert_internal(
 def _hashtable_parallel_insert_jit(
     table: Any,
     inputs: Xtructurable,
-    filled: chex.Array | bool = None,
-    unique_key: chex.Array = None,
-    probe: HashTableProbe = None,
+    filled: chex.Array | bool | None = None,
+    unique_key: chex.Array | None = None,
+    probe: HashTableProbe | None = None,
     assume_unique: bool = False,
 ):
     if filled is None:
