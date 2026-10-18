@@ -24,7 +24,7 @@ from .types import HashTableProbe
 _UNIQUE_HASH_SEED = jnp.uint32(0xA5A5_A5A5)
 
 
-def _mix_fingerprint(primary: chex.Array, secondary: chex.Array, length: chex.Array) -> chex.Array:
+def _mix_fingerprint(primary: jax.Array, secondary: jax.Array, length: jax.Array) -> jax.Array:
     mix = jnp.asarray(primary, dtype=jnp.uint32)
     secondary = jnp.asarray(secondary, dtype=jnp.uint32)
     length = jnp.asarray(length, dtype=jnp.uint32)
@@ -181,7 +181,7 @@ def _compute_unique_mask_from_uint32eds(
     return _unique_mask_from_group_ids(inverse, filled, unique_key)
 
 
-def _modulus_reduce(value: chex.Array, modulus: int) -> chex.Array:
+def _modulus_reduce(value: jax.typing.ArrayLike, modulus: int) -> jax.Array:
     """Reduce ``value`` modulo ``modulus`` using a bitmask fast path for powers of two."""
     modulus_u32 = jnp.asarray(modulus, dtype=SIZE_DTYPE)
     modulus_u32 = jnp.maximum(modulus_u32, SIZE_DTYPE(1))
@@ -191,7 +191,7 @@ def _modulus_reduce(value: chex.Array, modulus: int) -> chex.Array:
     return jax.lax.select(is_pow2, value_u32 & mask, value_u32 % modulus_u32)
 
 
-def _normalize_probe_step(step: chex.Array, modulus: int) -> chex.Array:
+def _normalize_probe_step(step: jax.Array, modulus: int) -> jax.Array:
     step = _modulus_reduce(step, modulus)
     step = jnp.bitwise_or(step, SIZE_DTYPE(1))
     return step
@@ -201,7 +201,7 @@ def get_new_idx_byterized(
     input: Xtructurable,
     modulus: int,
     seed: int,
-) -> tuple[chex.Array, chex.Array, chex.Array, chex.Array]:
+) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
     """Hash a Xtructurable and return index, step, byte representation, and fingerprint."""
     hash_value, uint32ed = input.hash_with_uint32ed(seed)
     seed_u32 = jnp.asarray(seed, dtype=jnp.uint32)

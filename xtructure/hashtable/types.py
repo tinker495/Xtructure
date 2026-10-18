@@ -1,6 +1,6 @@
-from typing import NamedTuple
+from typing import Annotated, NamedTuple
 
-import chex
+import jax
 
 from ..core.dtype_facts import SIZE_DTYPE
 from ..core.field_descriptors import FieldDescriptor
@@ -10,13 +10,13 @@ from .constants import SLOT_IDX_DTYPE
 
 @xtructure_dataclass
 class BucketIdx:
-    index: FieldDescriptor.scalar(dtype=SIZE_DTYPE)
-    slot_index: FieldDescriptor.scalar(dtype=SLOT_IDX_DTYPE)
+    index: Annotated[jax.Array, FieldDescriptor.scalar(dtype=SIZE_DTYPE)]
+    slot_index: Annotated[jax.Array, FieldDescriptor.scalar(dtype=SLOT_IDX_DTYPE)]
 
 
 @xtructure_dataclass
 class HashIdx:
-    index: FieldDescriptor.scalar(dtype=SIZE_DTYPE)
+    index: Annotated[jax.Array, FieldDescriptor.scalar(dtype=SIZE_DTYPE)]
 
 
 class HashTableProbe(NamedTuple):
@@ -35,7 +35,7 @@ class HashTableProbe(NamedTuple):
     ``fingerprint`` ``(n,)``.
     """
 
-    index: chex.Array
-    step: chex.Array
-    uint32ed: chex.Array
-    fingerprint: chex.Array
+    index: jax.Array
+    step: jax.Array
+    uint32ed: jax.Array
+    fingerprint: jax.Array

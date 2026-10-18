@@ -85,8 +85,8 @@ def _resolve_slot_conflicts(flat_indices: chex.Array, active: chex.Array) -> che
 def _allocate_initial_bucket_slots(
     table: Any,
     index: BucketIdx,
-    updatable: chex.Array,
-) -> tuple[chex.Array, chex.Array]:
+    updatable: jax.Array,
+) -> tuple[jax.Array, jax.Array]:
     """Allocate every candidate that fits in its lookup-selected bucket.
 
     Parallel lookup leaves each missing value at the first free slot of a
@@ -132,10 +132,10 @@ def _allocate_initial_bucket_slots(
 def _allocate_bucket_slots(
     table: Any,
     index: BucketIdx,
-    probe_steps: chex.Array,
-    updatable: chex.Array,
-    initial_slots: chex.Array,
-) -> tuple[BucketIdx, chex.Array]:
+    probe_steps: jax.Array,
+    updatable: jax.Array,
+    initial_slots: jax.Array,
+) -> tuple[BucketIdx, jax.Array]:
     """Allocate stable per-bucket ranks and probe only bucket overflows.
 
     Warm-starts from the ranked slots of :func:`_allocate_initial_bucket_slots`:
@@ -168,14 +168,14 @@ def _allocate_bucket_slots(
     assigned = accepted
 
     def _cond(
-        carry: tuple[chex.Array, chex.Array, chex.Array, chex.Array, chex.Array],
-    ) -> chex.Array:
+        carry: tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array],
+    ) -> jax.Array:
         _, _, pending, _, _ = carry
         return jnp.any(pending)
 
     def _body(
-        carry: tuple[chex.Array, chex.Array, chex.Array, chex.Array, chex.Array],
-    ) -> tuple[chex.Array, chex.Array, chex.Array, chex.Array, chex.Array]:
+        carry: tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array],
+    ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]:
         buckets, slots, pending, assigned, probe_count = carry
         bucket_keys = jnp.where(updatable, buckets, sentinel)
         sorted_buckets, perm = jax.lax.sort((bucket_keys, batch_idx), dimension=0, is_stable=True)
@@ -271,10 +271,10 @@ def _hashtable_insert_jit(table: Any, input: Xtructurable) -> tuple[Any, bool, H
 def _hashtable_parallel_insert_internal(
     table: Any,
     inputs: Xtructurable,
-    probe_steps: chex.Array,
+    probe_steps: jax.Array,
     index: BucketIdx,
-    updatable: chex.Array,
-    fingerprints: chex.Array,
+    updatable: jax.Array,
+    fingerprints: jax.Array,
 ) -> tuple[Any, BucketIdx]:
     initial_slots, all_fit = _allocate_initial_bucket_slots(table, index, updatable)
     index, pending = jax.lax.cond(
