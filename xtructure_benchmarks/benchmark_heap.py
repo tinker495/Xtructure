@@ -7,6 +7,7 @@ import jax.numpy as jnp
 import tyro
 
 from xtructure import BGPQ
+from xtructure.core.protocol import Xtructurable
 from xtructure_benchmarks.common import (
     BenchmarkValue,
     check_system_load,
@@ -24,7 +25,7 @@ from xtructure_benchmarks.common import (
 # Key generation function adapted from tests/heap_test.py
 # Improved to reduce ties by using full hash range
 @jax.jit
-def key_gen(x: BenchmarkValue) -> float:
+def key_gen(x: Xtructurable) -> jax.Array:
     uint32_hash = x.hash()
     # Map to [0,1) with much fewer ties
     key = uint32_hash / jnp.float32(2**32)
