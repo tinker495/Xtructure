@@ -2,6 +2,8 @@ import functools
 import importlib
 from typing import Callable, Optional, Type, TypeVar
 
+from typing_extensions import dataclass_transform
+
 from xtructure.core.dataclass import base_dataclass
 from xtructure.core.layout.instance_layout import (
     get_instance_layout,
@@ -105,6 +107,7 @@ def _install_layout_cache_replace(cls: Type[T], *, validate: bool) -> Type[T]:
     return cls
 
 
+@dataclass_transform()
 def xtructure_dataclass(
     cls: Optional[Type[T]] = None,
     *,

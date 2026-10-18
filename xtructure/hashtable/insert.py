@@ -86,7 +86,7 @@ def _allocate_initial_bucket_slots(
     table: Any,
     index: BucketIdx,
     updatable: chex.Array,
-) -> tuple[chex.Array, chex.Array]:
+) -> tuple[jax.Array, chex.Array]:
     """Allocate every candidate that fits in its lookup-selected bucket.
 
     Parallel lookup leaves each missing value at the first free slot of a
@@ -134,7 +134,7 @@ def _allocate_bucket_slots(
     index: BucketIdx,
     probe_steps: chex.Array,
     updatable: chex.Array,
-    initial_slots: chex.Array,
+    initial_slots: jax.Array,
 ) -> tuple[BucketIdx, chex.Array]:
     """Allocate stable per-bucket ranks and probe only bucket overflows.
 
@@ -168,14 +168,14 @@ def _allocate_bucket_slots(
     assigned = accepted
 
     def _cond(
-        carry: tuple[chex.Array, chex.Array, chex.Array, chex.Array, chex.Array],
+        carry: tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array],
     ) -> chex.Array:
         _, _, pending, _, _ = carry
         return jnp.any(pending)
 
     def _body(
-        carry: tuple[chex.Array, chex.Array, chex.Array, chex.Array, chex.Array],
-    ) -> tuple[chex.Array, chex.Array, chex.Array, chex.Array, chex.Array]:
+        carry: tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array],
+    ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]:
         buckets, slots, pending, assigned, probe_count = carry
         bucket_keys = jnp.where(updatable, buckets, sentinel)
         sorted_buckets, perm = jax.lax.sort((bucket_keys, batch_idx), dimension=0, is_stable=True)

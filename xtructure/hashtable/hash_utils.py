@@ -181,7 +181,7 @@ def _compute_unique_mask_from_uint32eds(
     return _unique_mask_from_group_ids(inverse, filled, unique_key)
 
 
-def _modulus_reduce(value: chex.Array, modulus: int) -> chex.Array:
+def _modulus_reduce(value: chex.Array, modulus: int) -> jax.Array:
     """Reduce ``value`` modulo ``modulus`` using a bitmask fast path for powers of two."""
     modulus_u32 = jnp.asarray(modulus, dtype=SIZE_DTYPE)
     modulus_u32 = jnp.maximum(modulus_u32, SIZE_DTYPE(1))
@@ -201,7 +201,7 @@ def get_new_idx_byterized(
     input: Xtructurable,
     modulus: int,
     seed: int,
-) -> tuple[chex.Array, chex.Array, chex.Array, chex.Array]:
+) -> tuple[jax.Array, chex.Array, chex.Array, chex.Array]:
     """Hash a Xtructurable and return index, step, byte representation, and fingerprint."""
     hash_value, uint32ed = input.hash_with_uint32ed(seed)
     seed_u32 = jnp.asarray(seed, dtype=jnp.uint32)
