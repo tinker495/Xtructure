@@ -15,7 +15,7 @@ T = TypeVar("T", bound=Xtructurable)
 
 def _normalize_pad_width(
     pad_width: Union[int, tuple[int, ...], tuple[tuple[int, int], ...]], ndim: int
-):
+) -> list[tuple[int, int]]:
     """Normalize pad_width to (before, after) tuples for every batch axis."""
     if isinstance(pad_width, int):
         return [(pad_width, pad_width)] * ndim
@@ -35,13 +35,23 @@ def _normalize_pad_width(
                 raise ValueError(
                     f"pad_width length {len(pad_width)} must match number of batch dimensions {ndim}"
                 )
-            return [(int(before), int(after)) for before, after in pad_width]
+            result = []
+            for pair in pad_width:
+                assert isinstance(pair, (list, tuple))
+                before, after = pair
+                result.append((int(before), int(after)))
+            return result
 
         if len(pad_width) != ndim:
             raise ValueError(
                 f"pad_width length {len(pad_width)} must match number of batch dimensions {ndim}"
             )
-        return [(int(x), int(x)) for x in pad_width]
+        result = []
+        for width in pad_width:
+            if isinstance(width, (list, tuple)):
+                raise TypeError("pad_width cannot mix scalar widths and pairs")
+            result.append((int(width), int(width)))
+        return result
     raise ValueError("pad_width must be int, sequence of int, or sequence of pairs")
 
 

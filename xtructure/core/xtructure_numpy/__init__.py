@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import inspect
-from typing import Any, Sequence
+from typing import Any, Sequence, TypeVar, overload
 
 import jax
 import jax.numpy as jnp
+from jax.typing import ArrayLike
 
+from xtructure.core.protocol import Xtructurable
 from xtructure.core.type_utils import (
     is_xtructure_dataclass_instance as _is_xtructurable,
 )
@@ -138,17 +140,48 @@ def where_no_broadcast(condition: Any, x: Any, y: Any) -> Any:
     return _dc.where_no_broadcast(condition, x, y)
 
 
+_XtructureT = TypeVar("_XtructureT", bound=Xtructurable)
+
+
+@overload
 def take(
-    a,
-    indices,
+    a: _XtructureT,
+    indices: ArrayLike,
+    axis: int | None = None,
+    out: None = None,
+    mode: str | None = None,
+    unique_indices: bool = False,
+    indices_are_sorted: bool = False,
+    fill_value=None,
+) -> _XtructureT:
+    ...
+
+
+@overload
+def take(
+    a: ArrayLike,
+    indices: ArrayLike,
+    axis: int | None = None,
+    out: None = None,
+    mode: str | None = None,
+    unique_indices: bool = False,
+    indices_are_sorted: bool = False,
+    fill_value=None,
+) -> jax.Array:
+    ...
+
+
+def take(
+    a: _XtructureT | ArrayLike,
+    indices: ArrayLike,
     axis: int | None = None,
     out=None,
     mode: str | None = None,
     unique_indices: bool = False,
     indices_are_sorted: bool = False,
     fill_value=None,
-):
-    if _is_xtructurable(a):
+) -> _XtructureT | jax.Array:
+    if isinstance(a, Xtructurable):
         _reject_dataclass_kwargs("take", out=out)
         return jax.tree_util.tree_map(
             lambda x: jnp.take(
