@@ -372,12 +372,19 @@ def unpack_field(
             f"got {packed_arr.shape[-1]}."
         )
 
-    flat = packed_arr.reshape((int(np.prod(batch_shape)), expected_packed_len))
     unpacked_flat = (
-        _unpack_rows_host(flat, int(np.prod(unpacked_shape)), packed_bits, unpacked_dtype)
-        if on_host
+        _unpack_rows_host(
+            packed_arr.reshape((int(np.prod(batch_shape)), expected_packed_len)),
+            int(np.prod(unpacked_shape)),
+            packed_bits,
+            unpacked_dtype,
+        )
+        if isinstance(packed_arr, np.ndarray)
         else _unpack_rows_device(
-            flat, tuple(unpacked_shape), packed_bits, jnp.dtype(unpacked_dtype)
+            packed_arr.reshape((int(np.prod(batch_shape)), expected_packed_len)),
+            tuple(unpacked_shape),
+            packed_bits,
+            jnp.dtype(unpacked_dtype),
         )
     )
     return unpacked_flat.reshape(batch_shape + unpacked_shape)

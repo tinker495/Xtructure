@@ -6,6 +6,11 @@ without re-entering the top-level facade during package initialization.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .core.xtructure_decorators import xtructure_dataclass as xtructure_dataclass
+
 from xtructure._lazy_imports import lazy_dir, load_lazy_export
 
 __all__ = [

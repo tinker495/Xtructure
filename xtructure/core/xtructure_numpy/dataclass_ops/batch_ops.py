@@ -23,10 +23,12 @@ def _normalize_pad_width(
         if len(pad_width) == 0:
             raise ValueError("pad_width cannot be empty")
 
-        if len(pad_width) == 2 and all(isinstance(x, (int, float)) for x in pad_width):
-            result = [(int(pad_width[0]), int(pad_width[1]))]
-            result.extend([(0, 0)] * (ndim - 1))
-            return result
+        if len(pad_width) == 2:
+            before, after = pad_width
+            if isinstance(before, (int, float)) and isinstance(after, (int, float)):
+                result = [(int(before), int(after))]
+                result.extend([(0, 0)] * (ndim - 1))
+                return result
 
         if all(isinstance(x, (list, tuple)) and len(x) == 2 for x in pad_width):
             if len(pad_width) != ndim:

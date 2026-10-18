@@ -1,20 +1,26 @@
 from __future__ import annotations
 
-from typing import Any, Iterable, Tuple
+from enum import Enum, auto
+from typing import Any, Callable, Iterable, Tuple
 
 from .field_descriptors import FieldDescriptor
 from .shape_utils import normalize_shape
 
-_UNSET = object()
+
+class _Unset(Enum):
+    TOKEN = auto()
+
+
+_UNSET = _Unset.TOKEN
 
 
 def clone_field_descriptor(
     descriptor: FieldDescriptor,
     *,
     dtype: Any = _UNSET,
-    intrinsic_shape: Iterable[int] | Tuple[int, ...] | None = _UNSET,
+    intrinsic_shape: Iterable[int] | Tuple[int, ...] | None | _Unset = _UNSET,
     fill_value: Any = _UNSET,
-    fill_value_factory: Any = _UNSET,
+    fill_value_factory: Callable[[Tuple[int, ...], Any], Any] | None | _Unset = _UNSET,
     validator: Any = _UNSET,
 ) -> FieldDescriptor:
     """
