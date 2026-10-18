@@ -7,9 +7,10 @@ from typing import List, TypeVar, Union
 import jax
 import jax.numpy as jnp
 
+from xtructure.core.protocol import Xtructurable
 from xtructure.core.structuredtype import StructuredType
 
-T = TypeVar("T")
+T = TypeVar("T", bound=Xtructurable)
 
 
 def _normalize_pad_width(

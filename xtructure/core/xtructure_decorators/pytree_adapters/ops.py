@@ -1,3 +1,4 @@
+from types import NotImplementedType
 from typing import Any, Type, TypeVar
 
 import jax
@@ -21,7 +22,7 @@ def add_comparison_operators(cls: Type[T]) -> Type[T]:
     not a dataclass of booleans.
     """
 
-    def _xtructure_eq(self, other: Any) -> T:
+    def _xtructure_eq(self, other: Any) -> jax.Array | NotImplementedType:
         if not isinstance(other, self.__class__):
             # Different type -> NotImplemented
             return NotImplemented
@@ -30,7 +31,7 @@ def add_comparison_operators(cls: Type[T]) -> Type[T]:
         tree_equal = jax.tree_util.tree_map(lambda x, y: jnp.all(x == y), self, other)
         return jax.tree_util.tree_reduce(jnp.logical_and, tree_equal)
 
-    def _xtructure_ne(self, other: Any) -> T:
+    def _xtructure_ne(self, other: Any) -> jax.Array | NotImplementedType:
         if not isinstance(other, self.__class__):
             return NotImplemented
 

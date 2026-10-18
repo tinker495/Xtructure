@@ -123,8 +123,8 @@ class HashTable:
     def parallel_insert(
         self,
         inputs: Xtructurable,
-        filled: chex.Array | bool = None,
-        unique_key: chex.Array = None,
+        filled: chex.Array | bool | None = None,
+        unique_key: chex.Array | None = None,
         probe: HashTableProbe | None = None,
         *,
         assume_unique: bool = False,
