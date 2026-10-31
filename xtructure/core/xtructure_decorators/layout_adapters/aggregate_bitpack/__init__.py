@@ -15,7 +15,7 @@ Rules:
 from __future__ import annotations
 
 import importlib
-from typing import Any, Callable, Protocol, Type, TypeVar, runtime_checkable
+from typing import Any, Callable, Type, TypeVar
 
 import jax
 import jax.numpy as jnp
@@ -37,13 +37,6 @@ from .bits import _extract_bits, _insert_bits
 from .generated import GENERATED_PACKED_ROLE, register_generated_class
 
 T = TypeVar("T")
-
-
-@runtime_checkable
-class _BitpackSchemaOwner(Protocol):
-    @classmethod
-    def bitpack_schema(cls) -> dict[str, object]:
-        ...
 
 
 def add_aggregate_bitpack(
@@ -148,7 +141,7 @@ def add_aggregate_bitpack(
     setattr(cls, "Packed", Packed)
     setattr(cls, "packed", property(packed_prop))
 
-    def bitpack_schema(cls_):
+    def bitpack_schema(cls_: type) -> dict[str, object]:
         """Return a plain-Python description of the aggregate bitpacking layout."""
         storage_bytes = int(stored_words_len * 4 + tail_bytes)
         payload_bytes = int(ceil_div(total_bits, 8))
@@ -177,7 +170,6 @@ def add_aggregate_bitpack(
         }
 
     setattr(cls, "bitpack_schema", classmethod(bitpack_schema))
-    assert isinstance(cls, _BitpackSchemaOwner)
 
     def _words_all_from_packed(packed: Any) -> jax.Array:
         """Return (flat_n, words_all_len) uint32 words, reconstructing last word from tail if needed."""
@@ -243,11 +235,7 @@ def add_aggregate_bitpack(
 
     setattr(Packed, "unpacked", property(unpacked_prop))
 
-    def packed_bitpack_schema(_packed_cls):
-        # Delegate to the original (unpacked) class so the schema is authored once.
-        return cls.bitpack_schema()
-
-    setattr(Packed, "bitpack_schema", classmethod(packed_bitpack_schema))
+    setattr(Packed, "bitpack_schema", classmethod(bitpack_schema))
 
     def unpack_field(
         self,
