@@ -141,7 +141,7 @@ def add_aggregate_bitpack(
     setattr(cls, "Packed", Packed)
     setattr(cls, "packed", property(packed_prop))
 
-    def bitpack_schema(cls_):
+    def bitpack_schema(cls_: type) -> dict[str, object]:
         """Return a plain-Python description of the aggregate bitpacking layout."""
         storage_bytes = int(stored_words_len * 4 + tail_bytes)
         payload_bytes = int(ceil_div(total_bits, 8))
@@ -235,11 +235,7 @@ def add_aggregate_bitpack(
 
     setattr(Packed, "unpacked", property(unpacked_prop))
 
-    def packed_bitpack_schema(_packed_cls):
-        # Delegate to the original (unpacked) class so the schema is authored once.
-        return cls.bitpack_schema()
-
-    setattr(Packed, "bitpack_schema", classmethod(packed_bitpack_schema))
+    setattr(Packed, "bitpack_schema", classmethod(bitpack_schema))
 
     def unpack_field(
         self,
