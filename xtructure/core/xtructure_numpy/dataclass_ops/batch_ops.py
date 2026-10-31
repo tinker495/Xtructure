@@ -7,14 +7,15 @@ from typing import List, TypeVar, Union
 import jax
 import jax.numpy as jnp
 
+from xtructure.core.protocol import Xtructurable
 from xtructure.core.structuredtype import StructuredType
 
-T = TypeVar("T")
+T = TypeVar("T", bound=Xtructurable)
 
 
 def _normalize_pad_width(
     pad_width: Union[int, tuple[int, ...], tuple[tuple[int, int], ...]], ndim: int
-):
+) -> list[tuple[int, int]]:
     """Normalize pad_width to (before, after) tuples for every batch axis."""
     if isinstance(pad_width, int):
         return [(pad_width, pad_width)] * ndim
@@ -22,23 +23,35 @@ def _normalize_pad_width(
         if len(pad_width) == 0:
             raise ValueError("pad_width cannot be empty")
 
-        if len(pad_width) == 2 and all(isinstance(x, (int, float)) for x in pad_width):
-            result = [(int(pad_width[0]), int(pad_width[1]))]
-            result.extend([(0, 0)] * (ndim - 1))
-            return result
+        if len(pad_width) == 2:
+            before, after = pad_width
+            if isinstance(before, (int, float)) and isinstance(after, (int, float)):
+                result = [(int(before), int(after))]
+                result.extend([(0, 0)] * (ndim - 1))
+                return result
 
         if all(isinstance(x, (list, tuple)) and len(x) == 2 for x in pad_width):
             if len(pad_width) != ndim:
                 raise ValueError(
                     f"pad_width length {len(pad_width)} must match number of batch dimensions {ndim}"
                 )
-            return [(int(before), int(after)) for before, after in pad_width]
+            result = []
+            for pair in pad_width:
+                assert isinstance(pair, (list, tuple))
+                before, after = pair
+                result.append((int(before), int(after)))
+            return result
 
         if len(pad_width) != ndim:
             raise ValueError(
                 f"pad_width length {len(pad_width)} must match number of batch dimensions {ndim}"
             )
-        return [(int(x), int(x)) for x in pad_width]
+        result = []
+        for width in pad_width:
+            if isinstance(width, (list, tuple)):
+                raise TypeError("pad_width cannot mix scalar widths and pairs")
+            result.append((int(width), int(width)))
+        return result
     raise ValueError("pad_width must be int, sequence of int, or sequence of pairs")
 
 
@@ -109,7 +122,7 @@ def pad(
         target_size = 1 + pad_before + pad_after
 
         if mode == "constant" and "constant_values" not in kwargs:
-            result = type(dataclass_instance).default((target_size,))
+            result = dataclass_instance.default((target_size,))
             return result.at[pad_before].set(dataclass_instance)
 
         expanded = jax.tree_util.tree_map(lambda x: jnp.expand_dims(x, axis=0), dataclass_instance)
@@ -142,7 +155,7 @@ def pad(
                 slice(before, before + dim)
                 for dim, (before, after) in zip(batch_shape, normalized_pad_width)
             )
-            result = type(dataclass_instance).default(target_shape)
+            result = dataclass_instance.default(target_shape)
             return result.at[insert_slices].set(dataclass_instance)
 
         pad_width_spec = normalized_pad_width

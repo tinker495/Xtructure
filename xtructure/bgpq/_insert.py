@@ -10,15 +10,15 @@ import jax.numpy as jnp
 from ..core.dtype_facts import SIZE_DTYPE
 from ..core.protocol import Xtructurable
 from ..core.xtructure_numpy import concatenate as xnp_concatenate
-from ..core.xtructure_numpy import pad
 from ..core.xtructure_numpy import where as xnp_where
+from ..core.xtructure_numpy.dataclass_ops.batch_ops import pad
 from ._backend import merge_array_backend
 from ._merge import merge_sort_split
 
 SORT_STABLE = True  # Use stable sorting to maintain insertion order for equal keys.
 
 
-def sort_arrays(k: chex.Array, v: Xtructurable):
+def sort_arrays(k: jax.Array, v: Xtructurable):
     sorted_k, sorted_idx = jax.lax.sort_key_val(k, jnp.arange(k.shape[0]), is_stable=SORT_STABLE)
     sorted_v = v[sorted_idx]
     return sorted_k, sorted_v
@@ -39,7 +39,7 @@ def _next(current, target):
 
 
 @jax.jit
-def _bgpq_merge_buffer_jit(heap: Any, blockk: chex.Array, blockv: Xtructurable):
+def _bgpq_merge_buffer_jit(heap: Any, blockk: jax.Array, blockv: Xtructurable):
     n = int(heap.batch_size)
     # Concatenate block and buffer
     sorted_key, sorted_idx = merge_array_backend(blockk, heap.key_buffer)
@@ -89,7 +89,7 @@ def _heapify_rounds(branch_size: int) -> int:
 
 
 def _bgpq_insert_heapify_internal(
-    heap: Any, block_key: chex.Array, block_val: Xtructurable, active: chex.Array
+    heap: Any, block_key: jax.Array, block_val: Xtructurable, active: jax.Array
 ):
     """Sink `block` down the heap when `active`; an exact no-op otherwise.
 
@@ -158,7 +158,7 @@ def _bgpq_insert_heapify_internal(
 
 
 @jax.jit
-def _bgpq_insert_sorted_jit(heap: Any, block_key: chex.Array, block_val: Xtructurable):
+def _bgpq_insert_sorted_jit(heap: Any, block_key: jax.Array, block_val: Xtructurable):
     # Merge with root node
     root_key, root_val, block_key, block_val = merge_sort_split(
         heap.key_store[0], heap.val_store[0], block_key, block_val
@@ -178,12 +178,12 @@ def _bgpq_insert_sorted_jit(heap: Any, block_key: chex.Array, block_val: Xtructu
 
 
 @jax.jit
-def _bgpq_insert_jit(heap: Any, block_key: chex.Array, block_val: Xtructurable):
+def _bgpq_insert_jit(heap: Any, block_key: jax.Array, block_val: Xtructurable):
     block_key, block_val = sort_arrays(block_key, block_val)
     return _bgpq_insert_sorted_jit(heap, block_key, block_val)
 
 
-def _insert_rows_wavefront(heap: Any, block_keys: chex.Array, block_vals: Xtructurable, n_rows):
+def _insert_rows_wavefront(heap: Any, block_keys: jax.Array, block_vals: Xtructurable, n_rows):
     """Sorted rows ``[0, n_rows)`` inserted with every row's sink running concurrently.
 
     Bit-identical to the sequential row loop as long as no row sees a full heap
@@ -272,7 +272,7 @@ def _insert_rows_wavefront(heap: Any, block_keys: chex.Array, block_vals: Xtruct
 
 @jax.jit
 def _bgpq_insert_sorted_rows_jit(
-    heap: Any, block_keys: chex.Array, block_vals: Xtructurable, n_rows: chex.Array
+    heap: Any, block_keys: jax.Array, block_vals: Xtructurable, n_rows: jax.Array
 ):
     if block_keys.shape[0] == 0:  # no rows: a no-op (the reductions below need k > 0)
         return heap
@@ -306,7 +306,7 @@ def _bgpq_insert_sorted_rows_jit(
 
 @jax.jit
 def _bgpq_insert_rows_jit(
-    heap: Any, block_keys: chex.Array, block_vals: Xtructurable, n_rows: chex.Array
+    heap: Any, block_keys: jax.Array, block_vals: Xtructurable, n_rows: jax.Array
 ):
     if block_keys.shape[0] == 0:
         return heap

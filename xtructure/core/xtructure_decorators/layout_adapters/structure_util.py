@@ -72,6 +72,8 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
                 # Calculate the product of all non-negative values in new_shape
                 non_negative_product = 1
                 for dim in new_shape_list:
+                    if isinstance(dim, (tuple, list)):
+                        raise TypeError("new_shape dimensions must be integers")
                     if dim != -1:
                         non_negative_product *= dim
 

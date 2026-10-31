@@ -81,9 +81,9 @@ class BGPQ:
     buffer_size: int
     branch_size: int
     batch_size: int
-    key_store: chex.Array  # shape = (total_size, batch_size)
+    key_store: jax.Array  # shape = (total_size, batch_size)
     val_store: Xtructurable  # shape = (total_size, batch_size, ...)
-    key_buffer: chex.Array  # shape = (batch_size - 1,)
+    key_buffer: jax.Array  # shape = (batch_size - 1,)
     val_buffer: Xtructurable  # shape = (batch_size - 1, ...)
 
     @staticmethod

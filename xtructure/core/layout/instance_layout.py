@@ -113,21 +113,17 @@ def _is_compatible_nested_shape(value_shape: Any, nested_shape_cls: type) -> boo
 def get_instance_layout(instance: Any) -> InstanceLayout:
     """Return Instance Layout facts for a concrete xtructure instance."""
     type_layout, getter = _type_layout_and_getter(instance.__class__)
-    if type_layout.field_names:
-        values = getter(instance)
-        if len(type_layout.field_names) == 1:
-            values = (values,)
-    else:
+    if getter is None:
         values = ()
+    else:
+        field_values = getter(instance)
+        values = (field_values,) if len(type_layout.field_names) == 1 else field_values
 
     value_shapes = tuple(
         _value_shape_for_field(field.is_nested, value)
         for field, value in zip(type_layout.fields, values)
     )
-    value_dtypes = tuple(
-        value.dtype if field.is_nested else primitive_value_dtype(value)
-        for field, value in zip(type_layout.fields, values)
-    )
+    value_dtypes = tuple(primitive_value_dtype(value) for value in values)
     return _build_instance_layout_from_signatures(instance.__class__, value_shapes, value_dtypes)
 
 

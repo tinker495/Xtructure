@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import chex
 import jax
 import jax.numpy as jnp
 
@@ -24,7 +23,7 @@ from .types import HashTableProbe
 _UNIQUE_HASH_SEED = jnp.uint32(0xA5A5_A5A5)
 
 
-def _mix_fingerprint(primary: chex.Array, secondary: chex.Array, length: chex.Array) -> chex.Array:
+def _mix_fingerprint(primary: jax.Array, secondary: jax.Array, length: jax.Array) -> jax.Array:
     mix = jnp.asarray(primary, dtype=jnp.uint32)
     secondary = jnp.asarray(secondary, dtype=jnp.uint32)
     length = jnp.asarray(length, dtype=jnp.uint32)
@@ -40,10 +39,10 @@ def _mix_fingerprint(primary: chex.Array, secondary: chex.Array, length: chex.Ar
 
 
 def _unique_mask_from_group_ids(
-    inverse: chex.Array,
-    filled: chex.Array,
-    unique_key: chex.Array | None,
-) -> tuple[chex.Array, chex.Array]:
+    inverse: jax.Array,
+    filled: jax.Array,
+    unique_key: jax.typing.ArrayLike | None,
+) -> tuple[jax.Array, jax.Array]:
     """Representative selection shared by the exact and fast dedup paths.
 
     ``inverse`` assigns one group id per batch row; rows in the same group are
@@ -76,7 +75,7 @@ def _unique_mask_from_group_ids(
     return unique_mask, representative_indices
 
 
-def _unique_groups_exact(uint32eds: chex.Array, filled: chex.Array) -> chex.Array:
+def _unique_groups_exact(uint32eds: jax.Array, filled: jax.Array) -> jax.Array:
     """Exact row grouping via full-row unique (multi-column lexsort)."""
     batch_len = filled.shape[0]
     sentinel_row = jnp.full_like(uint32eds, jnp.uint32(0xFFFFFFFF))
@@ -93,11 +92,11 @@ def _unique_groups_exact(uint32eds: chex.Array, filled: chex.Array) -> chex.Arra
 
 
 def _compute_unique_mask_from_uint32eds(
-    uint32eds: chex.Array,
-    filled: chex.Array,
-    unique_key: chex.Array | None,
-    row_hash: chex.Array | None = None,
-) -> tuple[chex.Array, chex.Array]:
+    uint32eds: jax.Array,
+    filled: jax.Array,
+    unique_key: jax.typing.ArrayLike | None,
+    row_hash: jax.Array | None = None,
+) -> tuple[jax.Array, jax.Array]:
     filled = jnp.asarray(filled, dtype=jnp.bool_)
     batch_len = filled.shape[0]
 
@@ -139,7 +138,7 @@ def _compute_unique_mask_from_uint32eds(
     )
     if use_singleton_shortcut:
 
-        def _grouped_result() -> tuple[chex.Array, chex.Array]:
+        def _grouped_result() -> tuple[jax.Array, jax.Array]:
             gid_sorted = jnp.cumsum(new_group.astype(jnp.int32)) - 1
             inverse_fast = jnp.zeros((batch_len,), dtype=jnp.int32).at[sorted_idx].set(gid_sorted)
             first_member = (
@@ -164,7 +163,7 @@ def _compute_unique_mask_from_uint32eds(
     gid_sorted = jnp.cumsum(new_group.astype(jnp.int32)) - 1
     inverse_fast = jnp.zeros((batch_len,), dtype=jnp.int32).at[sorted_idx].set(gid_sorted)
 
-    def _verified_inverse() -> chex.Array:
+    def _verified_inverse() -> jax.Array:
         first_member = (
             jnp.full((batch_len,), batch_len, dtype=jnp.int32).at[inverse_fast].min(indices)
         )
@@ -181,7 +180,7 @@ def _compute_unique_mask_from_uint32eds(
     return _unique_mask_from_group_ids(inverse, filled, unique_key)
 
 
-def _modulus_reduce(value: chex.Array, modulus: int) -> chex.Array:
+def _modulus_reduce(value: jax.typing.ArrayLike, modulus: int) -> jax.Array:
     """Reduce ``value`` modulo ``modulus`` using a bitmask fast path for powers of two."""
     modulus_u32 = jnp.asarray(modulus, dtype=SIZE_DTYPE)
     modulus_u32 = jnp.maximum(modulus_u32, SIZE_DTYPE(1))
@@ -191,7 +190,7 @@ def _modulus_reduce(value: chex.Array, modulus: int) -> chex.Array:
     return jax.lax.select(is_pow2, value_u32 & mask, value_u32 % modulus_u32)
 
 
-def _normalize_probe_step(step: chex.Array, modulus: int) -> chex.Array:
+def _normalize_probe_step(step: jax.Array, modulus: int) -> jax.Array:
     step = _modulus_reduce(step, modulus)
     step = jnp.bitwise_or(step, SIZE_DTYPE(1))
     return step
@@ -201,7 +200,7 @@ def get_new_idx_byterized(
     input: Xtructurable,
     modulus: int,
     seed: int,
-) -> tuple[chex.Array, chex.Array, chex.Array, chex.Array]:
+) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
     """Hash a Xtructurable and return index, step, byte representation, and fingerprint."""
     hash_value, uint32ed = input.hash_with_uint32ed(seed)
     seed_u32 = jnp.asarray(seed, dtype=jnp.uint32)

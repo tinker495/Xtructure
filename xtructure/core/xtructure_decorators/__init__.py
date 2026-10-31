@@ -2,6 +2,8 @@ import functools
 import importlib
 from typing import Callable, Optional, Type, TypeVar
 
+from typing_extensions import dataclass_transform
+
 from xtructure.core.dataclass import base_dataclass
 from xtructure.core.layout.instance_layout import (
     get_instance_layout,
@@ -12,6 +14,7 @@ from xtructure.core.layout.type_layout import get_type_layout
 from xtructure.core.protocol import Xtructurable
 
 T = TypeVar("T")
+X = TypeVar("X", bound=Xtructurable)
 
 
 def _adapter(module_name: str, attr_name: str):
@@ -69,7 +72,7 @@ def _can_reuse_layout_cache(old_layout, type_layout, instance, changed_names: se
     return True
 
 
-def _install_layout_cache_replace(cls: Type[T], *, validate: bool) -> Type[T]:
+def _install_layout_cache_replace(cls: Type[X], *, validate: bool) -> Type[X]:
     """Install a Layout Cache-aware replace fast path for xtructure dataclasses."""
     type_layout = get_type_layout(cls)
     field_names = type_layout.field_names
@@ -81,7 +84,9 @@ def _install_layout_cache_replace(cls: Type[T], *, validate: bool) -> Type[T]:
         unexpected = tuple(name for name in kwargs if name not in field_name_set)
         if unexpected:
             unexpected_names = ", ".join(repr(name) for name in unexpected)
-            raise TypeError(f"{cls.__name__}.replace got unexpected field(s): {unexpected_names}")
+            raise TypeError(
+                f"{type_layout.cls.__name__}.replace got unexpected field(s): {unexpected_names}"
+            )
 
         old_layout = getattr(self, "_layout_cache", None)
         changed_names = set(kwargs)
@@ -105,6 +110,7 @@ def _install_layout_cache_replace(cls: Type[T], *, validate: bool) -> Type[T]:
     return cls
 
 
+@dataclass_transform()
 def xtructure_dataclass(
     cls: Optional[Type[T]] = None,
     *,

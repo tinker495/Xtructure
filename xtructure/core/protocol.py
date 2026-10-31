@@ -1,8 +1,10 @@
+import builtins
 from typing import Any, ClassVar, Protocol
 from typing import Tuple as TypingTuple
 from typing import Type, TypeVar, runtime_checkable
 
 import chex
+import jax
 
 from .structuredtype import StructuredType
 
@@ -110,13 +112,13 @@ class Xtructurable(Protocol[T], metaclass=_XtructurableMeta):
         ...
 
     @property
-    def uint32ed(self: T) -> chex.Array:
+    def uint32ed(self: T) -> jax.Array:
         ...
 
-    def hash(self: T, seed: int = 0) -> int:
+    def hash(self: T, seed: int = 0) -> jax.Array:
         ...
 
-    def hash_with_uint32ed(self: T, seed: int = 0) -> TypingTuple[int, chex.Array]:
+    def hash_with_uint32ed(self: T, seed: int = 0) -> TypingTuple[jax.Array, jax.Array]:
         ...
 
     # Method added by add_comparison_operators
@@ -127,11 +129,11 @@ class Xtructurable(Protocol[T], metaclass=_XtructurableMeta):
         ...
 
     # Methods added by add_io_methods
-    def save(self: T, path: str) -> None:
+    def save(self: T, path: builtins.str) -> None:
         ...
 
     @classmethod
-    def load(cls: Type[T], path: str) -> T:
+    def load(cls: Type[T], path: builtins.str) -> T:
         ...
 
     # Method added by add_runtime_validation
