@@ -96,6 +96,13 @@ returns `BGPQ[MyHeapItem]`, so `delete_mins()` yields `MyHeapItem` values (likew
 `HashTable[S]`, `Stack[V]`, `Queue[V]`). `XtructurableT` is the shared type variable for
 your own APIs that pass xtructure dataclasses through.
 
+When a class can only be built at runtime (its shapes depend on runtime values), declare
+its field types once in an abstract view, `class BoardState(Xtructurable, abstract=True):
+board: jax.Array`, and subclass the view inside the factory with the real
+`FieldDescriptor`s; annotate the factory as returning `type[BoardState]`. A view is not
+transformed, so it cannot be instantiated; packed-field accessors such as
+`board_unpacked` can be declared on it under `TYPE_CHECKING`.
+
 `@xtructure_dataclass` remains as a transitional form for classes that have not
 migrated; applying it to a class that inherits `Xtructurable` raises `TypeError`.
 `isinstance(x, Xtructurable)` is an ordinary subclass check, so it is false for

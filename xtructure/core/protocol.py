@@ -26,16 +26,33 @@ class Xtructurable:
     transformation installs the real members. ``isinstance(x, Xtructurable)`` is an
     ordinary subclass check; ``is_xtructure_dataclass_instance`` also accepts
     classes still using the transitional ``xtructure_dataclass`` decorator.
+
+    ``abstract=True`` declares a typed view that is not transformed: its plain
+    field annotations describe, for type checkers, the classes built from it at
+    runtime (for example per-instance classes whose shapes are only known then)::
+
+        class BoardState(Xtructurable, abstract=True):
+            board: jax.Array
+
+        def make_state_class(n: int) -> type[BoardState]:
+            class State(BoardState):
+                board: Annotated[jax.Array, FieldDescriptor.tensor(dtype=jnp.uint8, shape=(n,))]
+
+            return State
     """
 
     def __init_subclass__(
         cls,
         *,
+        abstract: bool = False,
         validate: bool = False,
         bitpack: Literal["auto", "aggregate", "field", "off"] = "auto",
         **kwargs: Any,
     ) -> None:
         super().__init_subclass__(**kwargs)
+        if abstract:
+            # A typed view: its field annotations exist for type checkers only.
+            return
         from .xtructure_decorators import install_xtructure_members
 
         installed = install_xtructure_members(cls, validate=validate, bitpack=bitpack)
