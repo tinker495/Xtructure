@@ -146,6 +146,10 @@ class Xtructurable:
             ...
 
 
+# Element type of the xtructure containers and other APIs generic over a dataclass.
+XtructurableT = TypeVar("XtructurableT", bound=Xtructurable)
+
+
 class AtIndexer(Protocol[T]):
     def __getitem__(self: T, index: Any) -> "Updater":
         ...

@@ -1,4 +1,5 @@
 from functools import partial
+from typing import Generic
 
 import jax
 import jax.numpy as jnp
@@ -6,11 +7,11 @@ import jax.numpy as jnp
 from ..core.dataclass import base_dataclass
 from ..core.dtype_facts import SIZE_DTYPE
 from ..core.packing import pack_rows, packed_default_store, unpack_rows
-from ..core.protocol import Xtructurable
+from ..core.protocol import XtructurableT
 
 
 @partial(jax.jit, static_argnums=(0, 1))
-def _stack_build_jit(max_size: int, value_class: type[Xtructurable]):
+def _stack_build_jit(max_size: int, value_class: type[XtructurableT]):
     size = SIZE_DTYPE(0)
     # Packed default rows, not zeros: reads of never-written slots (e.g.
     # clamped partial-pop rows) must keep returning value_class defaults.
@@ -19,7 +20,7 @@ def _stack_build_jit(max_size: int, value_class: type[Xtructurable]):
 
 
 @jax.jit
-def _stack_push_jit(stack, items: Xtructurable):
+def _stack_push_jit(stack, items: XtructurableT):
     batch_size = items.shape.batch
     if batch_size == ():
         items = jax.tree_util.tree_map(lambda x: x[None], items)
@@ -59,13 +60,13 @@ def _stack_pop_jit(stack, num_items: int = 1):
 
 
 @jax.jit
-def _stack_getitem_jit(stack, idx: SIZE_DTYPE) -> Xtructurable:
+def _stack_getitem_jit(stack, idx: SIZE_DTYPE) -> XtructurableT:
     rows = stack.val_store[jnp.asarray(idx)[None]]
     return jax.tree_util.tree_map(lambda x: x[0], unpack_rows(stack.value_class, rows))
 
 
 @base_dataclass(static_fields=("max_size", "value_class"))
-class Stack:
+class Stack(Generic[XtructurableT]):
     """
     A JAX-compatible batched Stack data structure.
     Optimized for parallel operations on GPU using JAX.
@@ -78,12 +79,12 @@ class Stack:
     """
 
     max_size: int
-    value_class: type[Xtructurable]
+    value_class: type[XtructurableT]
     size: SIZE_DTYPE
     val_store: jnp.ndarray
 
     @staticmethod
-    def build(max_size: int, value_class: type[Xtructurable]) -> "Stack":
+    def build(max_size: int, value_class: type[XtructurableT]) -> "Stack[XtructurableT]":
         """
         Creates a new Stack instance.
 
@@ -97,7 +98,7 @@ class Stack:
         """
         return _stack_build_jit(max_size, value_class)
 
-    def push(self, items: Xtructurable) -> "Stack":
+    def push(self, items: XtructurableT) -> "Stack[XtructurableT]":
         """
         Pushes a batch of items onto the stack.
 
@@ -110,7 +111,7 @@ class Stack:
         """
         return _stack_push_jit(self, items)
 
-    def pop(self, num_items: int = 1) -> tuple["Stack", Xtructurable]:
+    def pop(self, num_items: int = 1) -> tuple["Stack[XtructurableT]", XtructurableT]:
         """
         Pops a number of items from the stack.
 
@@ -124,7 +125,7 @@ class Stack:
         """
         return _stack_pop_jit(self, num_items)
 
-    def peek(self, num_items: int = 1) -> Xtructurable:
+    def peek(self, num_items: int = 1) -> XtructurableT:
         """
         Peeks at the top items of the stack without removing them.
 
@@ -136,7 +137,7 @@ class Stack:
         """
         return _stack_read_jit(self, num_items)
 
-    def __getitem__(self, idx: SIZE_DTYPE) -> Xtructurable:
+    def __getitem__(self, idx: SIZE_DTYPE) -> XtructurableT:
         """
         Returns the item at the logical stack index (0-based, relative to bottom).
         """

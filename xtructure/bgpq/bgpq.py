@@ -9,6 +9,7 @@ Key features:
 """
 
 from functools import partial
+from typing import Generic
 
 import chex
 import jax
@@ -16,7 +17,7 @@ import jax.numpy as jnp
 
 from ..core.dataclass import base_dataclass
 from ..core.dtype_facts import SIZE_DTYPE
-from ..core.protocol import Xtructurable
+from ..core.protocol import Xtructurable, XtructurableT
 from ..core.xtructure_numpy.array_ops import _where_no_broadcast
 from ._delete import _bgpq_delete_mins_jit
 from ._insert import (
@@ -32,8 +33,8 @@ from ._insert import (
 
 @partial(jax.jit, static_argnums=(0, 1, 2, 3))
 def _bgpq_build_jit(
-    total_size, batch_size, value_class: type[Xtructurable] = Xtructurable, key_dtype=jnp.float16
-):
+    total_size, batch_size, value_class: type[XtructurableT], key_dtype=jnp.float16
+) -> "BGPQ[XtructurableT]":
     # Calculate branch size, rounding up if total_size not divisible by batch_size
     branch_size = (
         total_size // batch_size if total_size % batch_size == 0 else total_size // batch_size + 1
@@ -62,7 +63,7 @@ def _bgpq_build_jit(
 
 
 @base_dataclass(static_fields=("max_size", "branch_size", "batch_size"))
-class BGPQ:
+class BGPQ(Generic[XtructurableT]):
     """
     Batched GPU Priority Queue implementation.
     Optimized for parallel operations on GPU using JAX.
@@ -84,17 +85,17 @@ class BGPQ:
     branch_size: int
     batch_size: int
     key_store: jax.Array  # shape = (total_size, batch_size)
-    val_store: Xtructurable  # shape = (total_size, batch_size, ...)
+    val_store: XtructurableT  # shape = (total_size, batch_size, ...)
     key_buffer: jax.Array  # shape = (batch_size - 1,)
-    val_buffer: Xtructurable  # shape = (batch_size - 1, ...)
+    val_buffer: XtructurableT  # shape = (batch_size - 1, ...)
 
     @staticmethod
     def build(
         total_size,
         batch_size,
-        value_class: type[Xtructurable] = Xtructurable,
+        value_class: type[XtructurableT],
         key_dtype=jnp.float16,
-    ) -> "BGPQ":
+    ) -> "BGPQ[XtructurableT]":
         """
         Create a new BGPQ instance with specified capacity.
 
@@ -120,7 +121,7 @@ class BGPQ:
             non_empty_branch.astype(target_dtype),
         )
 
-    def merge_buffer(self, blockk: chex.Array, blockv: Xtructurable):
+    def merge_buffer(self, blockk: chex.Array, blockv: XtructurableT):
         """
         Merge buffer contents with block contents, handling overflow conditions.
 
@@ -160,11 +161,11 @@ class BGPQ:
         """
         return _bgpq_make_batched_jit(key, val, batch_size)
 
-    def make_batched_like(self, key: chex.Array, val: Xtructurable):
+    def make_batched_like(self, key: chex.Array, val: XtructurableT):
         """Pad `key`/`val` to this heap's `batch_size` (a `static_fields` config)."""
         return _bgpq_make_batched_like_jit(self, key, val)
 
-    def insert(self, block_key: chex.Array, block_val: Xtructurable) -> "BGPQ":
+    def insert(self, block_key: chex.Array, block_val: XtructurableT) -> "BGPQ[XtructurableT]":
         """
         Insert new elements into the priority queue.
         Maintains heap property through merge operations and heapification.
@@ -179,11 +180,15 @@ class BGPQ:
         """
         return _bgpq_insert_jit(self, block_key, block_val)
 
-    def insert_sorted(self, block_key: chex.Array, block_val: Xtructurable) -> "BGPQ":
+    def insert_sorted(
+        self, block_key: chex.Array, block_val: XtructurableT
+    ) -> "BGPQ[XtructurableT]":
         """Insert a stable, nondecreasing key/value block without sorting again."""
         return _bgpq_insert_sorted_jit(self, block_key, block_val)
 
-    def insert_rows(self, block_keys: chex.Array, block_vals: Xtructurable, n_rows) -> "BGPQ":
+    def insert_rows(
+        self, block_keys: chex.Array, block_vals: XtructurableT, n_rows
+    ) -> "BGPQ[XtructurableT]":
         """Insert rows ``block_keys[:n_rows]`` (shape ``[k, batch_size]``, ``n_rows <= k``).
 
         Same result as one ``insert`` per row, but the rows' heapify passes run as
@@ -192,12 +197,12 @@ class BGPQ:
         return _bgpq_insert_rows_jit(self, block_keys, block_vals, n_rows)
 
     def insert_sorted_rows(
-        self, block_keys: chex.Array, block_vals: Xtructurable, n_rows
-    ) -> "BGPQ":
+        self, block_keys: chex.Array, block_vals: XtructurableT, n_rows
+    ) -> "BGPQ[XtructurableT]":
         """``insert_rows`` for rows that are each a stable, nondecreasing block."""
         return _bgpq_insert_sorted_rows_jit(self, block_keys, block_vals, n_rows)
 
-    def delete_mins(self):
+    def delete_mins(self) -> tuple["BGPQ[XtructurableT]", jax.Array, XtructurableT]:
         """
         Remove and return the minimum elements from the queue.
 

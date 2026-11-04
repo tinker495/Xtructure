@@ -1,4 +1,5 @@
 from functools import partial
+from typing import Generic
 
 import jax
 import jax.numpy as jnp
@@ -6,11 +7,11 @@ import jax.numpy as jnp
 from ..core.dataclass import base_dataclass
 from ..core.dtype_facts import SIZE_DTYPE
 from ..core.packing import pack_rows, packed_default_store, unpack_rows
-from ..core.protocol import Xtructurable
+from ..core.protocol import XtructurableT
 
 
 @partial(jax.jit, static_argnums=(0, 1))
-def _queue_build_jit(max_size: int, value_class: type[Xtructurable]):
+def _queue_build_jit(max_size: int, value_class: type[XtructurableT]):
     # Packed default rows, not zeros: reads of never-written slots must keep
     # returning value_class defaults (legacy val_store semantics).
     val_store = packed_default_store(value_class, max_size)
@@ -22,7 +23,7 @@ def _queue_build_jit(max_size: int, value_class: type[Xtructurable]):
 
 
 @jax.jit
-def _queue_enqueue_jit(queue, items: Xtructurable):
+def _queue_enqueue_jit(queue, items: XtructurableT):
     batch_size = items.shape.batch
     if batch_size == ():
         items = jax.tree_util.tree_map(lambda x: x[None], items)
@@ -73,7 +74,7 @@ def _queue_clear_jit(queue):
 
 
 @jax.jit
-def _queue_getitem_jit(queue, idx: SIZE_DTYPE) -> Xtructurable:
+def _queue_getitem_jit(queue, idx: SIZE_DTYPE) -> XtructurableT:
     storage_idx = (queue.head + idx).astype(jnp.int32)
     rows = jax.lax.dynamic_slice(
         queue.val_store, (storage_idx, jnp.int32(0)), (1, queue.val_store.shape[1])
@@ -82,7 +83,7 @@ def _queue_getitem_jit(queue, idx: SIZE_DTYPE) -> Xtructurable:
 
 
 @base_dataclass(static_fields=("max_size", "value_class"))
-class Queue:
+class Queue(Generic[XtructurableT]):
     """
     A JAX-compatible batched Queue data structure.
     Optimized for parallel operations on GPU using JAX.
@@ -96,7 +97,7 @@ class Queue:
     """
 
     max_size: int
-    value_class: type[Xtructurable]
+    value_class: type[XtructurableT]
     val_store: jnp.ndarray
     head: SIZE_DTYPE
     tail: SIZE_DTYPE
@@ -106,37 +107,37 @@ class Queue:
         return self.tail - self.head
 
     @staticmethod
-    def build(max_size: int, value_class: type[Xtructurable]) -> "Queue":
+    def build(max_size: int, value_class: type[XtructurableT]) -> "Queue[XtructurableT]":
         """
         Creates a new Queue instance.
         """
         return _queue_build_jit(max_size, value_class)
 
-    def enqueue(self, items: Xtructurable) -> "Queue":
+    def enqueue(self, items: XtructurableT) -> "Queue[XtructurableT]":
         """
         Enqueues a number of items into the queue.
         """
         return _queue_enqueue_jit(self, items)
 
-    def dequeue(self, num_items: int = 1) -> tuple["Queue", Xtructurable]:
+    def dequeue(self, num_items: int = 1) -> tuple["Queue[XtructurableT]", XtructurableT]:
         """
         Dequeues a number of items from the queue.
         """
         return _queue_dequeue_jit(self, num_items)
 
-    def peek(self, num_items: int = 1) -> Xtructurable:
+    def peek(self, num_items: int = 1) -> XtructurableT:
         """
         Peeks at the front items of the queue without removing them.
         """
         return _queue_peek_jit(self, num_items)
 
-    def clear(self) -> "Queue":
+    def clear(self) -> "Queue[XtructurableT]":
         """
         Clears the queue.
         """
         return _queue_clear_jit(self)
 
-    def __getitem__(self, idx: SIZE_DTYPE) -> Xtructurable:
+    def __getitem__(self, idx: SIZE_DTYPE) -> XtructurableT:
         """
         Returns the item at the logical queue index (0-based, relative to head).
         """

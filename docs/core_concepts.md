@@ -91,6 +91,11 @@ class MyHeapItem(Xtructurable, bitpack="off"):
 item = MyHeapItem.default((4,))[0]  # checkers see `MyHeapItem`, not `Unknown`
 ```
 
+The containers are generic over the stored class: `BGPQ.build(n, batch, MyHeapItem, jnp.float32)`
+returns `BGPQ[MyHeapItem]`, so `delete_mins()` yields `MyHeapItem` values (likewise
+`HashTable[S]`, `Stack[V]`, `Queue[V]`). `XtructurableT` is the shared type variable for
+your own APIs that pass xtructure dataclasses through.
+
 `@xtructure_dataclass` remains as a transitional form for classes that have not
 migrated; applying it to a class that inherits `Xtructurable` raises `TypeError`.
 `isinstance(x, Xtructurable)` is an ordinary subclass check, so it is false for
