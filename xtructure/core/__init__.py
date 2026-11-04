@@ -2,7 +2,18 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from xtructure._lazy_imports import lazy_dir, load_lazy_export
+
+if TYPE_CHECKING:
+    from . import xtructure_numpy as xtructure_numpy
+    from .dataclass import base_dataclass as base_dataclass
+    from .field_descriptor_utils import clone_field_descriptor as clone_field_descriptor
+    from .field_descriptors import FieldDescriptor as FieldDescriptor
+    from .protocol import Xtructurable as Xtructurable
+    from .structuredtype import StructuredType as StructuredType
+    from .xtructure_decorators import xtructure_dataclass as xtructure_dataclass
 
 __all__ = [
     "Xtructurable",

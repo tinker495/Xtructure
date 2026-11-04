@@ -21,7 +21,7 @@ def _create_default_method(cls_to_modify: Type[T]) -> Callable[..., T]:
 
     for field_plan in field_plans:
         if field_plan.field_kind == "nested":
-            nested_class_type = field_plan.nested_type
+            nested_class_type = field_plan.nested_class
             if not hasattr(nested_class_type, "default"):
                 raise TypeError(
                     f"Error during method creation for '{cls_to_modify.__name__}': "
@@ -62,7 +62,7 @@ def _create_default_method(cls_to_modify: Type[T]) -> Callable[..., T]:
                     dtype=field_plan.declared_dtype,
                 )
             elif field_plan.field_kind == "nested":
-                default_values[field_plan.name] = field_plan.nested_type.default(shape=field_shape)
+                default_values[field_plan.name] = field_plan.nested_class.default(shape=field_shape)
         return cls(**default_values)
 
     return default

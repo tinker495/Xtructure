@@ -31,7 +31,9 @@ from ._insert import (
 
 
 @partial(jax.jit, static_argnums=(0, 1, 2, 3))
-def _bgpq_build_jit(total_size, batch_size, value_class=Xtructurable, key_dtype=jnp.float16):
+def _bgpq_build_jit(
+    total_size, batch_size, value_class: type[Xtructurable] = Xtructurable, key_dtype=jnp.float16
+):
     # Calculate branch size, rounding up if total_size not divisible by batch_size
     branch_size = (
         total_size // batch_size if total_size % batch_size == 0 else total_size // batch_size + 1
@@ -77,8 +79,8 @@ class BGPQ:
     """
 
     max_size: int
-    heap_size: int
-    buffer_size: int
+    heap_size: jax.Array  # SIZE_DTYPE scalar
+    buffer_size: jax.Array  # SIZE_DTYPE scalar
     branch_size: int
     batch_size: int
     key_store: jax.Array  # shape = (total_size, batch_size)
@@ -87,7 +89,12 @@ class BGPQ:
     val_buffer: Xtructurable  # shape = (batch_size - 1, ...)
 
     @staticmethod
-    def build(total_size, batch_size, value_class=Xtructurable, key_dtype=jnp.float16) -> "BGPQ":
+    def build(
+        total_size,
+        batch_size,
+        value_class: type[Xtructurable] = Xtructurable,
+        key_dtype=jnp.float16,
+    ) -> "BGPQ":
         """
         Create a new BGPQ instance with specified capacity.
 

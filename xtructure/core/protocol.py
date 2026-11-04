@@ -1,7 +1,7 @@
 import builtins
-from typing import Any, ClassVar, Protocol
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol, Self
 from typing import Tuple as TypingTuple
-from typing import Type, TypeVar, runtime_checkable
+from typing import TypeVar
 
 import chex
 import jax
@@ -11,145 +11,134 @@ from .structuredtype import StructuredType
 T = TypeVar("T")
 
 
-# Protocol defining the interface added by @xtructure_data
-class _XtructurableMeta(type(Protocol)):
+class _XtructurableMeta(type):
+    # isinstance/issubclass against Xtructurable itself accept every decorated class,
+    # including ones that do not inherit it; checks against subclasses stay nominal.
     def __instancecheck__(cls, instance) -> bool:
-        return bool(getattr(instance, "is_xtructed", False))
+        if cls is Xtructurable:
+            return bool(getattr(instance, "is_xtructed", False))
+        return super().__instancecheck__(instance)
 
     def __subclasscheck__(cls, subclass) -> bool:
-        return bool(getattr(subclass, "is_xtructed", False))
+        if cls is Xtructurable:
+            return bool(getattr(subclass, "is_xtructed", False))
+        return super().__subclasscheck__(subclass)
 
 
-@runtime_checkable
-class Xtructurable(Protocol[T], metaclass=_XtructurableMeta):
-    # A flag to indicate that the class has been processed by the xtructure_dataclass decorator.
-    is_xtructed: ClassVar[bool]
+class Xtructurable(metaclass=_XtructurableMeta):
+    """Members `xtructure_dataclass` injects; inherit it in decorated classes::
 
-    # The default shape of the structure, calculated at class creation time.
-    # This is a namedtuple whose fields mirror the class attributes.
-    default_shape: ClassVar[Any]
+        @xtructure_dataclass
+        class Node(Xtructurable):
+            cost: Annotated[jax.Array, FieldDescriptor.scalar(dtype=jnp.float32)]
 
-    # The default dtype of the structure, calculated at class creation time.
-    # This is a namedtuple whose fields mirror the class attributes.
-    default_dtype: ClassVar[Any]
+    Type checkers keep a decorated class's own type and ignore a class decorator's
+    return annotation, so the injected members are invisible unless they sit in the
+    class's MRO. The declarations exist only under ``TYPE_CHECKING``; at runtime this
+    is an empty class and the decorator installs the real members. ``isinstance(x,
+    Xtructurable)`` is true for every decorated instance, inheriting or not.
+    """
 
-    # Methods and properties added by add_shape_dtype_len
-    @property
-    def shape(self) -> Any:
-        """The shape of the data in the object, as a dynamically-generated namedtuple."""
-        ...
+    if TYPE_CHECKING:
+        is_xtructed: ClassVar[bool]
+        default_dtype: ClassVar[Any]
 
-    @property
-    def dtype(self) -> Any:
-        """The dtype of the data in the object, as a dynamically-generated namedtuple."""
-        ...
+        @property
+        def shape(self) -> Any:
+            ...
 
-    @property
-    def ndim(self) -> int:
-        """Number of batch dimensions for structured instances."""
-        ...
+        @property
+        def dtype(self) -> Any:
+            ...
 
-    # Method added by add_indexing_methods (responsible for __getitem__)
-    def __getitem__(self: T, index: Any) -> T:
-        ...
+        @property
+        def ndim(self) -> int:
+            ...
 
-    # Method added by add_shape_dtype_len
-    def __len__(self) -> int:
-        ...
+        def __getitem__(self, index: Any) -> Self:
+            ...
 
-    # Methods and properties added by add_structure_utilities
-    # Assumes the class T has a 'default' classmethod as per the decorator's assertion
-    @classmethod
-    def default(cls: Type[T], shape: Any = ...) -> T:
-        ...
+        def __len__(self) -> int:
+            ...
 
-    @property
-    def default_shape(self) -> Any:  # Derived from self.default().shape
-        ...
+        @classmethod
+        def default(cls, shape: Any = ...) -> Self:
+            ...
 
-    @property
-    def structured_type(self) -> "StructuredType":  # Forward reference for StructuredType
-        ...
+        @property
+        def default_shape(self) -> Any:
+            ...
 
-    @property
-    def batch_shape(self) -> TypingTuple[int, ...] | int:
-        ...
+        @property
+        def structured_type(self) -> StructuredType:
+            ...
 
-    def reshape(self: T, *new_shape: int | TypingTuple[int, ...]) -> T:
-        ...
+        @property
+        def batch_shape(self) -> TypingTuple[int, ...] | int:
+            ...
 
-    def flatten(self: T) -> T:
-        ...
+        def reshape(self, *new_shape: int | TypingTuple[int, ...]) -> Self:
+            ...
 
-    def transpose(self: T, axes: TypingTuple[int, ...] | None = ...) -> T:
-        ...
+        def flatten(self) -> Self:
+            ...
 
-    @classmethod
-    def random(
-        cls: Type[T], shape: TypingTuple[int, ...] = ..., key: chex.PRNGKey = ...
-    ) -> T:  # Ellipsis for default value
-        ...
+        def transpose(self, axes: TypingTuple[int, ...] | None = ...) -> Self:
+            ...
 
-    def padding_as_batch(self: T, batch_shape: TypingTuple[int, ...]) -> T:
-        ...
+        @classmethod
+        def random(cls, shape: TypingTuple[int, ...] = ..., key: chex.PRNGKey = ...) -> Self:
+            ...
 
-    # Methods and properties added by add_string_representation_methods
-    def __str__(
-        self,
-    ) -> str:  # The actual implementation takes **kwargs, but signature can be simpler for Protocol
-        ...
+        def padding_as_batch(self, batch_shape: TypingTuple[int, ...]) -> Self:
+            ...
 
-    def str(self) -> str:  # Alias for __str__
-        ...
+        def str(self) -> builtins.str:
+            ...
 
-    # Method added by add_indexing_methods
-    @property
-    def at(self: T) -> "AtIndexer":
-        ...
+        @property
+        def at(self) -> "AtIndexer":
+            ...
 
-    @property
-    def bytes(self: T) -> chex.Array:
-        ...
+        @property
+        def bytes(self) -> chex.Array:
+            ...
 
-    @property
-    def uint32ed(self: T) -> jax.Array:
-        ...
+        @property
+        def uint32ed(self) -> jax.Array:
+            ...
 
-    def hash(self: T, seed: int = 0) -> jax.Array:
-        ...
+        def hash(self, seed: int = 0) -> jax.Array:
+            ...
 
-    def hash_with_uint32ed(self: T, seed: int = 0) -> TypingTuple[jax.Array, jax.Array]:
-        ...
+        def hash_with_uint32ed(self, seed: int = 0) -> TypingTuple[jax.Array, jax.Array]:
+            ...
 
-    # Method added by add_comparison_operators
-    def __eq__(self, other: Any) -> bool:
-        ...
+        def __eq__(self, other: Any) -> bool:
+            ...
 
-    def __ne__(self, other: Any) -> bool:
-        ...
+        def __ne__(self, other: Any) -> bool:
+            ...
 
-    # Methods added by add_io_methods
-    def save(self: T, path: builtins.str) -> None:
-        ...
+        def save(self, path: builtins.str) -> None:
+            ...
 
-    @classmethod
-    def load(cls: Type[T], path: builtins.str) -> T:
-        ...
+        @classmethod
+        def load(cls, path: builtins.str) -> Self:
+            ...
 
-    # Method added by add_runtime_validation
-    def check_invariants(self) -> None:
-        ...
+        def check_invariants(self) -> None:
+            ...
 
-    # Methods added by base_dataclass
-    @classmethod
-    def from_tuple(cls: Type[T], args: TypingTuple[Any, ...]) -> T:
-        ...
+        @classmethod
+        def from_tuple(cls, args: TypingTuple[Any, ...]) -> Self:
+            ...
 
-    def to_tuple(self) -> TypingTuple[Any, ...]:
-        ...
+        def to_tuple(self) -> TypingTuple[Any, ...]:
+            ...
 
-    def replace(self: T, **kwargs: Any) -> T:
-        ...
+        def replace(self, **kwargs: Any) -> Self:
+            ...
 
 
 class AtIndexer(Protocol[T]):
