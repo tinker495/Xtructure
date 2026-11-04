@@ -11,7 +11,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
+from xtructure import FieldDescriptor, Xtructurable
 
 
 def parse_batch_sizes(value: str) -> Optional[List[int]]:
@@ -148,7 +148,6 @@ def check_system_load(threshold: float = 2.0) -> None:
             pass
 
 
-@xtructure_dataclass
 class BenchmarkValue(Xtructurable):
     """
     A standard data structure for use across all benchmarks.

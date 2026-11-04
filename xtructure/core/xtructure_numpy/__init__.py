@@ -274,15 +274,15 @@ def where(
 ) -> _XtructureT | jax.Array | tuple[jax.Array, ...]:
     if x is None and y is None:
         return jnp.where(condition, size=size, fill_value=fill_value)
-    if isinstance(x, Xtructurable):
+    if _is_xtructurable(x):
         if y is None:
             raise TypeError("x and y must be provided for xtructure dataclass inputs.")
-        if isinstance(y, Xtructurable):
+        if _is_xtructurable(y):
             if jax.tree_util.tree_structure(x) != jax.tree_util.tree_structure(y):
                 raise TypeError("x and y must have the same tree structure.")
         _reject_dataclass_kwargs("where", size=size, fill_value=fill_value)
         return _dc.where(condition, x, y)
-    if isinstance(y, Xtructurable):
+    if _is_xtructurable(y):
         if x is None:
             raise TypeError("x and y must be provided for xtructure dataclass inputs.")
         raise TypeError("x and y must both be xtructure dataclasses for dataclass where.")
@@ -337,7 +337,7 @@ def take(
     indices_are_sorted: bool = False,
     fill_value=None,
 ) -> _XtructureT | jax.Array:
-    if isinstance(a, Xtructurable):
+    if _is_xtructurable(a):
         _reject_dataclass_kwargs("take", out=out)
         return jax.tree_util.tree_map(
             lambda x: jnp.take(

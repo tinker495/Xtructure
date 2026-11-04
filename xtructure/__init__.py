@@ -17,6 +17,9 @@ if TYPE_CHECKING:
     from .core.field_descriptors import FieldDescriptor as FieldDescriptor
     from .core.protocol import Xtructurable as Xtructurable
     from .core.structuredtype import StructuredType as StructuredType
+    from .core.type_utils import (
+        is_xtructure_dataclass_instance as is_xtructure_dataclass_instance,
+    )
     from .core.xtructure_decorators import xtructure_dataclass as xtructure_dataclass
     from .hashtable.table import HashTable as HashTable
     from .hashtable.types import (
@@ -38,6 +41,7 @@ __all__ = [
     "Xtructurable",
     "base_dataclass",
     "xtructure_dataclass",
+    "is_xtructure_dataclass_instance",
     "StructuredType",
     "FieldDescriptor",
     "clone_field_descriptor",
@@ -55,6 +59,7 @@ _EXPORTS: dict[str, tuple[str, str | None]] = {
     "Xtructurable": (".core.protocol", "Xtructurable"),
     "base_dataclass": (".core.dataclass", "base_dataclass"),
     "xtructure_dataclass": (".core.xtructure_decorators", "xtructure_dataclass"),
+    "is_xtructure_dataclass_instance": (".core.type_utils", "is_xtructure_dataclass_instance"),
     "StructuredType": (".core.structuredtype", "StructuredType"),
     "FieldDescriptor": (".core.field_descriptors", "FieldDescriptor"),
     "clone_field_descriptor": (".core.field_descriptor_utils", "clone_field_descriptor"),

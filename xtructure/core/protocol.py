@@ -1,43 +1,45 @@
 import builtins
-from typing import TYPE_CHECKING, Any, ClassVar, Protocol, Self
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, Self, Sequence
 from typing import Tuple as TypingTuple
 from typing import TypeVar
 
 import chex
 import jax
+from typing_extensions import dataclass_transform
 
 from .structuredtype import StructuredType
 
 T = TypeVar("T")
 
 
-class _XtructurableMeta(type):
-    # isinstance/issubclass against Xtructurable itself accept every decorated class,
-    # including ones that do not inherit it; checks against subclasses stay nominal.
-    def __instancecheck__(cls, instance) -> bool:
-        if cls is Xtructurable:
-            return bool(getattr(instance, "is_xtructed", False))
-        return super().__instancecheck__(instance)
+@dataclass_transform()
+class Xtructurable:
+    """Base class of xtructure dataclasses::
 
-    def __subclasscheck__(cls, subclass) -> bool:
-        if cls is Xtructurable:
-            return bool(getattr(subclass, "is_xtructed", False))
-        return super().__subclasscheck__(subclass)
-
-
-class Xtructurable(metaclass=_XtructurableMeta):
-    """Members `xtructure_dataclass` injects; inherit it in decorated classes::
-
-        @xtructure_dataclass
-        class Node(Xtructurable):
+        class Node(Xtructurable, bitpack="off"):
             cost: Annotated[jax.Array, FieldDescriptor.scalar(dtype=jnp.float32)]
 
-    Type checkers keep a decorated class's own type and ignore a class decorator's
-    return annotation, so the injected members are invisible unless they sit in the
-    class's MRO. The declarations exist only under ``TYPE_CHECKING``; at runtime this
-    is an empty class and the decorator installs the real members. ``isinstance(x,
-    Xtructurable)`` is true for every decorated instance, inheriting or not.
+    Subclassing applies the xtructure dataclass transformation (``validate`` and
+    ``bitpack`` are class keywords) and, because the injected members are declared
+    here, exposes them to type checkers, which ignore class-decorator return types.
+    The declarations exist only under ``TYPE_CHECKING``; at runtime the
+    transformation installs the real members. ``isinstance(x, Xtructurable)`` is an
+    ordinary subclass check; ``is_xtructure_dataclass_instance`` also accepts
+    classes still using the transitional ``xtructure_dataclass`` decorator.
     """
+
+    def __init_subclass__(
+        cls,
+        *,
+        validate: bool = False,
+        bitpack: Literal["auto", "aggregate", "field", "off"] = "auto",
+        **kwargs: Any,
+    ) -> None:
+        super().__init_subclass__(**kwargs)
+        from .xtructure_decorators import install_xtructure_members
+
+        installed = install_xtructure_members(cls, validate=validate, bitpack=bitpack)
+        assert installed is cls, "the xtructure transformation must work in place"
 
     if TYPE_CHECKING:
         is_xtructed: ClassVar[bool]
@@ -83,7 +85,10 @@ class Xtructurable(metaclass=_XtructurableMeta):
         def flatten(self) -> Self:
             ...
 
-        def transpose(self, axes: TypingTuple[int, ...] | None = ...) -> Self:
+        def transpose(self, axes: Sequence[int] | None = ...) -> Self:
+            ...
+
+        def swapaxes(self, axis1: int, axis2: int) -> Self:
             ...
 
         @classmethod

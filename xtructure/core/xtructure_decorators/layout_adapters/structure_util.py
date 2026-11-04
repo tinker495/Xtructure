@@ -1,4 +1,4 @@
-from typing import Type, TypeVar
+from typing import Sequence, Type, TypeVar
 
 import jax
 import jax.numpy as jnp
@@ -128,7 +128,7 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
             self,
         )
 
-    def transpose(self, axes: tuple[int, ...] | None = None) -> T:
+    def transpose(self, axes: Sequence[int] | None = None) -> T:
         batch_ndim = _structured_batch_ndim(self, "Transpose")
 
         if axes is None:
