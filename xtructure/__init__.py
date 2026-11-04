@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from .core.field_descriptor_utils import clone_field_descriptor as clone_field_descriptor
     from .core.field_descriptors import FieldDescriptor as FieldDescriptor
     from .core.protocol import Xtructurable as Xtructurable
+    from .core.protocol import XtructurableT as XtructurableT
     from .core.structuredtype import StructuredType as StructuredType
     from .core.type_utils import (
         is_xtructure_dataclass_instance as is_xtructure_dataclass_instance,
@@ -39,6 +40,7 @@ __all__ = [
     "Queue",
     "Stack",
     "Xtructurable",
+    "XtructurableT",
     "base_dataclass",
     "xtructure_dataclass",
     "is_xtructure_dataclass_instance",
@@ -57,6 +59,7 @@ _EXPORTS: dict[str, tuple[str, str | None]] = {
     "Queue": (".queue.queue", "Queue"),
     "Stack": (".stack.stack", "Stack"),
     "Xtructurable": (".core.protocol", "Xtructurable"),
+    "XtructurableT": (".core.protocol", "XtructurableT"),
     "base_dataclass": (".core.dataclass", "base_dataclass"),
     "xtructure_dataclass": (".core.xtructure_decorators", "xtructure_dataclass"),
     "is_xtructure_dataclass_instance": (".core.type_utils", "is_xtructure_dataclass_instance"),

@@ -12,11 +12,13 @@ if TYPE_CHECKING:
     from .field_descriptor_utils import clone_field_descriptor as clone_field_descriptor
     from .field_descriptors import FieldDescriptor as FieldDescriptor
     from .protocol import Xtructurable as Xtructurable
+    from .protocol import XtructurableT as XtructurableT
     from .structuredtype import StructuredType as StructuredType
     from .xtructure_decorators import xtructure_dataclass as xtructure_dataclass
 
 __all__ = [
     "Xtructurable",
+    "XtructurableT",
     "StructuredType",
     "base_dataclass",
     "xtructure_dataclass",
@@ -27,6 +29,7 @@ __all__ = [
 
 _EXPORTS: dict[str, tuple[str, str | None]] = {
     "Xtructurable": (".protocol", "Xtructurable"),
+    "XtructurableT": (".protocol", "XtructurableT"),
     "StructuredType": (".structuredtype", "StructuredType"),
     "base_dataclass": (".dataclass", "base_dataclass"),
     "xtructure_dataclass": (".xtructure_decorators", "xtructure_dataclass"),

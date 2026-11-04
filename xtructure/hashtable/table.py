@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from functools import partial
+from typing import Generic
 
 import chex
 import jax
@@ -10,7 +11,7 @@ import jax.numpy as jnp
 
 from ..core.dataclass import base_dataclass
 from ..core.dtype_facts import SIZE_DTYPE
-from ..core.protocol import Xtructurable
+from ..core.protocol import XtructurableT
 from .insert import _hashtable_insert_jit, _hashtable_parallel_insert_jit
 from .lookup import (
     _hashtable_getitem_jit,
@@ -24,7 +25,7 @@ from .types import BucketIdx, HashIdx, HashTableProbe
 
 @partial(jax.jit, static_argnums=(0, 1, 2, 3, 4, 5))
 def _hashtable_build_jit(
-    dataclass: type[Xtructurable],
+    dataclass: type[XtructurableT],
     seed: int,
     capacity: int,
     bucket_size: int = 2,
@@ -61,7 +62,7 @@ def _hashtable_build_jit(
     frozen=True,
     static_fields=("seed", "capacity", "_capacity", "bucket_size", "max_probes"),
 )
-class HashTable:
+class HashTable(Generic[XtructurableT]):
     """
     Bucketed Double Hash Table Implementation
 
@@ -73,20 +74,20 @@ class HashTable:
     _capacity: int
     bucket_size: int
     size: int
-    table: Xtructurable
+    table: XtructurableT
     bucket_fill_levels: chex.Array
     fingerprints: chex.Array
     max_probes: int
 
     @staticmethod
     def build(
-        dataclass: type[Xtructurable],
+        dataclass: type[XtructurableT],
         seed: int,
         capacity: int,
         bucket_size: int = 8,
         hash_size_multiplier: int = 2,
         max_probes: int | None = None,
-    ) -> "HashTable":
+    ) -> "HashTable[XtructurableT]":
         """
         Initialize a new hash table backed by JAX-friendly storage.
         """
@@ -94,19 +95,19 @@ class HashTable:
             dataclass, seed, capacity, bucket_size, hash_size_multiplier, max_probes
         )
 
-    def lookup_bucket(self, input: Xtructurable) -> tuple[BucketIdx, jax.Array, jax.Array]:
+    def lookup_bucket(self, input: XtructurableT) -> tuple[BucketIdx, jax.Array, jax.Array]:
         return _hashtable_lookup_bucket_jit(self, input)
 
-    def lookup(self, input: Xtructurable) -> tuple[HashIdx, jax.Array]:
+    def lookup(self, input: XtructurableT) -> tuple[HashIdx, jax.Array]:
         return _hashtable_lookup_jit(self, input)
 
     def lookup_parallel(
-        self, inputs: Xtructurable, filled: chex.Array | bool = True
+        self, inputs: XtructurableT, filled: chex.Array | bool = True
     ) -> tuple[HashIdx, chex.Array]:
         return _lookup_parallel_dispatch(self, inputs, filled)
 
     def lookup_parallel_with_probe(
-        self, inputs: Xtructurable, filled: chex.Array | bool = True
+        self, inputs: XtructurableT, filled: chex.Array | bool = True
     ) -> tuple[HashIdx, chex.Array, HashTableProbe]:
         """Parallel lookup that also returns the shared :class:`HashTableProbe`.
 
@@ -117,18 +118,18 @@ class HashTable:
         """
         return _hashtable_lookup_parallel_with_probe_jit(self, inputs, filled)
 
-    def insert(self, input: Xtructurable) -> tuple["HashTable", jax.Array, HashIdx]:
+    def insert(self, input: XtructurableT) -> tuple["HashTable[XtructurableT]", jax.Array, HashIdx]:
         return _hashtable_insert_jit(self, input)
 
     def parallel_insert(
         self,
-        inputs: Xtructurable,
+        inputs: XtructurableT,
         filled: chex.Array | bool | None = None,
         unique_key: chex.Array | None = None,
         probe: HashTableProbe | None = None,
         *,
         assume_unique: bool = False,
-    ):
+    ) -> tuple["HashTable[XtructurableT]", jax.Array, jax.Array, HashIdx]:
         """Insert a batch of states in parallel.
 
         When ``probe`` is supplied it must be the :class:`HashTableProbe` returned
@@ -148,5 +149,5 @@ class HashTable:
             assume_unique,
         )
 
-    def __getitem__(self, idx: HashIdx) -> Xtructurable:
+    def __getitem__(self, idx: HashIdx) -> XtructurableT:
         return _hashtable_getitem_jit(self, idx)
