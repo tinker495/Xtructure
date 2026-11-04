@@ -175,7 +175,7 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
             target_shape = shape + field_plan.storage_intrinsic_shape
 
             if field_plan.random_kind == "nested":
-                nested_class = field_plan.nested_type
+                nested_class = field_plan.nested_class
                 # Recursively call random for the nested xtructure_data class.
                 data[field_name] = nested_class.random(shape=target_shape, key=field_key)
             elif field_plan.random_kind == "bits_int":

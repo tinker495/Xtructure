@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TypeVar, Union
+from typing import Sequence, TypeVar, Union
 
 import jax
 import jax.numpy as jnp
@@ -10,12 +10,12 @@ import jax.numpy as jnp
 T = TypeVar("T")
 
 
-def expand_dims(dataclass_instance: T, axis: int) -> T:
+def expand_dims(dataclass_instance: T, axis: int | Sequence[int]) -> T:
     """Insert a new axis into every field."""
     return jax.tree_util.tree_map(lambda x: jnp.expand_dims(x, axis=axis), dataclass_instance)
 
 
-def squeeze(dataclass_instance: T, axis: Union[int, tuple[int, ...], None] = None) -> T:
+def squeeze(dataclass_instance: T, axis: int | Sequence[int] | None = None) -> T:
     """Remove axes of length one from every field."""
     return jax.tree_util.tree_map(lambda x: jnp.squeeze(x, axis=axis), dataclass_instance)
 

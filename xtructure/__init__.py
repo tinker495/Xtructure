@@ -9,7 +9,22 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from . import numpy as numpy
+    from . import io as io
+    from .bgpq.bgpq import BGPQ as BGPQ
+    from .core.dataclass import base_dataclass as base_dataclass
+    from .core.field_descriptor_utils import clone_field_descriptor as clone_field_descriptor
+    from .core.field_descriptors import FieldDescriptor as FieldDescriptor
+    from .core.protocol import Xtructurable as Xtructurable
+    from .core.structuredtype import StructuredType as StructuredType
     from .core.xtructure_decorators import xtructure_dataclass as xtructure_dataclass
+    from .hashtable.table import HashTable as HashTable
+    from .hashtable.types import (
+        HashIdx as HashIdx,
+        HashTableProbe as HashTableProbe,
+    )
+    from .queue.queue import Queue as Queue
+    from .stack.stack import Stack as Stack
 
 from xtructure._lazy_imports import lazy_dir, load_lazy_export
 

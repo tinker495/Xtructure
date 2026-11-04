@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from xtructure._lazy_imports import lazy_dir, load_lazy_export
+
+if TYPE_CHECKING:
+    from .bgpq import BGPQ as BGPQ
 
 __all__ = ["BGPQ"]
 

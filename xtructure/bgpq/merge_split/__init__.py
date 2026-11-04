@@ -1,6 +1,12 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from xtructure._lazy_imports import lazy_dir, load_lazy_export
+
+if TYPE_CHECKING:
+    from .parallel import merge_arrays_parallel as merge_arrays_parallel
+    from .split import merge_sort_split_idx as merge_sort_split_idx
 
 __all__ = [
     "merge_arrays_parallel",

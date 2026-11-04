@@ -73,6 +73,27 @@ This decorator transforms a Python class into a JAX-compatible structure and add
     *   Runs any custom `validator` callbacks defined in `FieldDescriptor`.
     *   Automatically called after `__init__` if `validate=True` was passed to the decorator.
 
+### Static typing: inherit `Xtructurable`
+
+Type checkers keep a decorated class's own type, so the members listed above are
+invisible to them unless the class inherits `Xtructurable`, which declares them for
+type checkers only and is empty at runtime:
+
+```python
+from xtructure import FieldDescriptor, Xtructurable, xtructure_dataclass
+
+
+@xtructure_dataclass
+class MyHeapItem(Xtructurable):
+    task_id: FieldDescriptor.scalar(dtype=jnp.int32)
+
+
+item = MyHeapItem.default((4,))[0]  # checkers see `MyHeapItem`, not `Unknown`
+```
+
+`isinstance(x, Xtructurable)` is true for every decorated instance, whether or not
+its class inherits `Xtructurable`.
+
 ## `FieldDescriptor`
 
 Defines the type and shape of each field within an `@xtructure_dataclass`.

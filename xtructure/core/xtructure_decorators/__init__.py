@@ -116,7 +116,7 @@ def xtructure_dataclass(
     *,
     validate: bool = False,
     bitpack: str = "auto",
-) -> Callable[[Type[T]], Type[Xtructurable[T]]] | Type[Xtructurable[T]]:
+) -> Callable[[Type[T]], Type[T]] | Type[T]:
     """
     Decorator that ensures the input class is a `base_dataclass` (or converts
     it to one) and then augments it with additional functionality related to its
@@ -139,7 +139,7 @@ def xtructure_dataclass(
         The decorated class with the aforementioned additional functionalities.
     """
 
-    def _decorate(target_cls: Type[T]) -> Type[Xtructurable[T]]:
+    def _decorate(target_cls: Type[T]) -> Type[T]:
         if bitpack not in ("auto", "aggregate", "field", "off"):
             raise ValueError(
                 f"bitpack must be one of 'auto', 'aggregate', 'field', 'off', got {bitpack!r}"
