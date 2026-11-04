@@ -10,7 +10,7 @@ from ..core.protocol import Xtructurable
 
 
 @partial(jax.jit, static_argnums=(0, 1))
-def _queue_build_jit(max_size: int, value_class: Xtructurable):
+def _queue_build_jit(max_size: int, value_class: type[Xtructurable]):
     # Packed default rows, not zeros: reads of never-written slots must keep
     # returning value_class defaults (legacy val_store semantics).
     val_store = packed_default_store(value_class, max_size)
@@ -96,7 +96,7 @@ class Queue:
     """
 
     max_size: int
-    value_class: Xtructurable
+    value_class: type[Xtructurable]
     val_store: jnp.ndarray
     head: SIZE_DTYPE
     tail: SIZE_DTYPE
@@ -106,7 +106,7 @@ class Queue:
         return self.tail - self.head
 
     @staticmethod
-    def build(max_size: int, value_class: Xtructurable) -> "Queue":
+    def build(max_size: int, value_class: type[Xtructurable]) -> "Queue":
         """
         Creates a new Queue instance.
         """

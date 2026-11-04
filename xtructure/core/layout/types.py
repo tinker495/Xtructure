@@ -81,6 +81,13 @@ class AdapterFieldPlan:
     random_gen_dtype: Any | None = None
     is_primitive_jax_dtype: bool = False
 
+    @property
+    def nested_class(self) -> type:
+        """The nested xtructure type of a ``field_kind == \"nested\"`` field."""
+        if self.nested_type is None:
+            raise TypeError(f"Field '{self.dotted_path}' is not a nested xtructure field.")
+        return self.nested_type
+
 
 @dataclasses.dataclass(frozen=True)
 class LeafLayout:

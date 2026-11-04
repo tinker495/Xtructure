@@ -73,6 +73,30 @@ This decorator transforms a Python class into a JAX-compatible structure and add
     *   Runs any custom `validator` callbacks defined in `FieldDescriptor`.
     *   Automatically called after `__init__` if `validate=True` was passed to the decorator.
 
+### Preferred form: inherit `Xtructurable`
+
+Subclassing `Xtructurable` applies the same transformation as the decorator, with
+`validate` and `bitpack` passed as class keywords. It is also the only form whose
+injected members (everything listed above) are visible to type checkers, which
+ignore class-decorator return types:
+
+```python
+from xtructure import FieldDescriptor, Xtructurable
+
+
+class MyHeapItem(Xtructurable, bitpack="off"):
+    task_id: FieldDescriptor.scalar(dtype=jnp.int32)
+
+
+item = MyHeapItem.default((4,))[0]  # checkers see `MyHeapItem`, not `Unknown`
+```
+
+`@xtructure_dataclass` remains as a transitional form for classes that have not
+migrated; applying it to a class that inherits `Xtructurable` raises `TypeError`.
+`isinstance(x, Xtructurable)` is an ordinary subclass check, so it is false for
+instances of decorator-only classes; use `is_xtructure_dataclass_instance(x)` to
+accept both forms.
+
 ## `FieldDescriptor`
 
 Defines the type and shape of each field within an `@xtructure_dataclass`.

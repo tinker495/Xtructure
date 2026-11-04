@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from xtructure._lazy_imports import lazy_dir, load_lazy_export
+
+if TYPE_CHECKING:
+    from .instance_layout import get_instance_layout as get_instance_layout
+    from .type_layout import get_type_layout as get_type_layout
 
 __all__ = ["get_instance_layout", "get_type_layout"]
 
