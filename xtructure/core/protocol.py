@@ -115,7 +115,10 @@ class Xtructurable:
         def padding_as_batch(self, batch_shape: TypingTuple[int, ...]) -> Self:
             ...
 
-        def str(self) -> builtins.str:
+        def str(self, **kwargs: Any) -> builtins.str:
+            ...
+
+        def __str__(self, **kwargs: Any) -> builtins.str:
             ...
 
         @property
