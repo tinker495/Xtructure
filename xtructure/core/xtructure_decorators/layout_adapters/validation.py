@@ -58,7 +58,7 @@ def add_runtime_validation(cls: Type[T], *, enabled: bool) -> Type[T]:
                 field_plan.validator(value)
 
             if field_plan.field_kind == "nested":
-                nested_type = field_plan.nested_type
+                nested_type = field_plan.nested_class
                 if not isinstance(value, nested_type):
                     raise TypeError(
                         f"{cls.__name__}.{field_plan.name} expected instance of "

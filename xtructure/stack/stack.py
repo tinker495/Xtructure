@@ -10,7 +10,7 @@ from ..core.protocol import Xtructurable
 
 
 @partial(jax.jit, static_argnums=(0, 1))
-def _stack_build_jit(max_size: int, value_class: Xtructurable):
+def _stack_build_jit(max_size: int, value_class: type[Xtructurable]):
     size = SIZE_DTYPE(0)
     # Packed default rows, not zeros: reads of never-written slots (e.g.
     # clamped partial-pop rows) must keep returning value_class defaults.
@@ -78,12 +78,12 @@ class Stack:
     """
 
     max_size: int
-    value_class: Xtructurable
+    value_class: type[Xtructurable]
     size: SIZE_DTYPE
     val_store: jnp.ndarray
 
     @staticmethod
-    def build(max_size: int, value_class: Xtructurable) -> "Stack":
+    def build(max_size: int, value_class: type[Xtructurable]) -> "Stack":
         """
         Creates a new Stack instance.
 
