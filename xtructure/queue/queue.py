@@ -11,7 +11,7 @@ from ..core.protocol import XtructurableT
 
 
 @partial(jax.jit, static_argnums=(0, 1))
-def _queue_build_jit(max_size: int, value_class: type[XtructurableT]):
+def _queue_build_jit(max_size: int, value_class: type[XtructurableT]) -> "Queue[XtructurableT]":
     # Packed default rows, not zeros: reads of never-written slots must keep
     # returning value_class defaults (legacy val_store semantics).
     val_store = packed_default_store(value_class, max_size)
@@ -23,7 +23,9 @@ def _queue_build_jit(max_size: int, value_class: type[XtructurableT]):
 
 
 @jax.jit
-def _queue_enqueue_jit(queue, items: XtructurableT):
+def _queue_enqueue_jit(
+    queue: "Queue[XtructurableT]", items: XtructurableT
+) -> "Queue[XtructurableT]":
     batch_size = items.shape.batch
     if batch_size == ():
         items = jax.tree_util.tree_map(lambda x: x[None], items)
