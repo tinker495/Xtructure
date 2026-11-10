@@ -9,7 +9,7 @@ from typing_extensions import dataclass_transform
 
 from .structuredtype import StructuredType
 
-T = TypeVar("T")
+T_co = TypeVar("T_co", covariant=True)
 
 
 @dataclass_transform()
@@ -102,7 +102,7 @@ class Xtructurable:
             ...
 
         @property
-        def at(self) -> "AtIndexer":
+        def at(self) -> "AtIndexer[Self]":
             ...
 
         @property
@@ -146,14 +146,14 @@ class Xtructurable:
             ...
 
 
-class AtIndexer(Protocol[T]):
-    def __getitem__(self: T, index: Any) -> "Updater":
+class AtIndexer(Protocol[T_co]):
+    def __getitem__(self, index: Any) -> "Updater[T_co]":
         ...
 
 
-class Updater(Protocol[T]):
-    def set(self: T, value: Any) -> T:
+class Updater(Protocol[T_co]):
+    def set(self, value: Any) -> T_co:
         ...
 
-    def set_as_condition(self: T, condition: chex.Array, value: Any) -> T:
+    def set_as_condition(self, condition: chex.Array, value: Any) -> T_co:
         ...
