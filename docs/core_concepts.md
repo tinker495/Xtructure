@@ -3,6 +3,8 @@
 Before using `HashTable` or `BGPQ` in xtructure, you often need to define the structure of the data you want to store. This is done by subclassing `Xtructurable` and declaring fields with `FieldDescriptor`.
 
 ```python
+from typing import Annotated
+
 import jax
 import jax.numpy as jnp
 from xtructure import Xtructurable, FieldDescriptor
@@ -10,15 +12,15 @@ from xtructure import Xtructurable, FieldDescriptor
 
 # Example: Defining a data structure for HashTable values
 class MyDataValue(Xtructurable):
-    id: FieldDescriptor.scalar(dtype=jnp.uint32)
-    position: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))  # A 3-element vector
-    flags: FieldDescriptor.tensor(dtype=jnp.bool_, shape=(4,))  # A 4-element boolean array
+    id: Annotated[jax.Array, FieldDescriptor.scalar(dtype=jnp.uint32)]
+    position: Annotated[jax.Array, FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))]
+    flags: Annotated[jax.Array, FieldDescriptor.tensor(dtype=jnp.bool_, shape=(4,))]
 
 
 # Example: Defining a data structure for BGPQ values
 class MyHeapItem(Xtructurable):
-    task_id: FieldDescriptor.scalar(dtype=jnp.int32)
-    payload: FieldDescriptor.tensor(dtype=jnp.float64, shape=(2, 2))  # A 2x2 matrix
+    task_id: Annotated[jax.Array, FieldDescriptor.scalar(dtype=jnp.int32)]
+    payload: Annotated[jax.Array, FieldDescriptor.tensor(dtype=jnp.float64, shape=(2, 2))]
 ```
 
 ## `Xtructurable`
@@ -28,7 +30,7 @@ Subclassing `Xtructurable` transforms the class into a JAX-compatible structure 
 *   **`shape`** (property): Returns a namedtuple showing the JAX shapes of all fields.
 *   **`dtype`** (property): Returns a namedtuple showing the JAX dtypes of all fields.
 *   **`__getitem__(self, index)`**: Allows indexing or slicing an instance (e.g., `my_data_instance[0]`). The operation is applied to each field.
-*   **`__len__(self)`**: Returns the size of the first dimension of the *first* field, typically used for batch size.
+*   **`__len__(self)`**: Returns the first batch dimension for batched instances, `1` for a `SINGLE` instance, and raises `TypeError` for `UNSTRUCTURED` data. The scalar cardinality convention is retained for compatibility; it does not make an unbatched instance iterable.
 *   **`__iter__(self)`**: Iterates over the first batch dimension, yielding `self[i]` for `i in range(len(self))`. Iterating an unbatched instance raises `TypeError`, like a 0-d array.
 *   **`default(cls, shape=())`** (classmethod): Creates an instance with default values for all fields.
     *   The optional `shape` argument (e.g., `(10,)` or `(5, 2)`) creates a "batched" instance. This means the provided `shape` tuple is prepended to the `intrinsic_shape` of each field defined in the dataclass.

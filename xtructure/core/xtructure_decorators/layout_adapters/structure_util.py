@@ -192,13 +192,7 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
             elif field_plan.random_kind == "bool":
                 data[field_name] = jax.random.bernoulli(field_key, shape=target_shape)
             else:
-                try:
-                    data[field_name] = jnp.zeros(target_shape, dtype=field_plan.random_gen_dtype)
-                except TypeError:
-                    raise NotImplementedError(
-                        f"Random generation for dtype {field_plan.random_gen_dtype} "
-                        f"(field: {field_name}) is not implemented robustly."
-                    )
+                raise AssertionError(f"Unhandled random kind: {field_plan.random_kind!r}")
         return cls(**data)
 
     def padding_as_batch(self, batch_shape: tuple[int, ...]):
