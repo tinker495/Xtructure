@@ -23,12 +23,13 @@ class MyHeapItem(Xtructurable):
 
 ## `Xtructurable`
 
-Subclassing `Xtructurable` transforms the class into a JAX-compatible structure and adds several helpful methods and properties. Options are class keywords: `class Node(Xtructurable, validate=True, bitpack="off")`. Shape handling follows `numpy` arrays: indexing, slicing, `reshape`, `flatten`, and `.at[...].set(...)` all return the same class.
+Subclassing `Xtructurable` transforms the class into a JAX-compatible structure and adds several helpful methods and properties. Options are class keywords: `class Node(Xtructurable, validate=True, bitpack="off")`. Shape handling follows `numpy` arrays: indexing, slicing, iteration over the first batch dimension, `reshape`, `flatten`, and `.at[...].set(...)` all return the same class.
 
 *   **`shape`** (property): Returns a namedtuple showing the JAX shapes of all fields.
 *   **`dtype`** (property): Returns a namedtuple showing the JAX dtypes of all fields.
 *   **`__getitem__(self, index)`**: Allows indexing or slicing an instance (e.g., `my_data_instance[0]`). The operation is applied to each field.
 *   **`__len__(self)`**: Returns the size of the first dimension of the *first* field, typically used for batch size.
+*   **`__iter__(self)`**: Iterates over the first batch dimension, yielding `self[i]` for `i in range(len(self))`. Iterating an unbatched instance raises `TypeError`, like a 0-d array.
 *   **`default(cls, shape=())`** (classmethod): Creates an instance with default values for all fields.
     *   The optional `shape` argument (e.g., `(10,)` or `(5, 2)`) creates a "batched" instance. This means the provided `shape` tuple is prepended to the `intrinsic_shape` of each field defined in the dataclass.
         *   For example, if a field is `data: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))` (intrinsic shape `(3,)`):

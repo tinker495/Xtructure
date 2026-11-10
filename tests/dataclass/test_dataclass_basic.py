@@ -114,6 +114,33 @@ def test_len_semantics():
         len(unstructured)
 
 
+# Author: tinker495.
+# Iterating a batched dataclass must behave like iterating a numpy array: it
+# yields one item per entry of the first batch dimension and then stops. JAX
+# clamps out-of-range indices instead of raising IndexError, so before
+# __iter__ existed the fallback __getitem__ protocol never terminated.
+# Unbatched (SINGLE) and UNSTRUCTURED instances raise TypeError, as iterating a
+# 0-d array does.
+def test_iteration_semantics():
+    batched1d = SimpleData.default(shape=(5,))
+    items = list(batched1d)
+    assert len(items) == 5
+    assert all(isinstance(item, SimpleData) for item in items)
+    assert all(item.structured_type == StructuredType.SINGLE for item in items)
+
+    batched2d = SimpleData.default(shape=(3, 4))
+    rows = list(batched2d)
+    assert len(rows) == 3
+    assert all(row.shape.batch == (4,) for row in rows)
+
+    with pytest.raises(TypeError):
+        list(SimpleData.default())
+
+    unstructured = SimpleData(id=jnp.array(1), value=jnp.array([2.0, 3.0, 4.0]))
+    with pytest.raises(TypeError):
+        list(unstructured)
+
+
 def test_ndim_semantics():
     single = SimpleData.default()
     assert single.ndim == 0

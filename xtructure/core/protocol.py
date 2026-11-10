@@ -1,5 +1,14 @@
 import builtins
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, Self, Sequence
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    ClassVar,
+    Iterator,
+    Literal,
+    Protocol,
+    Self,
+    Sequence,
+)
 from typing import Tuple as TypingTuple
 from typing import TypeVar
 
@@ -60,6 +69,9 @@ class Xtructurable:
         def __len__(self) -> int:
             ...
 
+        def __iter__(self) -> Iterator[Self]:
+            ...
+
         @classmethod
         def default(cls, shape: Any = ...) -> Self:
             ...
@@ -116,10 +128,11 @@ class Xtructurable:
         def hash_with_uint32ed(self, seed: int = 0) -> TypingTuple[jax.Array, jax.Array]:
             ...
 
-        def __eq__(self, other: Any) -> bool:
+        # Like jax.Array: comparisons return a (reduced, scalar) array, not a bool.
+        def __eq__(self, other: Any) -> jax.Array:  # pyrefly: ignore[bad-override]
             ...
 
-        def __ne__(self, other: Any) -> bool:
+        def __ne__(self, other: Any) -> jax.Array:  # pyrefly: ignore[bad-override]
             ...
 
         def save(self, path: builtins.str) -> None:
