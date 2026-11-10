@@ -50,10 +50,9 @@ def add_shape_dtype_len(cls: Type[T]) -> Type[T]:
         Defined explicitly because indexing past the end does not raise under JAX
         (indices are clamped), so the legacy ``__getitem__`` protocol never stops.
         """
-        batch = self._layout_cache.batch_shape
-        if batch == () or batch == -1:
+        if self.ndim == 0:
             raise TypeError(f"iteration over an unbatched {cls.__name__} instance")
-        for index in range(batch[0]):
+        for index in range(len(self)):
             yield self[index]
 
     setattr(cls, "__iter__", iterate)

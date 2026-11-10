@@ -27,6 +27,7 @@ from .bitpack import (
 )
 from .types import (
     AdapterFieldPlan,
+    AdapterRandomKind,
     FieldLayout,
     LeafLayout,
     PackedFieldLayout,
@@ -42,7 +43,6 @@ def _field_layout(name: str, descriptor: FieldDescriptor, path: tuple[str, ...])
         path=path,
         dtype=descriptor.dtype,
         intrinsic_shape=normalize_shape(descriptor.intrinsic_shape),
-        is_nested=is_nested,
         nested_type=descriptor.dtype if is_nested else None,
         bits=descriptor.bits,
         packed_bits=descriptor.packed_bits,
@@ -145,7 +145,7 @@ def _build_leaves(
     return tuple(leaves)
 
 
-def _random_facts(dtype) -> tuple[str, object | None, bool, object | None]:
+def _random_facts(dtype) -> tuple[AdapterRandomKind, object | None, bool, object | None]:
     dtype_obj = jnp.dtype(dtype)
     kind = dtype_kind(dtype_obj)
     if kind is DTypeKind.BOOL:
@@ -170,7 +170,6 @@ def _build_adapter_field_plan(
             name=field.name,
             path=field.path,
             dotted_path=".".join(field.path),
-            field_kind="nested",
             declared_dtype=None,
             nested_type=field.nested_type,
             intrinsic_shape=storage_intrinsic_shape,
@@ -179,7 +178,7 @@ def _build_adapter_field_plan(
             fill_value=None,
             fill_value_factory=None,
             validator=field.validator,
-            random_kind="nested",
+            random_kind=None,
             is_primitive_jax_dtype=False,
         )
 
@@ -190,7 +189,6 @@ def _build_adapter_field_plan(
         name=field.name,
         path=field.path,
         dotted_path=".".join(field.path),
-        field_kind="primitive",
         declared_dtype=field.dtype,
         nested_type=None,
         intrinsic_shape=storage_intrinsic_shape,
@@ -199,7 +197,7 @@ def _build_adapter_field_plan(
         fill_value=field.fill_value,
         fill_value_factory=field.fill_value_factory,
         validator=field.validator,
-        random_kind=random_kind,  # type: ignore[arg-type]
+        random_kind=random_kind,
         random_bits_dtype=random_bits_dtype,
         random_view_as_signed=random_view_as_signed,
         random_gen_dtype=random_gen_dtype,
@@ -238,6 +236,11 @@ def _build_packed_field_layout(field: FieldLayout) -> PackedFieldLayout | None:
 @functools.cache
 def get_type_layout(cls: type) -> TypeLayout:
     """Return cached Type Layout facts for an xtructure dataclass type."""
+    if "__dataclass_fields__" not in vars(cls):
+        raise TypeError(
+            f"{cls.__name__} is not a concrete xtructure dataclass; "
+            "use a concrete Xtructurable subclass as the nested dtype"
+        )
     fields = _build_fields(cls)
     field_names = tuple(field.name for field in fields)
     packed_fields = tuple(field for field in fields if field.is_packed)

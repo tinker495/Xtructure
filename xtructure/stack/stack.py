@@ -11,7 +11,7 @@ from ..core.protocol import XtructurableT
 
 
 @partial(jax.jit, static_argnums=(0, 1))
-def _stack_build_jit(max_size: int, value_class: type[XtructurableT]):
+def _stack_build_jit(max_size: int, value_class: type[XtructurableT]) -> "Stack[XtructurableT]":
     size = SIZE_DTYPE(0)
     # Packed default rows, not zeros: reads of never-written slots (e.g.
     # clamped partial-pop rows) must keep returning value_class defaults.
@@ -20,7 +20,7 @@ def _stack_build_jit(max_size: int, value_class: type[XtructurableT]):
 
 
 @jax.jit
-def _stack_push_jit(stack, items: XtructurableT):
+def _stack_push_jit(stack: "Stack[XtructurableT]", items: XtructurableT) -> "Stack[XtructurableT]":
     batch_size = items.shape.batch
     if batch_size == ():
         items = jax.tree_util.tree_map(lambda x: x[None], items)
