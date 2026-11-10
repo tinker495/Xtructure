@@ -1,11 +1,11 @@
 # `xtructure_numpy` (`xnp`) Operations
 
-The `xtructure_numpy` module provides JAX-compatible operations for working with `@xtructure_dataclass` instances, offering array-like operations that work seamlessly with structured data.
+The `xtructure_numpy` module provides JAX-compatible operations for working with xtructure dataclass instances, offering array-like operations that work seamlessly with structured data.
 
 ```python
 import jax
 import jax.numpy as jnp
-from xtructure import xtructure_dataclass, FieldDescriptor
+from xtructure import Xtructurable, FieldDescriptor
 
 # New import path available:
 from xtructure import numpy as xnp
@@ -21,14 +21,12 @@ from xtructure import xtructure_numpy as xnp
 
 
 # Define example data structures
-@xtructure_dataclass
-class SimpleData:
+class SimpleData(Xtructurable):
     id: FieldDescriptor.scalar(dtype=jnp.uint32)
     value: FieldDescriptor.scalar(dtype=jnp.float32)
 
 
-@xtructure_dataclass
-class VectorData:
+class VectorData(Xtructurable):
     position: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))
     velocity: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))
 
@@ -118,7 +116,7 @@ splits = xnp.split(batched_data, 2)  # list of 2 dataclasses each with shape (3,
 
 ### **`xnp.concatenate(dataclasses, axis=0)` / `xnp.concat(dataclasses, axis=0)`**
 *   Concatenates a list of dataclasses along the specified axis (`concatenate` and `concat` are aliases).
-*   **Input**: List of `@xtructure_dataclass` instances. All must be of the same type and structured type.
+*   **Input**: List of xtructure dataclass instances. All must be of the same type and structured type.
 *   **Parameters**:
     *   `dataclasses`: List of dataclass instances to concatenate.
     *   `axis`: Axis along which to concatenate (default: 0).
@@ -131,7 +129,7 @@ splits = xnp.split(batched_data, 2)  # list of 2 dataclasses each with shape (3,
 
 ### **`xnp.stack(dataclasses_list, axis=0)`**
 *   Stacks dataclasses along a new dimension.
-*   **Input**: List of `@xtructure_dataclass` instances with compatible batch shapes.
+*   **Input**: List of xtructure dataclass instances with compatible batch shapes.
 *   **Parameters**:
     *   `axis` (int): The axis along which to stack. Default is 0.
 *   **Output**: A batched dataclass with an additional dimension.
@@ -139,7 +137,7 @@ splits = xnp.split(batched_data, 2)  # list of 2 dataclasses each with shape (3,
 
 ### **`xnp.pad(dataclass, pad_width, mode='constant', **kwargs)`**
 *   Pads a dataclass with specified padding widths, following jnp.pad interface.
-*   **Input**: An `@xtructure_dataclass` instance.
+*   **Input**: An xtructure dataclass instance.
 *   **Parameters**:
     *   `pad_width`: Padding width specification following jnp.pad convention:
         - int: Same padding (before, after) for all axes
@@ -158,8 +156,8 @@ splits = xnp.split(batched_data, 2)  # list of 2 dataclasses each with shape (3,
 *   Conditional selection for dataclasses, similar to `jnp.where`.
 *   **Input**:
     *   `condition`: Boolean array or scalar.
-    *   `x`: `@xtructure_dataclass` instance (Xtructurable).
-    *   `y`: `@xtructure_dataclass` instance or scalar/array.
+    *   `x`: xtructure dataclass instance (Xtructurable).
+    *   `y`: xtructure dataclass instance or scalar/array.
 *   **Output**: Dataclass with values selected based on condition.
 *   **Behavior**:
     *   Element-wise selection where `condition` is `True` → `x`, `False` → `y`.
@@ -240,12 +238,12 @@ splits = xnp.split(batched_data, 2)  # list of 2 dataclasses each with shape (3,
 
 ### **`xnp.reshape(dataclass, new_shape)`**
 *   Wrapper for the dataclass `reshape` method.
-*   **Input**: `@xtructure_dataclass` instance and new batch shape.
+*   **Input**: xtructure dataclass instance and new batch shape.
 *   **Output**: Reshaped dataclass instance.
 
 ### **`xnp.flatten(dataclass)`**
 *   Wrapper for the dataclass `flatten` method.
-*   **Input**: `@xtructure_dataclass` instance.
+*   **Input**: xtructure dataclass instance.
 *   **Output**: Flattened dataclass instance with batch dimensions collapsed.
 
 ### **`xnp.transpose(dataclass_instance, axes=None)`**

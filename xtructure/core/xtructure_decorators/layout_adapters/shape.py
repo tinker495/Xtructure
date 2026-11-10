@@ -44,6 +44,20 @@ def add_shape_dtype_len(cls: Type[T]) -> Type[T]:
 
     setattr(cls, "__len__", get_len)
 
+    def iterate(self):
+        """Yield the items along the first batch dimension, like iterating an array.
+
+        Defined explicitly because indexing past the end does not raise under JAX
+        (indices are clamped), so the legacy ``__getitem__`` protocol never stops.
+        """
+        batch = self._layout_cache.batch_shape
+        if batch == () or batch == -1:
+            raise TypeError(f"iteration over an unbatched {cls.__name__} instance")
+        for index in range(batch[0]):
+            yield self[index]
+
+    setattr(cls, "__iter__", iterate)
+
     def get_structured_type(self) -> StructuredType:
         return self._layout_cache.structured_type
 

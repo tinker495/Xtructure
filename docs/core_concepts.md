@@ -1,36 +1,35 @@
 # Core Concepts: Defining Custom Data Structures
 
-Before using `HashTable` or `BGPQ` in xtructure, you often need to define the structure of the data you want to store. This is done using the `@xtructure_dataclass` decorator and `FieldDescriptor`.
+Before using `HashTable` or `BGPQ` in xtructure, you often need to define the structure of the data you want to store. This is done by subclassing `Xtructurable` and declaring fields with `FieldDescriptor`.
 
 ```python
 import jax
 import jax.numpy as jnp
-from xtructure import xtructure_dataclass, FieldDescriptor
+from xtructure import Xtructurable, FieldDescriptor
 
 
 # Example: Defining a data structure for HashTable values
-@xtructure_dataclass
-class MyDataValue:
+class MyDataValue(Xtructurable):
     id: FieldDescriptor.scalar(dtype=jnp.uint32)
     position: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))  # A 3-element vector
     flags: FieldDescriptor.tensor(dtype=jnp.bool_, shape=(4,))  # A 4-element boolean array
 
 
 # Example: Defining a data structure for BGPQ values
-@xtructure_dataclass
-class MyHeapItem:
+class MyHeapItem(Xtructurable):
     task_id: FieldDescriptor.scalar(dtype=jnp.int32)
     payload: FieldDescriptor.tensor(dtype=jnp.float64, shape=(2, 2))  # A 2x2 matrix
 ```
 
-## `@xtructure_dataclass`
+## `Xtructurable`
 
-This decorator transforms a Python class into a JAX-compatible structure and adds several helpful methods and properties:
+Subclassing `Xtructurable` transforms the class into a JAX-compatible structure and adds several helpful methods and properties. Options are class keywords: `class Node(Xtructurable, validate=True, bitpack="off")`. Shape handling follows `numpy` arrays: indexing, slicing, iteration over the first batch dimension, `reshape`, `flatten`, and `.at[...].set(...)` all return the same class.
 
 *   **`shape`** (property): Returns a namedtuple showing the JAX shapes of all fields.
 *   **`dtype`** (property): Returns a namedtuple showing the JAX dtypes of all fields.
 *   **`__getitem__(self, index)`**: Allows indexing or slicing an instance (e.g., `my_data_instance[0]`). The operation is applied to each field.
 *   **`__len__(self)`**: Returns the size of the first dimension of the *first* field, typically used for batch size.
+*   **`__iter__(self)`**: Iterates over the first batch dimension, yielding `self[i]` for `i in range(len(self))`. Iterating an unbatched instance raises `TypeError`, like a 0-d array.
 *   **`default(cls, shape=())`** (classmethod): Creates an instance with default values for all fields.
     *   The optional `shape` argument (e.g., `(10,)` or `(5, 2)`) creates a "batched" instance. This means the provided `shape` tuple is prepended to the `intrinsic_shape` of each field defined in the dataclass.
         *   For example, if a field is `data: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))` (intrinsic shape `(3,)`):
@@ -71,21 +70,24 @@ This decorator transforms a Python class into a JAX-compatible structure and add
 *   `check_invariants(self)`: Manually triggers validation logic.
     *   Checks if all fields match their declared `dtype` and `intrinsic_shape`.
     *   Runs any custom `validator` callbacks defined in `FieldDescriptor`.
-    *   Automatically called after `__init__` if `validate=True` was passed to the decorator.
+    *   Automatically called after `__init__` if the class was declared with `validate=True`.
 
-### Preferred form: inherit `Xtructurable`
+### Type checking
 
-Subclassing `Xtructurable` applies the same transformation as the decorator, with
-`validate` and `bitpack` passed as class keywords. It is also the only form whose
-injected members (everything listed above) are visible to type checkers, which
-ignore class-decorator return types:
+The injected members above are declared on `Xtructurable`, so type checkers see them
+through ordinary inheritance. Annotate fields as `Annotated[jax.Array, FieldDescriptor...]`
+to give checkers the field type as well:
 
 ```python
+from typing import Annotated
+
+import jax
+import jax.numpy as jnp
 from xtructure import FieldDescriptor, Xtructurable
 
 
 class MyHeapItem(Xtructurable, bitpack="off"):
-    task_id: FieldDescriptor.scalar(dtype=jnp.int32)
+    task_id: Annotated[jax.Array, FieldDescriptor.scalar(dtype=jnp.int32)]
 
 
 item = MyHeapItem.default((4,))[0]  # checkers see `MyHeapItem`, not `Unknown`
@@ -96,15 +98,11 @@ returns `BGPQ[MyHeapItem]`, so `delete_mins()` yields `MyHeapItem` values (likew
 `HashTable[S]`, `Stack[V]`, `Queue[V]`). `XtructurableT` is the shared type variable for
 your own APIs that pass xtructure dataclasses through.
 
-`@xtructure_dataclass` remains as a transitional form for classes that have not
-migrated; applying it to a class that inherits `Xtructurable` raises `TypeError`.
-`isinstance(x, Xtructurable)` is an ordinary subclass check, so it is false for
-instances of decorator-only classes; use `is_xtructure_dataclass_instance(x)` to
-accept both forms.
+`isinstance(x, Xtructurable)` tells whether `x` is an xtructure dataclass instance.
 
 ## `FieldDescriptor`
 
-Defines the type and shape of each field within an `@xtructure_dataclass`.
+Defines the type and shape of each field within an `Xtructurable` subclass.
 
 *   **Syntax**:
     *   **Factory Methods (Recommended)**:
@@ -115,7 +113,7 @@ Defines the type and shape of each field within an `@xtructure_dataclass`.
         *   `FieldDescriptor[jax_dtype, intrinsic_shape_tuple]`
         *   `FieldDescriptor(dtype=..., intrinsic_shape=..., fill_value=..., validator=...)`
 *   **Parameters**:
-    *   `dtype`: The JAX dtype (e.g., `jnp.int32`, `jnp.float32`, `jnp.bool_`). Can also be another `@xtructure_dataclass` type for nesting.
+    *   `dtype`: The JAX dtype (e.g., `jnp.int32`, `jnp.float32`, `jnp.bool_`). Can also be another `Xtructurable` subclass for nesting.
     *   `intrinsic_shape` (optional): A tuple defining the field's shape *excluding* batch dimensions (e.g., `(3,)` for a vector, `(2,2)` for a matrix). Defaults to `()` for a scalar.
     *   `fill_value` (optional): The value used when `cls.default()` is called.
         *   Defaults: maximum representable value for unsigned integers, `jnp.inf` for signed integers and floats. `None` for nested structures.
@@ -126,8 +124,7 @@ Defines the type and shape of each field within an `@xtructure_dataclass`.
 ### Example: Factory Methods
 
 ```python
-@xtructure_dataclass
-class BetterSyntax:
+class BetterSyntax(Xtructurable):
     # Clear scalar definition
     count: FieldDescriptor.scalar(dtype=jnp.int32, default=0)
 
@@ -148,17 +145,15 @@ Use whichever option fits your tooling. Static analyzers (pyright, mypy, IDEs) o
 ```python
 from typing import Annotated
 import jax.numpy as jnp
-from xtructure import FieldDescriptor, xtructure_dataclass
+from xtructure import FieldDescriptor, Xtructurable
 
 
-@xtructure_dataclass
-class LegacySyntax:
+class LegacySyntax(Xtructurable):
     # Field type appears to the type-checker as FieldDescriptor
     value: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))
 
 
-@xtructure_dataclass
-class AnnotatedSyntax:
+class AnnotatedSyntax(Xtructurable):
     # Field type is seen as jnp.ndarray by IDEs, metadata comes from FieldDescriptor
     value: Annotated[jnp.ndarray, FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))]
 ```
@@ -168,19 +163,17 @@ code toward the Annotated form.
 
 ### Nested structures
 
-Descriptors can point to another `@xtructure_dataclass`, enabling deeply nested shapes without writing
+Descriptors can point to another `Xtructurable` subclass, enabling deeply nested shapes without writing
 custom initialization logic. Each nested field uses its own `.default()` for sentinel values, and batch
 shapes flow recursively.
 
 ```python
-@xtructure_dataclass
-class SimpleData:
+class SimpleData(Xtructurable):
     id: FieldDescriptor.scalar(dtype=jnp.uint32)
     value: FieldDescriptor.scalar(dtype=jnp.float32)
 
 
-@xtructure_dataclass
-class Container:
+class Container(Xtructurable):
     # Nested dataclasses get their own descriptor
     simple: FieldDescriptor.scalar(dtype=SimpleData)
     history: FieldDescriptor.tensor(dtype=jnp.float32, shape=(4,))
@@ -202,8 +195,7 @@ def nan_fill(field_shape, dtype):
     return jnp.full(field_shape, jnp.nan, dtype=dtype)
 
 
-@xtructure_dataclass
-class WithFactory:
+class WithFactory(Xtructurable):
     metrics: FieldDescriptor.tensor(
         dtype=jnp.float32,
         shape=(3,),
@@ -213,13 +205,12 @@ class WithFactory:
 
 ### Runtime validation mode
 
-Pass `validate=True` to `@xtructure_dataclass` to opt into runtime checks that ensure every field matches its
+Declare the class with `validate=True` to opt into runtime checks that ensure every field matches its
 descriptor’s dtype and trailing shape, and satisfies any custom validators. Validation runs after each initialization
 (including user-defined `__post_init__` logic).
 
 ```python
-@xtructure_dataclass(validate=True)
-class StrictData:
+class StrictData(Xtructurable, validate=True):
     vector: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))
     positive: FieldDescriptor.scalar(dtype=jnp.int32, validator=lambda x: x > 0 or raise_error("Must be positive"))
 
@@ -250,11 +241,10 @@ Example:
 
 ```python
 import jax.numpy as jnp
-from xtructure import FieldDescriptor, xtructure_dataclass
+from xtructure import FieldDescriptor, Xtructurable
 
 
-@xtructure_dataclass
-class PuzzleState:
+class PuzzleState(Xtructurable):
     # Logical Schema: 6 faces of size*size values, each value in [0, 7] => 3 bits/value.
     # Packed Field Layout derives the stored uint8 byte-stream shape.
     faces: FieldDescriptor.packed_tensor(
@@ -290,12 +280,12 @@ If you want to **pack multiple fields together into one contiguous bitstream** (
 you can enable (or auto-enable) aggregate bitpacking.
 
 Auto-enable rule:
-- If **every primitive leaf** declares `bits=...` (nested `@xtructure_dataclass` fields supported when the nesting
+- If **every primitive leaf** declares `bits=...` (nested xtructure dataclass fields supported when the nesting
   field is scalar), aggregate bitpacking is enabled automatically (so you can omit the decorator flag).
 
 ### Unified bitpacking policy (`bitpack=...`)
 
-`@xtructure_dataclass` also accepts a unified policy flag:
+`Xtructurable` also accepts a unified policy class keyword:
 
 - `bitpack="auto"` (default): enables aggregate packing when all primitive leaves (including scalar-nested leaves)
   declare `bits=...`. Also enables `packed_tensor` accessors.
@@ -307,11 +297,10 @@ Note: `aggregate_bitpack=True` is kept for backward compatibility; prefer `bitpa
 
 ```python
 import jax.numpy as jnp
-from xtructure import FieldDescriptor, xtructure_dataclass
+from xtructure import FieldDescriptor, Xtructurable
 
 
-@xtructure_dataclass
-class AggState:
+class AggState(Xtructurable):
     flags: FieldDescriptor.tensor(dtype=jnp.bool_, shape=(17,), bits=1)
     faces: FieldDescriptor.tensor(dtype=jnp.uint8, shape=(6, 54), bits=3)
     codes: FieldDescriptor.tensor(dtype=jnp.uint16, shape=(5,), bits=12)
@@ -355,8 +344,8 @@ while iterating on new structures or integrating external inputs.
 
 ## `base_dataclass` and `static_fields`
 
-`@xtructure_dataclass` is built on top of `@base_dataclass`. You can also use `@base_dataclass` directly for
-"plain" JAX PyTrees that are not SoA-backed `@xtructure_dataclass` structures (for example: `HashTable`, `BGPQ`,
+`Xtructurable` is built on top of `@base_dataclass`. You can also use `@base_dataclass` directly for
+"plain" JAX PyTrees that are not SoA-backed xtructure dataclasses (for example: `HashTable`, `BGPQ`,
 `Queue`, `Stack`).
 
 The key extra feature is `static_fields`:

@@ -5,12 +5,11 @@ A bucketed double hash table optimized for JAX.
 ```python
 import jax
 import jax.numpy as jnp
-from xtructure import HashTable, xtructure_dataclass, FieldDescriptor
+from xtructure import HashTable, Xtructurable, FieldDescriptor
 
 
 # Define a data structure (as an example from core_concepts.md)
-@xtructure_dataclass
-class MyDataValue:
+class MyDataValue(Xtructurable):
     id: FieldDescriptor.scalar(dtype=jnp.uint32)
     position: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))
     flags: FieldDescriptor.tensor(dtype=jnp.bool_, shape=(4,))

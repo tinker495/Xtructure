@@ -4,18 +4,18 @@ This decorator adds a `.packed` property that returns a packed representation
 containing a word-aligned `uint32` stream plus an optional `uint8` tail, and a
 `.unpacked` property on the packed representation that reconstructs a logical view.
 
-Opt in via `@xtructure_dataclass(bitpack="aggregate")`.
+Opt in via `class X(Xtructurable, bitpack="aggregate")`.
 
 Rules:
 - Only pack primitive array-like fields whose FieldDescriptor.bits is set.
 - `bits` can be 1..32.
-- Nested xtructure_dataclass fields are supported for scalar nested fields (intrinsic_shape == ()).
+- Nested xtructure dataclass fields are supported for scalar nested fields (intrinsic_shape == ()).
 """
 
 from __future__ import annotations
 
 import importlib
-from typing import Any, Callable, Type, TypeVar
+from typing import Any, Type, TypeVar
 
 import jax
 import jax.numpy as jnp
@@ -34,14 +34,13 @@ from xtructure.core.layout.type_layout import get_type_layout
 from xtructure.core.layout.types import AggregateBitpackReason, AggregateLeafLayout
 
 from .bits import _extract_bits, _insert_bits
-from .generated import GENERATED_PACKED_ROLE, register_generated_class
+from .generated import GENERATED_PACKED_ROLE, make_generated_class
 
 T = TypeVar("T")
 
 
 def add_aggregate_bitpack(
     cls: Type[T],
-    dataclass_factory: Callable[..., type],
 ) -> Type[T]:
     aggregate = get_type_layout(cls).aggregate_bitpack
     if not aggregate.eligible:
@@ -58,18 +57,17 @@ def add_aggregate_bitpack(
     # Build a Packed class with a uint32 word-stream plus optional uint8 tail.
     packed_name = f"{cls.__name__}Packed"
 
-    # Create class dynamically so user doesn't have to write it.
-    Packed = type(packed_name, (), {"__module__": cls.__module__})
-
-    # Attach xtructure annotations: words + tail.
-    Packed.__annotations__ = {
-        "words": FieldDescriptor.tensor(dtype=jnp.uint32, shape=(stored_words_len,), fill_value=0),
-        "tail": FieldDescriptor.tensor(dtype=jnp.uint8, shape=(tail_bytes,), fill_value=0),
-    }
-
-    Packed = dataclass_factory(Packed)  # type: ignore[assignment]
-
-    register_generated_class(Packed, role=GENERATED_PACKED_ROLE)
+    Packed = make_generated_class(
+        packed_name,
+        cls.__module__,
+        {
+            "words": FieldDescriptor.tensor(
+                dtype=jnp.uint32, shape=(stored_words_len,), fill_value=0
+            ),
+            "tail": FieldDescriptor.tensor(dtype=jnp.uint8, shape=(tail_bytes,), fill_value=0),
+        },
+        role=GENERATED_PACKED_ROLE,
+    )
 
     # Build nested logical-view unpacked classes mirroring the original structure,
     # but using default unpack dtypes (bool/uint8/uint32) and with validate=False.
@@ -77,7 +75,7 @@ def add_aggregate_bitpack(
         importlib.import_module(".view", __name__),
         "build_unpacked_view_cls",
     )
-    UnpackedView, _view_cache = build_unpacked_view_cls(cls, dataclass_factory)
+    UnpackedView, _view_cache = build_unpacked_view_cls(cls)
 
     def _pack_instance(instance: Any) -> tuple[jax.Array, jax.Array]:
         # Determine batch shape from the first field (xtructure invariant already implies consistent batching)

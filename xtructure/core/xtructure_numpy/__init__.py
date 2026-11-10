@@ -8,9 +8,6 @@ import jax.numpy as jnp
 from jax.typing import ArrayLike, DTypeLike
 
 from xtructure.core.protocol import Xtructurable
-from xtructure.core.type_utils import (
-    is_xtructure_dataclass_instance as _is_xtructurable,
-)
 
 from . import dataclass_ops as _dc
 from .array_ops import _update_array_on_condition
@@ -21,7 +18,7 @@ _XtructureT = TypeVar("_XtructureT", bound=Xtructurable)
 def _check_homogeneous_inputs(func_name: str, arrays_list: list[Any]) -> bool:
     if not arrays_list:
         raise ValueError(f"Cannot {func_name} empty list.")
-    is_dataclass = [_is_xtructurable(arr) for arr in arrays_list]
+    is_dataclass = [isinstance(arr, Xtructurable) for arr in arrays_list]
     if any(is_dataclass) and not all(is_dataclass):
         raise TypeError(f"{func_name} inputs must be all xtructure dataclasses or all arrays.")
     return all(is_dataclass)
@@ -122,7 +119,7 @@ def pad(array: ArrayLike, pad_width: Any, mode: str | Any = "constant", **kwargs
 
 
 def pad(array, pad_width, mode: str | Any = "constant", **kwargs):
-    if _is_xtructurable(array):
+    if isinstance(array, Xtructurable):
         return _dc.pad(array, pad_width, mode=mode, **kwargs)
     return jnp.pad(array, pad_width, mode=mode, **kwargs)
 
@@ -169,7 +166,7 @@ def reshape(
 
 
 def reshape(a, shape, order: str = "C", *, copy: bool | None = None, out_sharding=None):
-    if _is_xtructurable(a):
+    if isinstance(a, Xtructurable):
         if order != "C":
             raise ValueError("xtructure reshape only supports order='C'.")
         _reject_dataclass_kwargs("reshape", copy=copy, out_sharding=out_sharding)
@@ -189,7 +186,7 @@ def ravel(a: ArrayLike, order: str = "C", *, out_sharding: Any = None) -> jax.Ar
 
 
 def ravel(a, order: str = "C", *, out_sharding=None):
-    if _is_xtructurable(a):
+    if isinstance(a, Xtructurable):
         if order != "C":
             raise ValueError("xtructure ravel only supports order='C'.")
         _reject_dataclass_kwargs("ravel", out_sharding=out_sharding)
@@ -274,15 +271,15 @@ def where(
 ) -> _XtructureT | jax.Array | tuple[jax.Array, ...]:
     if x is None and y is None:
         return jnp.where(condition, size=size, fill_value=fill_value)
-    if _is_xtructurable(x):
+    if isinstance(x, Xtructurable):
         if y is None:
             raise TypeError("x and y must be provided for xtructure dataclass inputs.")
-        if _is_xtructurable(y):
+        if isinstance(y, Xtructurable):
             if jax.tree_util.tree_structure(x) != jax.tree_util.tree_structure(y):
                 raise TypeError("x and y must have the same tree structure.")
         _reject_dataclass_kwargs("where", size=size, fill_value=fill_value)
         return _dc.where(condition, x, y)
-    if _is_xtructurable(y):
+    if isinstance(y, Xtructurable):
         if x is None:
             raise TypeError("x and y must be provided for xtructure dataclass inputs.")
         raise TypeError("x and y must both be xtructure dataclasses for dataclass where.")
@@ -337,7 +334,7 @@ def take(
     indices_are_sorted: bool = False,
     fill_value=None,
 ) -> _XtructureT | jax.Array:
-    if _is_xtructurable(a):
+    if isinstance(a, Xtructurable):
         _reject_dataclass_kwargs("take", out=out)
         return jax.tree_util.tree_map(
             lambda x: jnp.take(
@@ -399,7 +396,7 @@ def take_along_axis(
     wrap_negative_indices: bool = True,
 ):
     kwargs = dict(mode=mode, fill_value=fill_value, wrap_negative_indices=wrap_negative_indices)
-    if _is_xtructurable(arr):
+    if isinstance(arr, Xtructurable):
         return _dc.take_along_axis(arr, indices, axis=axis, **kwargs)
     return jnp.take_along_axis(arr, indices, axis=axis, **kwargs)
 
@@ -415,7 +412,7 @@ def tile(A: ArrayLike, reps: int | Sequence[int]) -> jax.Array:
 
 
 def tile(A, reps):
-    if _is_xtructurable(A):
+    if isinstance(A, Xtructurable):
         return _dc.tile(A, reps)
     return jnp.tile(A, reps)
 
@@ -431,7 +428,7 @@ def transpose(a: ArrayLike, axes: Sequence[int] | None = None) -> jax.Array:
 
 
 def transpose(a, axes: Sequence[int] | None = None):
-    if _is_xtructurable(a):
+    if isinstance(a, Xtructurable):
         return a.transpose(axes)
     return jnp.transpose(a, axes=axes)
 
@@ -447,7 +444,7 @@ def swapaxes(a: ArrayLike, axis1: int, axis2: int) -> jax.Array:
 
 
 def swapaxes(a, axis1: int, axis2: int):
-    if _is_xtructurable(a):
+    if isinstance(a, Xtructurable):
         return a.swapaxes(axis1, axis2)
     return jnp.swapaxes(a, axis1, axis2)
 
@@ -499,8 +496,8 @@ def update_on_condition(
 def update_on_condition(
     dataclass_instance, indices, condition, values_to_set, *, unique_indices: bool = False
 ):
-    if _is_xtructurable(dataclass_instance):
-        if _is_xtructurable(values_to_set):
+    if isinstance(dataclass_instance, Xtructurable):
+        if isinstance(values_to_set, Xtructurable):
             if jax.tree_util.tree_structure(values_to_set) != jax.tree_util.tree_structure(
                 dataclass_instance
             ):
@@ -514,7 +511,7 @@ def update_on_condition(
             values_to_set,
             unique_indices=unique_indices,
         )
-    if _is_xtructurable(values_to_set):
+    if isinstance(values_to_set, Xtructurable):
         raise TypeError("values_to_set must not be an xtructure dataclass when updating an array.")
     return _update_array_on_condition(
         dataclass_instance, indices, condition, values_to_set, unique_indices=unique_indices
@@ -532,7 +529,7 @@ def expand_dims(a: ArrayLike, axis: int | Sequence[int]) -> jax.Array:
 
 
 def expand_dims(a, axis: int | Sequence[int]):
-    if _is_xtructurable(a):
+    if isinstance(a, Xtructurable):
         return _dc.expand_dims(a, axis=axis)
     return jnp.expand_dims(a, axis=axis)
 
@@ -548,7 +545,7 @@ def squeeze(a: ArrayLike, axis: int | Sequence[int] | None = None) -> jax.Array:
 
 
 def squeeze(a, axis: int | Sequence[int] | None = None):
-    if _is_xtructurable(a):
+    if isinstance(a, Xtructurable):
         return _dc.squeeze(a, axis=axis)
     return jnp.squeeze(a, axis=axis)
 
@@ -585,7 +582,7 @@ def repeat(
     total_repeat_length: int | None = None,
     out_sharding=None,
 ):
-    if _is_xtructurable(a):
+    if isinstance(a, Xtructurable):
         _reject_dataclass_kwargs(
             "repeat", total_repeat_length=total_repeat_length, out_sharding=out_sharding
         )
@@ -610,7 +607,7 @@ def split(ary: ArrayLike, indices_or_sections: Any, axis: int = 0) -> list[jax.A
 
 
 def split(ary, indices_or_sections, axis: int = 0):
-    if _is_xtructurable(ary):
+    if isinstance(ary, Xtructurable):
         return _dc.split(ary, indices_or_sections, axis=axis)
     return list(jnp.split(ary, indices_or_sections, axis=axis))
 
@@ -650,7 +647,7 @@ def full_like(
     device=None,
     out_sharding=None,
 ):
-    if _is_xtructurable(a):
+    if isinstance(a, Xtructurable):
         _reject_dataclass_kwargs(
             "full_like", dtype=dtype, shape=shape, device=device, out_sharding=out_sharding
         )
@@ -701,7 +698,7 @@ def zeros_like(
     device=None,
     out_sharding=None,
 ):
-    if _is_xtructurable(a):
+    if isinstance(a, Xtructurable):
         _reject_dataclass_kwargs(
             "zeros_like",
             dtype=dtype,
@@ -755,7 +752,7 @@ def ones_like(
     device=None,
     out_sharding=None,
 ):
-    if _is_xtructurable(a):
+    if isinstance(a, Xtructurable):
         _reject_dataclass_kwargs(
             "ones_like",
             dtype=dtype,

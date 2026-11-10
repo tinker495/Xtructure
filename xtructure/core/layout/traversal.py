@@ -43,9 +43,9 @@ def build_instance_from_leaf_values(
 
     for field in type_layout.fields:
         path = prefix + (field.name,)
-        if field.is_nested:
+        if field.nested_type is not None:
             kwargs[field.name] = build_instance_from_leaf_values(
-                field.nested_type,  # type: ignore[arg-type]
+                field.nested_type,
                 leaf_values,
                 type_map=type_map,
                 cast_declared=cast_declared,

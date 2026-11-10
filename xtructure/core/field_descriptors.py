@@ -11,16 +11,15 @@ _FIELD_DESCRIPTOR_ATTR = "__xtructure_field_descriptors__"
 
 class FieldDescriptor:
     """
-    A descriptor for fields in an xtructure_dataclass.
+    A descriptor for fields of an xtructure dataclass.
 
-    This class is used to define the properties of fields in a dataclass decorated with
-    @xtructure_dataclass. It specifies the JAX dtype, shape, and default fill value
+    This class is used to define the properties of fields in a subclass of
+    ``Xtructurable``. It specifies the JAX dtype, shape, and default fill value
     for each field.
 
     Example usage::
 
-        @xtructure_dataclass
-        class MyData:
+        class MyData(Xtructurable):
             # A scalar uint8 field
             a: FieldDescriptor.scalar(dtype=jnp.uint8)
 
@@ -30,7 +29,7 @@ class FieldDescriptor:
             # A float field with custom fill value
             c: FieldDescriptor.scalar(dtype=jnp.float32, default=0.0)
 
-            # A nested xtructure_dataclass field
+            # A nested xtructure dataclass field
             d: FieldDescriptor.scalar(dtype=AnotherDataClass)
 
     The FieldDescriptor can be used with type annotation syntax using square brackets
@@ -265,7 +264,7 @@ def extract_field_descriptors_from_annotations(
 
     if invalid_annotations:
         raise ValueError(
-            "xtructure_dataclass fields must declare metadata via FieldDescriptor. "
+            "xtructure dataclass fields must declare metadata via FieldDescriptor. "
             "Use either the legacy style `field: FieldDescriptor(...)` or "
             "`field: typing.Annotated[ActualType, FieldDescriptor(...)]`. "
             f"Invalid annotations: {invalid_annotations}"

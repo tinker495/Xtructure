@@ -2,26 +2,22 @@ import jax.numpy as jnp
 import pytest
 
 from tests.dataclass.fixtures import SimpleData, VectorData
-from xtructure import FieldDescriptor, xtructure_dataclass
+from xtructure import FieldDescriptor, Xtructurable
 
 
-@xtructure_dataclass(validate=True)
-class ValidatedScalarData:
+class ValidatedScalarData(Xtructurable, validate=True):
     value: FieldDescriptor.scalar(dtype=jnp.float32)
 
 
-@xtructure_dataclass(validate=True)
-class ValidatedVectorData:
+class ValidatedVectorData(Xtructurable, validate=True):
     vector: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))
 
 
-@xtructure_dataclass(validate=True)
-class ValidatedNestedData:
+class ValidatedNestedData(Xtructurable, validate=True):
     simple: FieldDescriptor.scalar(dtype=SimpleData)
 
 
-@xtructure_dataclass(validate=True)
-class ValidatedWithPostInit:
+class ValidatedWithPostInit(Xtructurable, validate=True):
     value: FieldDescriptor.scalar(dtype=jnp.float32)
 
     def __post_init__(self):
