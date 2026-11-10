@@ -4,7 +4,7 @@ from typing import Generic
 import jax
 import jax.numpy as jnp
 
-from ..core.dataclass import base_dataclass
+from ..core.dataclass import Replaceable, base_dataclass
 from ..core.dtype_facts import SIZE_DTYPE
 from ..core.packing import pack_rows, packed_default_store, unpack_rows
 from ..core.protocol import XtructurableT
@@ -74,7 +74,7 @@ def _queue_clear_jit(queue):
 
 
 @jax.jit
-def _queue_getitem_jit(queue, idx: SIZE_DTYPE) -> XtructurableT:
+def _queue_getitem_jit(queue: "Queue[XtructurableT]", idx: SIZE_DTYPE) -> XtructurableT:
     storage_idx = (queue.head + idx).astype(jnp.int32)
     rows = jax.lax.dynamic_slice(
         queue.val_store, (storage_idx, jnp.int32(0)), (1, queue.val_store.shape[1])
@@ -83,7 +83,7 @@ def _queue_getitem_jit(queue, idx: SIZE_DTYPE) -> XtructurableT:
 
 
 @base_dataclass(static_fields=("max_size", "value_class"))
-class Queue(Generic[XtructurableT]):
+class Queue(Replaceable, Generic[XtructurableT]):
     """
     A JAX-compatible batched Queue data structure.
     Optimized for parallel operations on GPU using JAX.

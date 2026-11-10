@@ -1,18 +1,16 @@
 from __future__ import annotations
 
 import inspect
-from typing import Any, Iterable, Sequence, TypeVar, overload
+from typing import Any, Iterable, Sequence, overload
 
 import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike, DTypeLike
 
-from xtructure.core.protocol import Xtructurable
+from xtructure.core.protocol import Xtructurable, XtructurableT
 
 from . import dataclass_ops as _dc
 from .array_ops import _update_array_on_condition
-
-_XtructureT = TypeVar("_XtructureT", bound=Xtructurable)
 
 
 def _check_homogeneous_inputs(func_name: str, arrays_list: list[Any]) -> bool:
@@ -63,7 +61,7 @@ def _like_kwargs(
 
 
 @overload
-def concat(arrays: Iterable[_XtructureT], /, *, axis: int | None = 0) -> _XtructureT:
+def concat(arrays: Iterable[XtructurableT], /, *, axis: int | None = 0) -> XtructurableT:
     ...
 
 
@@ -83,8 +81,8 @@ def concat(arrays, /, *, axis: int | None = 0):
 
 @overload
 def concatenate(
-    arrays: Iterable[_XtructureT], axis: int | None = 0, dtype: None = None
-) -> _XtructureT:
+    arrays: Iterable[XtructurableT], axis: int | None = 0, dtype: None = None
+) -> XtructurableT:
     ...
 
 
@@ -108,8 +106,8 @@ def concatenate(arrays, axis: int | None = 0, dtype: Any | None = None) -> Xtruc
 
 @overload
 def pad(
-    array: _XtructureT, pad_width: Any, mode: str | Any = "constant", **kwargs: Any
-) -> _XtructureT:
+    array: XtructurableT, pad_width: Any, mode: str | Any = "constant", **kwargs: Any
+) -> XtructurableT:
     ...
 
 
@@ -126,8 +124,8 @@ def pad(array, pad_width, mode: str | Any = "constant", **kwargs):
 
 @overload
 def stack(
-    arrays: Iterable[_XtructureT], axis: int = 0, out: None = None, dtype: None = None
-) -> _XtructureT:
+    arrays: Iterable[XtructurableT], axis: int = 0, out: None = None, dtype: None = None
+) -> XtructurableT:
     ...
 
 
@@ -148,8 +146,8 @@ def stack(arrays, axis: int = 0, out: None = None, dtype: Any | None = None):
 
 @overload
 def reshape(
-    a: _XtructureT, shape: Any, order: str = "C", *, copy: None = None, out_sharding: None = None
-) -> _XtructureT:
+    a: XtructurableT, shape: Any, order: str = "C", *, copy: None = None, out_sharding: None = None
+) -> XtructurableT:
     ...
 
 
@@ -176,7 +174,7 @@ def reshape(a, shape, order: str = "C", *, copy: bool | None = None, out_shardin
 
 
 @overload
-def ravel(a: _XtructureT, order: str = "C", *, out_sharding: None = None) -> _XtructureT:
+def ravel(a: XtructurableT, order: str = "C", *, out_sharding: None = None) -> XtructurableT:
     ...
 
 
@@ -195,7 +193,7 @@ def ravel(a, order: str = "C", *, out_sharding=None):
 
 
 @overload
-def flatten(array: _XtructureT, order: str = "C") -> _XtructureT:
+def flatten(array: XtructurableT, order: str = "C") -> XtructurableT:
     ...
 
 
@@ -211,26 +209,26 @@ def flatten(array, order: str = "C"):
 @overload
 def where(
     condition: ArrayLike,
-    x: _XtructureT,
-    y: _XtructureT,
+    x: XtructurableT,
+    y: XtructurableT,
     /,
     *,
     size: None = None,
     fill_value: None = None,
-) -> _XtructureT:
+) -> XtructurableT:
     ...
 
 
 @overload
 def where(
     condition: ArrayLike,
-    x: _XtructureT,
+    x: XtructurableT,
     y: ArrayLike,
     /,
     *,
     size: None = None,
     fill_value: None = None,
-) -> _XtructureT:
+) -> XtructurableT:
     ...
 
 
@@ -262,13 +260,13 @@ def where(
 
 def where(
     condition: ArrayLike,
-    x: _XtructureT | ArrayLike | None = None,
-    y: _XtructureT | ArrayLike | None = None,
+    x: XtructurableT | ArrayLike | None = None,
+    y: XtructurableT | ArrayLike | None = None,
     /,
     *,
     size: int | None = None,
     fill_value: ArrayLike | tuple[ArrayLike, ...] | None = None,
-) -> _XtructureT | jax.Array | tuple[jax.Array, ...]:
+) -> XtructurableT | jax.Array | tuple[jax.Array, ...]:
     if x is None and y is None:
         return jnp.where(condition, size=size, fill_value=fill_value)
     if isinstance(x, Xtructurable):
@@ -298,7 +296,7 @@ def where_no_broadcast(condition: Any, x: Any, y: Any) -> Any:
 
 @overload
 def take(
-    a: _XtructureT,
+    a: XtructurableT,
     indices: ArrayLike,
     axis: int | None = None,
     out: None = None,
@@ -306,7 +304,7 @@ def take(
     unique_indices: bool = False,
     indices_are_sorted: bool = False,
     fill_value=None,
-) -> _XtructureT:
+) -> XtructurableT:
     ...
 
 
@@ -325,7 +323,7 @@ def take(
 
 
 def take(
-    a: _XtructureT | ArrayLike,
+    a: XtructurableT | ArrayLike,
     indices: ArrayLike,
     axis: int | None = None,
     out=None,
@@ -333,7 +331,7 @@ def take(
     unique_indices: bool = False,
     indices_are_sorted: bool = False,
     fill_value=None,
-) -> _XtructureT | jax.Array:
+) -> XtructurableT | jax.Array:
     if isinstance(a, Xtructurable):
         _reject_dataclass_kwargs("take", out=out)
         return jax.tree_util.tree_map(
@@ -362,14 +360,14 @@ def take(
 
 @overload
 def take_along_axis(
-    arr: _XtructureT,
+    arr: XtructurableT,
     indices: ArrayLike,
     axis: int | None = -1,
     mode: Any = None,
     fill_value: Any = None,
     *,
     wrap_negative_indices: bool = True,
-) -> _XtructureT:
+) -> XtructurableT:
     ...
 
 
@@ -402,7 +400,7 @@ def take_along_axis(
 
 
 @overload
-def tile(A: _XtructureT, reps: int | Sequence[int]) -> _XtructureT:
+def tile(A: XtructurableT, reps: int | Sequence[int]) -> XtructurableT:
     ...
 
 
@@ -418,7 +416,7 @@ def tile(A, reps):
 
 
 @overload
-def transpose(a: _XtructureT, axes: Sequence[int] | None = None) -> _XtructureT:
+def transpose(a: XtructurableT, axes: Sequence[int] | None = None) -> XtructurableT:
     ...
 
 
@@ -434,7 +432,7 @@ def transpose(a, axes: Sequence[int] | None = None):
 
 
 @overload
-def swapaxes(a: _XtructureT, axis1: int, axis2: int) -> _XtructureT:
+def swapaxes(a: XtructurableT, axis1: int, axis2: int) -> XtructurableT:
     ...
 
 
@@ -471,13 +469,13 @@ def unique_mask(
 
 @overload
 def update_on_condition(
-    dataclass_instance: _XtructureT,
+    dataclass_instance: XtructurableT,
     indices: Any,
     condition: ArrayLike,
     values_to_set: Any,
     *,
     unique_indices: bool = False,
-) -> _XtructureT:
+) -> XtructurableT:
     ...
 
 
@@ -519,7 +517,7 @@ def update_on_condition(
 
 
 @overload
-def expand_dims(a: _XtructureT, axis: int | Sequence[int]) -> _XtructureT:
+def expand_dims(a: XtructurableT, axis: int | Sequence[int]) -> XtructurableT:
     ...
 
 
@@ -535,7 +533,7 @@ def expand_dims(a, axis: int | Sequence[int]):
 
 
 @overload
-def squeeze(a: _XtructureT, axis: int | Sequence[int] | None = None) -> _XtructureT:
+def squeeze(a: XtructurableT, axis: int | Sequence[int] | None = None) -> XtructurableT:
     ...
 
 
@@ -552,13 +550,13 @@ def squeeze(a, axis: int | Sequence[int] | None = None):
 
 @overload
 def repeat(
-    a: _XtructureT,
+    a: XtructurableT,
     repeats: Any,
     axis: int | None = None,
     *,
     total_repeat_length: None = None,
     out_sharding: None = None,
-) -> _XtructureT:
+) -> XtructurableT:
     ...
 
 
@@ -597,7 +595,7 @@ def repeat(
 
 
 @overload
-def split(ary: _XtructureT, indices_or_sections: Any, axis: int = 0) -> list[_XtructureT]:
+def split(ary: XtructurableT, indices_or_sections: Any, axis: int = 0) -> list[XtructurableT]:
     ...
 
 
@@ -614,14 +612,14 @@ def split(ary, indices_or_sections, axis: int = 0):
 
 @overload
 def full_like(
-    a: _XtructureT,
+    a: XtructurableT,
     fill_value: Any,
     dtype: None = None,
     shape: None = None,
     *,
     device: None = None,
     out_sharding: None = None,
-) -> _XtructureT:
+) -> XtructurableT:
     ...
 
 
@@ -668,13 +666,13 @@ def full_like(
 
 @overload
 def zeros_like(
-    a: _XtructureT,
+    a: XtructurableT,
     dtype: None = None,
     shape: None = None,
     *,
     device: None = None,
     out_sharding: None = None,
-) -> _XtructureT:
+) -> XtructurableT:
     ...
 
 
@@ -722,13 +720,13 @@ def zeros_like(
 
 @overload
 def ones_like(
-    a: _XtructureT,
+    a: XtructurableT,
     dtype: None = None,
     shape: None = None,
     *,
     device: None = None,
     out_sharding: None = None,
-) -> _XtructureT:
+) -> XtructurableT:
     ...
 
 

@@ -15,7 +15,7 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from ..core.dataclass import base_dataclass
+from ..core.dataclass import Replaceable, base_dataclass
 from ..core.dtype_facts import SIZE_DTYPE
 from ..core.protocol import Xtructurable, XtructurableT
 from ..core.xtructure_numpy.array_ops import _where_no_broadcast
@@ -63,7 +63,7 @@ def _bgpq_build_jit(
 
 
 @base_dataclass(static_fields=("max_size", "branch_size", "batch_size"))
-class BGPQ(Generic[XtructurableT]):
+class BGPQ(Replaceable, Generic[XtructurableT]):
     """
     Batched GPU Priority Queue implementation.
     Optimized for parallel operations on GPU using JAX.
