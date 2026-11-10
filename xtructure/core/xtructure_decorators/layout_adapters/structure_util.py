@@ -1,4 +1,4 @@
-from typing import Sequence, Type, TypeVar
+from typing import Any, Sequence, Type, TypeVar
 
 import jax
 import jax.numpy as jnp
@@ -166,7 +166,7 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
         if key is None:
             key = jax.random.PRNGKey(0)
 
-        data = {}
+        data: dict[str, Any] = {}
         keys = jax.random.split(key, len(field_plans))
 
         for i, field_plan in enumerate(field_plans):
@@ -174,10 +174,9 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
             field_name = field_plan.name
             target_shape = shape + field_plan.storage_intrinsic_shape
 
-            if field_plan.random_kind == "nested":
-                nested_class = field_plan.nested_class
-                # Recursively call random for the nested xtructure_data class.
-                data[field_name] = nested_class.random(shape=target_shape, key=field_key)
+            if field_plan.nested_type is not None:
+                # Recursively call random for the nested xtructure dataclass.
+                data[field_name] = field_plan.nested_type.random(shape=target_shape, key=field_key)
             elif field_plan.random_kind == "bits_int":
                 generated_bits = jax.random.bits(
                     field_key, shape=target_shape, dtype=field_plan.random_bits_dtype

@@ -25,26 +25,6 @@ if TYPE_CHECKING:
     from .shape_ops import squeeze as squeeze
     from .unique_ops import unique_mask as unique_mask
 
-__all__ = [
-    "concat",
-    "pad",
-    "stack",
-    "take",
-    "take_along_axis",
-    "tile",
-    "split",
-    "expand_dims",
-    "squeeze",
-    "repeat",
-    "where",
-    "where_no_broadcast",
-    "unique_mask",
-    "update_on_condition",
-    "full_like",
-    "zeros_like",
-    "ones_like",
-]
-
 _EXPORTS = {
     "concat": (".batch_ops", "concat"),
     "pad": (".batch_ops", "pad"),
@@ -64,6 +44,7 @@ _EXPORTS = {
     "zeros_like": (".fill_ops", "zeros_like"),
     "ones_like": (".fill_ops", "ones_like"),
 }
+__all__ = list(_EXPORTS)
 
 
 def __getattr__(name: str):

@@ -3,12 +3,7 @@ import jax.numpy as jnp
 import pytest
 
 from tests.dataclass.fixtures import MatrixData, NestedData, SimpleData, VectorData
-from xtructure import (
-    FieldDescriptor,
-    StructuredType,
-    Xtructurable,
-    is_xtructure_dataclass_instance,
-)
+from xtructure import StructuredType, Xtructurable
 
 
 def test_dataclass_default():
@@ -136,23 +131,11 @@ def test_ndim_semantics():
 
 
 # Author: tinker495.
-# Xtructurable is the nominal base that applies the xtructure dataclass
-# transformation through inheritance (class X(Xtructurable): ...), so
-# isinstance(x, Xtructurable) is an ordinary subclass check: instances of
-# inheriting classes pass, class objects never do. Classes still using the
-# transitional @xtructure_dataclass decorator (SimpleData) no longer pass
-# isinstance; is_xtructure_dataclass_instance is the check that accepts both forms
-# during the migration. Plain objects pass neither check.
+# Inheriting Xtructurable is the only way to declare an xtructure dataclass, so
+# isinstance(x, Xtructurable) tells whether a value is one: instances of a
+# declared class (SimpleData) pass, while class objects and plain objects do not.
 def test_xtructurable_isinstance():
-    class InheritedData(Xtructurable):
-        id: FieldDescriptor.scalar(dtype=jnp.uint32)
-
-    assert isinstance(InheritedData.default(), Xtructurable)
-    assert is_xtructure_dataclass_instance(InheritedData.default())
-    assert not isinstance(InheritedData, Xtructurable)
-
-    assert not isinstance(SimpleData.default(), Xtructurable)
-    assert is_xtructure_dataclass_instance(SimpleData.default())
+    assert isinstance(SimpleData.default(), Xtructurable)
     assert not isinstance(SimpleData, Xtructurable)
 
     class Plain:
@@ -160,7 +143,6 @@ def test_xtructurable_isinstance():
 
     assert not isinstance(Plain, Xtructurable)
     assert not isinstance(Plain(), Xtructurable)
-    assert not is_xtructure_dataclass_instance(Plain())
 
 
 def test_reshape():

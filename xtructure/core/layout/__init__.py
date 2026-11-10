@@ -10,12 +10,11 @@ if TYPE_CHECKING:
     from .instance_layout import get_instance_layout as get_instance_layout
     from .type_layout import get_type_layout as get_type_layout
 
-__all__ = ["get_instance_layout", "get_type_layout"]
-
 _EXPORTS = {
     "get_instance_layout": (".instance_layout", "get_instance_layout"),
     "get_type_layout": (".type_layout", "get_type_layout"),
 }
+__all__ = list(_EXPORTS)
 
 
 def __getattr__(name: str):

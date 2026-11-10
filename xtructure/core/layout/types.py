@@ -8,9 +8,12 @@ from __future__ import annotations
 
 import dataclasses
 import enum
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from xtructure.core.structuredtype import StructuredType
+
+if TYPE_CHECKING:
+    from xtructure.core.protocol import Xtructurable
 
 AdapterFieldKind = Literal["primitive", "nested"]
 AdapterRandomKind = Literal[
@@ -39,7 +42,7 @@ class FieldLayout:
     dtype: Any
     intrinsic_shape: tuple[int, ...]
     is_nested: bool
-    nested_type: type | None
+    nested_type: type[Xtructurable] | None
     bits: int | None
     packed_bits: int | None
     unpacked_dtype: Any | None
@@ -68,7 +71,7 @@ class AdapterFieldPlan:
     dotted_path: str
     field_kind: AdapterFieldKind
     declared_dtype: Any | None
-    nested_type: type | None
+    nested_type: type[Xtructurable] | None
     intrinsic_shape: tuple[int, ...]
     logical_intrinsic_shape: tuple[int, ...]
     storage_intrinsic_shape: tuple[int, ...]
@@ -80,13 +83,6 @@ class AdapterFieldPlan:
     random_view_as_signed: bool = False
     random_gen_dtype: Any | None = None
     is_primitive_jax_dtype: bool = False
-
-    @property
-    def nested_class(self) -> type:
-        """The nested xtructure type of a ``field_kind == \"nested\"`` field."""
-        if self.nested_type is None:
-            raise TypeError(f"Field '{self.dotted_path}' is not a nested xtructure field.")
-        return self.nested_type
 
 
 @dataclasses.dataclass(frozen=True)
@@ -121,7 +117,7 @@ class AggregateViewFieldLayout:
     name: str
     path: tuple[str, ...]
     is_nested: bool
-    nested_type: type | None
+    nested_type: type[Xtructurable] | None
     unpack_dtype: Any | None
     unpacked_shape: tuple[int, ...]
 

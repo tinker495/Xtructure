@@ -42,10 +42,9 @@ def test_implicit_field_descriptor_fill_value_comes_from_field_layout():
 
     assert descriptor.fill_value is None
 
-    from xtructure import xtructure_dataclass
+    from xtructure import Xtructurable
 
-    @xtructure_dataclass(bitpack="off")
-    class LayoutAuthoritativeFill:
+    class LayoutAuthoritativeFill(Xtructurable, bitpack="off"):
         value: descriptor
 
     layout = get_type_layout(LayoutAuthoritativeFill)
@@ -59,10 +58,9 @@ def test_packed_tensor_leaves_packed_data_kind_to_type_layout():
     assert FieldDescriptor.packed_tensor(shape=(3,), packed_bits=8).unpacked_dtype is None
     assert FieldDescriptor.packed_tensor(shape=(3,), packed_bits=12).unpacked_dtype is None
 
-    from xtructure import xtructure_dataclass
+    from xtructure import Xtructurable
 
-    @xtructure_dataclass(bitpack="field")
-    class PackedDataKindLayout:
+    class PackedDataKindLayout(Xtructurable, bitpack="field"):
         flags: FieldDescriptor.packed_tensor(shape=(3,), packed_bits=1)
         byteish: FieldDescriptor.packed_tensor(shape=(3,), packed_bits=8)
         wide: FieldDescriptor.packed_tensor(shape=(3,), packed_bits=12)

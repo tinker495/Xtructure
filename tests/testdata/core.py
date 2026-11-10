@@ -1,21 +1,18 @@
 import jax.numpy as jnp
 
-from xtructure import FieldDescriptor, xtructure_dataclass
+from xtructure import FieldDescriptor, Xtructurable
 
 
-@xtructure_dataclass
-class SimpleData:
+class SimpleData(Xtructurable):
     id: FieldDescriptor.scalar(dtype=jnp.uint32)
     value: FieldDescriptor.scalar(dtype=jnp.float32)
 
 
-@xtructure_dataclass
-class VectorData:
+class VectorData(Xtructurable):
     position: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))
     velocity: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))
 
 
-@xtructure_dataclass
-class NestedData:
+class NestedData(Xtructurable):
     simple: FieldDescriptor.scalar(dtype=SimpleData)
     vector: FieldDescriptor.scalar(dtype=VectorData)

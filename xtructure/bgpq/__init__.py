@@ -7,9 +7,8 @@ from xtructure._lazy_imports import lazy_dir, load_lazy_export
 if TYPE_CHECKING:
     from .bgpq import BGPQ as BGPQ
 
-__all__ = ["BGPQ"]
-
 _EXPORTS = {"BGPQ": (".bgpq", "BGPQ")}
+__all__ = list(_EXPORTS)
 
 
 def __getattr__(name: str):

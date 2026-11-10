@@ -5,12 +5,11 @@ A JAX-compatible batched Stack data structure, designed for LIFO (Last-In, First
 ```python
 import jax
 import jax.numpy as jnp
-from xtructure import Stack, xtructure_dataclass, FieldDescriptor
+from xtructure import Stack, Xtructurable, FieldDescriptor
 
 
 # Define a data structure to store in the stack
-@xtructure_dataclass
-class Point:
+class Point(Xtructurable):
     x: FieldDescriptor.scalar(dtype=jnp.uint32)
     y: FieldDescriptor.scalar(dtype=jnp.uint32)
 

@@ -17,7 +17,7 @@ A Python package providing JAX-optimized data structures, including a batched pr
 
 ## Structure Layout Flexibility
 
-Xtructure stores every `@xtructure_dataclass` in **Structure of Arrays (SoA)**
+Xtructure stores every xtructure dataclass (an `Xtructurable` subclass) in **Structure of Arrays (SoA)**
 form for JAX performance, yet exposes **Array of Structures (AoS)** semantics to
 callers. See [Structure Layout Flexibility](https://tinker495.github.io/Xtructure/layout_flexibility.html) for the
 full rationale, breakdown of supporting utilities, and a worked example.
@@ -36,7 +36,7 @@ For local development, run `uv sync --group dev`, then use `uv run pytest`.
 
 Detailed documentation on how to use Xtructure is available at [https://tinker495.github.io/Xtructure/](https://tinker495.github.io/Xtructure/).
 
-*   **[Core Concepts](https://tinker495.github.io/Xtructure/core_concepts.html)**: Learn how to define custom data structures using `@xtructure_dataclass` and `FieldDescriptor`.
+*   **[Core Concepts](https://tinker495.github.io/Xtructure/core_concepts.html)**: Learn how to define custom data structures by subclassing `Xtructurable` and `FieldDescriptor`.
 *   **[Stack Usage](https://tinker495.github.io/Xtructure/stack.html)**: Guide to using the Stack data structure.
 *   **[Queue Usage](https://tinker495.github.io/Xtructure/queue.html)**: Guide to using the Queue data structure.
 *   **[BGPQ Usage](https://tinker495.github.io/Xtructure/bgpq.html)**: Guide to using the Batched GPU Priority Queue.
@@ -52,14 +52,13 @@ Quick examples can still be found below for a brief overview.
 import jax
 import jax.numpy as jnp
 
-from xtructure import xtructure_dataclass, FieldDescriptor
+from xtructure import Xtructurable, FieldDescriptor
 from xtructure import HashTable, BGPQ
 from xtructure import numpy as xnp  # Recommended import method
 
 
-# Define a custom data structure using xtructure_dataclass
-@xtructure_dataclass
-class MyDataValue:
+# Define a custom data structure by subclassing Xtructurable
+class MyDataValue(Xtructurable):
     a: FieldDescriptor.scalar(dtype=jnp.uint8)
     b: FieldDescriptor.tensor(dtype=jnp.uint32, shape=(1, 2))
 

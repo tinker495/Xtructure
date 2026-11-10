@@ -2,14 +2,13 @@ import chex
 import jax.numpy as jnp
 import pytest
 
-from xtructure import FieldDescriptor, xtructure_dataclass
+from xtructure import FieldDescriptor, Xtructurable
 from xtructure.core.xtructure_decorators.layout_adapters import (
     aggregate_bitpack as aggregate_bitpack_module,
 )
 
 
-@xtructure_dataclass(validate=True, bitpack="aggregate")
-class AggState:
+class AggState(Xtructurable, validate=True, bitpack="aggregate"):
     # 1-bit flags
     flags: FieldDescriptor.tensor(dtype=jnp.bool_, shape=(17,), bits=1, fill_value=False)
     # 3-bit values in [0,7]
@@ -45,7 +44,9 @@ def test_aggregate_pack_roundtrip_single():
 
 def test_aggregate_bitpack_legacy_kwarg_removed():
     with pytest.raises(TypeError, match="aggregate_bitpack"):
-        xtructure_dataclass(aggregate_bitpack=True)
+
+        class LegacyKwarg(Xtructurable, aggregate_bitpack=True):
+            pass
 
 
 def test_aggregate_pack_roundtrip_batched():
@@ -72,8 +73,7 @@ def test_aggregate_pack_roundtrip_batched():
     chex.assert_trees_all_equal(o, s)
 
 
-@xtructure_dataclass(validate=True)
-class AggStateAuto:
+class AggStateAuto(Xtructurable, validate=True):
     # Same structure as AggState, but rely on auto aggregate activation (all fields have bits, no nesting)
     flags: FieldDescriptor.tensor(dtype=jnp.bool_, shape=(17,), bits=1, fill_value=False)
     faces: FieldDescriptor.tensor(dtype=jnp.uint8, shape=(6, 9), bits=3, fill_value=0)
@@ -155,16 +155,14 @@ def test_aggregate_unpack_field_declared_dtype_uses_layout_cast_policy(monkeypat
     assert context == "unpacking AggStatePacked.codes"
 
 
-@xtructure_dataclass(validate=True)
-class InnerState:
+class InnerState(Xtructurable, validate=True):
     # 4-bit values
     a: FieldDescriptor.tensor(dtype=jnp.uint8, shape=(6,), bits=4, fill_value=0)
     # 12-bit values
     codes: FieldDescriptor.tensor(dtype=jnp.uint16, shape=(5,), bits=12, fill_value=0)
 
 
-@xtructure_dataclass(validate=True, bitpack="aggregate")
-class OuterState:
+class OuterState(Xtructurable, validate=True, bitpack="aggregate"):
     inner: FieldDescriptor.scalar(dtype=InnerState)
     flags: FieldDescriptor.tensor(dtype=jnp.bool_, shape=(7,), bits=1, fill_value=False)
 

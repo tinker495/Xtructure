@@ -445,7 +445,7 @@ def build_aggregate_bitpack_layout(
         owner_view_fields = view_fields_by_owner.setdefault(owner_type, [])
         for field in cls_fields:
             path = prefix + (field.name,)
-            if field.is_nested:
+            if field.nested_type is not None:
                 if field.intrinsic_shape != ():
                     return (
                         "aggregate_bitpack currently supports only scalar nested fields. "
@@ -463,7 +463,7 @@ def build_aggregate_bitpack_layout(
                         unpacked_shape=(),
                     )
                 )
-                nested_layout = get_type_layout_fn(field.nested_type)  # type: ignore[arg-type]
+                nested_layout = get_type_layout_fn(field.nested_type)
                 nested_reason = walk(nested_layout.cls, nested_layout.fields, path)
                 if nested_reason is not None:
                     return nested_reason

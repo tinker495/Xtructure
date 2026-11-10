@@ -23,9 +23,8 @@ class Xtructurable:
     ``bitpack`` are class keywords) and, because the injected members are declared
     here, exposes them to type checkers, which ignore class-decorator return types.
     The declarations exist only under ``TYPE_CHECKING``; at runtime the
-    transformation installs the real members. ``isinstance(x, Xtructurable)`` is an
-    ordinary subclass check; ``is_xtructure_dataclass_instance`` also accepts
-    classes still using the transitional ``xtructure_dataclass`` decorator.
+    transformation installs the real members. ``isinstance(x, Xtructurable)`` tells
+    whether a value is an xtructure dataclass.
     """
 
     def __init_subclass__(
@@ -33,16 +32,14 @@ class Xtructurable:
         *,
         validate: bool = False,
         bitpack: Literal["auto", "aggregate", "field", "off"] = "auto",
-        **kwargs: Any,
     ) -> None:
-        super().__init_subclass__(**kwargs)
+        super().__init_subclass__()
         from .xtructure_decorators import install_xtructure_members
 
         installed = install_xtructure_members(cls, validate=validate, bitpack=bitpack)
         assert installed is cls, "the xtructure transformation must work in place"
 
     if TYPE_CHECKING:
-        is_xtructed: ClassVar[bool]
         default_dtype: ClassVar[Any]
 
         @property
