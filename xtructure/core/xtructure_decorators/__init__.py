@@ -12,7 +12,6 @@ from xtructure.core.layout.type_layout import get_type_layout
 from xtructure.core.protocol import Xtructurable
 
 T = TypeVar("T")
-X = TypeVar("X", bound=Xtructurable)
 
 
 def _adapter(module_name: str, attr_name: str):
@@ -70,7 +69,7 @@ def _can_reuse_layout_cache(old_layout, type_layout, instance, changed_names: se
     return True
 
 
-def _install_layout_cache_replace(cls: Type[X], *, validate: bool) -> Type[X]:
+def _install_layout_cache_replace(cls: Type[Xtructurable], *, validate: bool) -> None:
     """Install a Layout Cache-aware replace fast path for xtructure dataclasses."""
     type_layout = get_type_layout(cls)
     field_names = type_layout.field_names
@@ -105,12 +104,11 @@ def _install_layout_cache_replace(cls: Type[X], *, validate: bool) -> Type[X]:
         return replacement
 
     setattr(cls, "replace", _layout_cache_replace)
-    return cls
 
 
 def install_xtructure_members(
     target_cls: Type[T], *, validate: bool = False, bitpack: str = "auto"
-) -> Type[T]:
+) -> None:
     """Turn ``target_cls`` into an xtructure dataclass in place.
 
     Called by ``Xtructurable.__init_subclass__``; subclass ``Xtructurable`` instead
@@ -124,11 +122,7 @@ def install_xtructure_members(
     target_cls = _inject_layout_cache_post_init(target_cls)
     cls = base_dataclass(target_cls, static_fields=("_layout_cache",))
 
-    # Ensure class has a default method for initialization
     cls = _adapter(".layout_adapters.default", "add_default_method")(cls)
-
-    # Ensure class has a default method for initialization
-    assert hasattr(cls, "default"), "xtructureclass must have a default method."
 
     # add shape and dtype and len
     cls = _adapter(".layout_adapters.shape", "add_shape_dtype_len")(cls)
@@ -179,6 +173,4 @@ def install_xtructure_members(
 
     # Keep replace() from paying a fresh Layout Cache build when the
     # replacement preserves primitive field shape/dtype signatures.
-    cls = _install_layout_cache_replace(cls, validate=validate)
-
-    return cls
+    _install_layout_cache_replace(cls, validate=validate)

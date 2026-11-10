@@ -20,8 +20,6 @@ AdapterRandomKind = Literal[
     "bool",
     "bits_int",
     "float",
-    "nested",
-    "other",
 ]
 
 
@@ -41,7 +39,6 @@ class FieldLayout:
     path: tuple[str, ...]
     dtype: Any
     intrinsic_shape: tuple[int, ...]
-    is_nested: bool
     nested_type: type[Xtructurable] | None
     bits: int | None
     packed_bits: int | None
@@ -50,6 +47,10 @@ class FieldLayout:
     fill_value: Any
     fill_value_factory: Any
     validator: Any
+
+    @property
+    def is_nested(self) -> bool:
+        return self.nested_type is not None
 
     @property
     def is_packed(self) -> bool:
@@ -69,7 +70,6 @@ class AdapterFieldPlan:
     name: str
     path: tuple[str, ...]
     dotted_path: str
-    field_kind: AdapterFieldKind
     declared_dtype: Any | None
     nested_type: type[Xtructurable] | None
     intrinsic_shape: tuple[int, ...]
@@ -78,11 +78,15 @@ class AdapterFieldPlan:
     fill_value: Any
     fill_value_factory: Any
     validator: Any
-    random_kind: AdapterRandomKind
+    random_kind: AdapterRandomKind | None
     random_bits_dtype: Any | None = None
     random_view_as_signed: bool = False
     random_gen_dtype: Any | None = None
     is_primitive_jax_dtype: bool = False
+
+    @property
+    def field_kind(self) -> AdapterFieldKind:
+        return "nested" if self.nested_type is not None else "primitive"
 
 
 @dataclasses.dataclass(frozen=True)

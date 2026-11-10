@@ -41,12 +41,12 @@ class Xtructurable:
         *,
         validate: bool = False,
         bitpack: Literal["auto", "aggregate", "field", "off"] = "auto",
+        **kwargs: Any,
     ) -> None:
-        super().__init_subclass__()
+        super().__init_subclass__(**kwargs)
         from .xtructure_decorators import install_xtructure_members
 
-        installed = install_xtructure_members(cls, validate=validate, bitpack=bitpack)
-        assert installed is cls, "the xtructure transformation must work in place"
+        install_xtructure_members(cls, validate=validate, bitpack=bitpack)
 
     if TYPE_CHECKING:
         default_dtype: ClassVar[Any]
