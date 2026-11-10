@@ -13,7 +13,7 @@ from typing import (
     Sequence,
 )
 from typing import Tuple as TypingTuple
-from typing import TypeVar
+from typing import TypeVar, get_origin
 
 import chex
 import jax
@@ -41,7 +41,13 @@ def _require_view_fields(cls: type) -> None:
     for base in cls.__mro__[1:]:
         if base not in _ABSTRACT_VIEWS:
             continue
-        missing = sorted(set(inspect.get_annotations(base)) - declared)
+        missing = sorted(
+            name
+            for name, annotation in inspect.get_annotations(base, eval_str=True).items()
+            if annotation is not ClassVar
+            and get_origin(annotation) is not ClassVar
+            and name not in declared
+        )
         if missing:
             raise TypeError(
                 f"{cls.__name__} subclasses the abstract view {base.__name__} but does not "
@@ -85,13 +91,13 @@ class Xtructurable:
         cls,
         *,
         abstract: bool = False,
-        validate: bool = False,
-        bitpack: Literal["auto", "aggregate", "field", "off"] = "auto",
+        validate: bool | None = None,
+        bitpack: Literal["auto", "aggregate", "field", "off"] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init_subclass__(**kwargs)
         if abstract:
-            if validate or bitpack != "auto":
+            if validate is not None or bitpack is not None:
                 raise TypeError(
                     f"{cls.__name__} is an abstract view; validate/bitpack apply to the "
                     "concrete subclasses that redeclare its fields"
@@ -101,7 +107,11 @@ class Xtructurable:
             return
         from .xtructure_decorators import install_xtructure_members
 
-        install_xtructure_members(cls, validate=validate, bitpack=bitpack)
+        install_xtructure_members(
+            cls,
+            validate=False if validate is None else validate,
+            bitpack="auto" if bitpack is None else bitpack,
+        )
         _require_view_fields(cls)
 
     if TYPE_CHECKING:
