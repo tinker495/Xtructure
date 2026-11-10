@@ -102,8 +102,10 @@ When a class can only be built at runtime (its shapes depend on runtime values),
 its field types once in an abstract view, `class BoardState(Xtructurable, abstract=True):
 board: jax.Array`, and subclass the view inside the factory with the real
 `FieldDescriptor`s; annotate the factory as returning `type[BoardState]`. A view is not
-transformed, so it cannot be instantiated; packed-field accessors such as
-`board_unpacked` can be declared on it under `TYPE_CHECKING`.
+transformed and exists only for annotations: instantiating it raises `TypeError`, it takes
+no `validate`/`bitpack` options, and a subclass that leaves one of its fields undeclared
+raises `TypeError` when the class is created. Packed-field accessors such as
+`board_unpacked` can be declared on a view under `TYPE_CHECKING`.
 
 `isinstance(x, Xtructurable)` tells whether `x` is an xtructure dataclass instance.
 

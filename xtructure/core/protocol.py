@@ -1,4 +1,7 @@
 import builtins
+import dataclasses
+import inspect
+import weakref
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -19,6 +22,31 @@ from typing_extensions import dataclass_transform
 from .structuredtype import StructuredType
 
 T_co = TypeVar("T_co", covariant=True)
+
+
+# Abstract views (``abstract=True``): annotation-only bases of runtime-built classes.
+_ABSTRACT_VIEWS: "weakref.WeakSet[type]" = weakref.WeakSet()
+
+
+def _reject_view_instantiation(self: object, *args: Any, **kwargs: Any) -> None:
+    raise TypeError(
+        f"{type(self).__name__} is an abstract view (abstract=True) and cannot be "
+        "instantiated; instantiate a concrete subclass"
+    )
+
+
+def _require_view_fields(cls: type) -> None:
+    """Fail at class creation when ``cls`` leaves a field of an abstract view base undeclared."""
+    declared = {field.name for field in dataclasses.fields(cls)}
+    for base in cls.__mro__[1:]:
+        if base not in _ABSTRACT_VIEWS:
+            continue
+        missing = sorted(set(inspect.get_annotations(base)) - declared)
+        if missing:
+            raise TypeError(
+                f"{cls.__name__} subclasses the abstract view {base.__name__} but does not "
+                f"declare its field(s) {', '.join(missing)}"
+            )
 
 
 @dataclass_transform()
@@ -47,6 +75,10 @@ class Xtructurable:
                 board: Annotated[jax.Array, FieldDescriptor.tensor(dtype=jnp.uint8, shape=(n,))]
 
             return State
+
+    A view exists only for annotations: instantiating it raises ``TypeError``, it
+    takes no ``validate``/``bitpack`` options, and every concrete subclass must
+    redeclare all of its fields with a ``FieldDescriptor``.
     """
 
     def __init_subclass__(
@@ -58,12 +90,19 @@ class Xtructurable:
     ) -> None:
         super().__init_subclass__()
         if abstract:
-            # A typed view: its field annotations exist for type checkers only.
+            if validate or bitpack != "auto":
+                raise TypeError(
+                    f"{cls.__name__} is an abstract view; validate/bitpack apply to the "
+                    "concrete subclasses that redeclare its fields"
+                )
+            setattr(cls, "__init__", _reject_view_instantiation)
+            _ABSTRACT_VIEWS.add(cls)
             return
         from .xtructure_decorators import install_xtructure_members
 
         installed = install_xtructure_members(cls, validate=validate, bitpack=bitpack)
         assert installed is cls, "the xtructure transformation must work in place"
+        _require_view_fields(cls)
 
     if TYPE_CHECKING:
         default_dtype: ClassVar[Any]

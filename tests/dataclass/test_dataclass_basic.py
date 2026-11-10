@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import pytest
 
 from tests.dataclass.fixtures import MatrixData, NestedData, SimpleData, VectorData
-from xtructure import StructuredType, Xtructurable
+from xtructure import FieldDescriptor, StructuredType, Xtructurable
 
 
 def test_dataclass_default():
@@ -170,6 +170,41 @@ def test_xtructurable_isinstance():
 
     assert not isinstance(Plain, Xtructurable)
     assert not isinstance(Plain(), Xtructurable)
+
+
+# Author: tinker495.
+# An abstract view (abstract=True) only declares field types for annotations of
+# classes built at runtime. It must fail fast instead of producing half-built
+# objects: instantiating the view raises TypeError, validate/bitpack options on
+# it raise TypeError (they belong to the concrete subclass), and a concrete
+# subclass that leaves one of the view's fields undeclared raises TypeError when
+# the class is created. A complete subclass is an ordinary xtructure dataclass
+# whose instances are also instances of the view.
+def test_abstract_view_semantics():
+    class BoardView(Xtructurable, abstract=True):
+        board: jax.Array
+
+    with pytest.raises(TypeError, match="abstract view"):
+        BoardView()
+    with pytest.raises(TypeError, match="abstract view"):
+        BoardView(board=jnp.zeros((3,), dtype=jnp.uint8))
+
+    with pytest.raises(TypeError, match="abstract view"):
+
+        class BitpackedView(Xtructurable, abstract=True, bitpack="off"):
+            board: jax.Array
+
+    with pytest.raises(TypeError, match="board"):
+
+        class MissingField(BoardView):
+            extra: FieldDescriptor.scalar(dtype=jnp.uint8)
+
+    class Board(BoardView):
+        board: FieldDescriptor.tensor(dtype=jnp.uint8, shape=(3,))
+
+    boards = Board.default(shape=(2,))
+    assert isinstance(boards, BoardView)
+    assert boards.board.shape == (2, 3)
 
 
 def test_reshape():
