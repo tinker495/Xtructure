@@ -3,6 +3,7 @@
 import dataclasses
 import functools
 import sys
+from typing import TYPE_CHECKING, Any, Self
 
 import jax
 from absl import logging
@@ -11,6 +12,19 @@ from typing_extensions import dataclass_transform  # pytype: disable=not-support
 FrozenInstanceError = dataclasses.FrozenInstanceError
 _RESERVED_DCLS_FIELD_NAMES = frozenset(("from_tuple", "replace", "to_tuple"))
 _TRANSIENT_STATIC_FIELDS = frozenset(("_layout_cache",))
+
+
+class Replaceable:
+    """Base for ``base_dataclass`` classes: declares the ``replace`` method it installs.
+
+    Class-decorator additions are invisible to type checkers; inheriting this
+    exposes ``replace`` through the MRO. It has no runtime members.
+    """
+
+    if TYPE_CHECKING:
+
+        def replace(self, **changes: Any) -> Self:
+            ...
 
 
 @dataclass_transform()

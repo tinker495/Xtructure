@@ -17,8 +17,8 @@ from xtructure.core.dtype_facts import (
     unsigned_integer_dtype_for,
 )
 from xtructure.core.field_descriptors import FieldDescriptor, get_field_descriptors
+from xtructure.core.protocol import Xtructurable
 from xtructure.core.shape_utils import normalize_shape
-from xtructure.core.type_utils import is_xtructure_dataclass_type
 
 from .bitpack import (
     build_aggregate_bitpack_layout,
@@ -35,7 +35,7 @@ from .types import (
 
 
 def _field_layout(name: str, descriptor: FieldDescriptor, path: tuple[str, ...]) -> FieldLayout:
-    is_nested = is_xtructure_dataclass_type(descriptor.dtype)
+    is_nested = isinstance(descriptor.dtype, type) and issubclass(descriptor.dtype, Xtructurable)
     fill_value = _layout_fill_value(descriptor, is_nested=is_nested)
     return FieldLayout(
         name=name,
@@ -104,8 +104,8 @@ def _build_leaves(
     for field in fields:
         path = prefix + (field.name,)
         field_parent_shape = parent_intrinsic_shape + field.intrinsic_shape
-        if field.is_nested:
-            nested_layout = get_type_layout(field.nested_type)  # type: ignore[arg-type]
+        if field.nested_type is not None:
+            nested_layout = get_type_layout(field.nested_type)
             leaves.extend(
                 _build_leaves(
                     nested_layout.fields,

@@ -3,11 +3,37 @@
 from __future__ import annotations
 
 import sys
+import types
+from typing import Any, Literal
+
+from xtructure.core.protocol import Xtructurable
 
 GENERATED_CLASS_ATTR = "__xtructure_generated_class__"
 GENERATED_ROLE_ATTR = "__xtructure_generated_role__"
 GENERATED_PACKED_ROLE = "aggregate_packed"
 GENERATED_UNPACKED_VIEW_ROLE = "aggregate_unpacked_view"
+
+
+def make_generated_class(
+    name: str,
+    module: str,
+    annotations: dict[str, Any],
+    *,
+    role: str,
+    bitpack: Literal["auto", "aggregate", "field", "off"] = "auto",
+) -> type:
+    """Create and register an ``Xtructurable`` subclass with the given field descriptors.
+
+    Returned as ``type``: its fields exist only at runtime.
+    """
+
+    def fill_namespace(namespace: dict[str, Any]) -> None:
+        namespace["__module__"] = module
+        namespace["__annotations__"] = annotations
+
+    cls = types.new_class(name, (Xtructurable,), {"bitpack": bitpack}, fill_namespace)
+    register_generated_class(cls, role=role)
+    return cls
 
 
 def register_generated_class(cls: type, *, role: str) -> type:

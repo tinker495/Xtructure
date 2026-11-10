@@ -9,7 +9,7 @@ import chex
 import jax
 import jax.numpy as jnp
 
-from ..core.dataclass import base_dataclass
+from ..core.dataclass import Replaceable, base_dataclass
 from ..core.dtype_facts import SIZE_DTYPE
 from ..core.protocol import XtructurableT
 from .insert import _hashtable_insert_jit, _hashtable_parallel_insert_jit
@@ -62,7 +62,7 @@ def _hashtable_build_jit(
     frozen=True,
     static_fields=("seed", "capacity", "_capacity", "bucket_size", "max_probes"),
 )
-class HashTable(Generic[XtructurableT]):
+class HashTable(Replaceable, Generic[XtructurableT]):
     """
     Bucketed Double Hash Table Implementation
 

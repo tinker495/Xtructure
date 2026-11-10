@@ -5,12 +5,11 @@ A priority queue optimized for batched operations on GPUs. It maintains items so
 ```python
 import jax
 import jax.numpy as jnp
-from xtructure import BGPQ, xtructure_dataclass, FieldDescriptor
+from xtructure import BGPQ, Xtructurable, FieldDescriptor
 
 
 # Define a data structure for BGPQ values (as an example from core_concepts.md)
-@xtructure_dataclass
-class MyHeapItem:
+class MyHeapItem(Xtructurable):
     task_id: FieldDescriptor.scalar(dtype=jnp.int32)
     payload: FieldDescriptor.tensor(dtype=jnp.float64, shape=(2, 2))
 
@@ -77,7 +76,7 @@ else:
 *   **`BGPQ.build(total_size, batch_size, value_class, key_dtype=jnp.float16)`**:
     *   `total_size`: Desired maximum capacity. The actual `max_size` of the queue might be slightly larger to be an exact multiple of `batch_size` (calculated as `ceil(total_size / batch_size) * batch_size`).
     *   `batch_size`: The fixed size for all batch operations.
-    *   `value_class`: The *class* of your custom `@xtructure_dataclass` used for storing values in the queue. This class must have a `.default()` method.
+    *   `value_class`: The *class* of your custom `Xtructurable` subclass used for storing values in the queue. This class must have a `.default()` method.
     *   `key_dtype`: Dtype for keys; defaults to `jnp.float16`.
 *   **`BGPQ.make_batched(keys, values, batch_size)`**: (Static method)
     *   A crucial helper to prepare data for `BGPQ.insert()`. It takes a chunk of keys and corresponding values and pads them to the required `batch_size`.

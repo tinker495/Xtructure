@@ -1,27 +1,22 @@
 from __future__ import annotations
 
 import inspect
-from typing import Any, Iterable, Sequence, TypeVar, overload
+from typing import Any, Iterable, Sequence, overload
 
 import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike, DTypeLike
 
-from xtructure.core.protocol import Xtructurable
-from xtructure.core.type_utils import (
-    is_xtructure_dataclass_instance as _is_xtructurable,
-)
+from xtructure.core.protocol import Xtructurable, XtructurableT
 
 from . import dataclass_ops as _dc
 from .array_ops import _update_array_on_condition
-
-_XtructureT = TypeVar("_XtructureT", bound=Xtructurable)
 
 
 def _check_homogeneous_inputs(func_name: str, arrays_list: list[Any]) -> bool:
     if not arrays_list:
         raise ValueError(f"Cannot {func_name} empty list.")
-    is_dataclass = [_is_xtructurable(arr) for arr in arrays_list]
+    is_dataclass = [isinstance(arr, Xtructurable) for arr in arrays_list]
     if any(is_dataclass) and not all(is_dataclass):
         raise TypeError(f"{func_name} inputs must be all xtructure dataclasses or all arrays.")
     return all(is_dataclass)
@@ -66,7 +61,7 @@ def _like_kwargs(
 
 
 @overload
-def concat(arrays: Iterable[_XtructureT], /, *, axis: int | None = 0) -> _XtructureT:
+def concat(arrays: Iterable[XtructurableT], /, *, axis: int | None = 0) -> XtructurableT:
     ...
 
 
@@ -86,8 +81,8 @@ def concat(arrays, /, *, axis: int | None = 0):
 
 @overload
 def concatenate(
-    arrays: Iterable[_XtructureT], axis: int | None = 0, dtype: None = None
-) -> _XtructureT:
+    arrays: Iterable[XtructurableT], axis: int | None = 0, dtype: None = None
+) -> XtructurableT:
     ...
 
 
@@ -111,8 +106,8 @@ def concatenate(arrays, axis: int | None = 0, dtype: Any | None = None) -> Xtruc
 
 @overload
 def pad(
-    array: _XtructureT, pad_width: Any, mode: str | Any = "constant", **kwargs: Any
-) -> _XtructureT:
+    array: XtructurableT, pad_width: Any, mode: str | Any = "constant", **kwargs: Any
+) -> XtructurableT:
     ...
 
 
@@ -122,15 +117,15 @@ def pad(array: ArrayLike, pad_width: Any, mode: str | Any = "constant", **kwargs
 
 
 def pad(array, pad_width, mode: str | Any = "constant", **kwargs):
-    if _is_xtructurable(array):
+    if isinstance(array, Xtructurable):
         return _dc.pad(array, pad_width, mode=mode, **kwargs)
     return jnp.pad(array, pad_width, mode=mode, **kwargs)
 
 
 @overload
 def stack(
-    arrays: Iterable[_XtructureT], axis: int = 0, out: None = None, dtype: None = None
-) -> _XtructureT:
+    arrays: Iterable[XtructurableT], axis: int = 0, out: None = None, dtype: None = None
+) -> XtructurableT:
     ...
 
 
@@ -151,8 +146,8 @@ def stack(arrays, axis: int = 0, out: None = None, dtype: Any | None = None):
 
 @overload
 def reshape(
-    a: _XtructureT, shape: Any, order: str = "C", *, copy: None = None, out_sharding: None = None
-) -> _XtructureT:
+    a: XtructurableT, shape: Any, order: str = "C", *, copy: None = None, out_sharding: None = None
+) -> XtructurableT:
     ...
 
 
@@ -169,7 +164,7 @@ def reshape(
 
 
 def reshape(a, shape, order: str = "C", *, copy: bool | None = None, out_sharding=None):
-    if _is_xtructurable(a):
+    if isinstance(a, Xtructurable):
         if order != "C":
             raise ValueError("xtructure reshape only supports order='C'.")
         _reject_dataclass_kwargs("reshape", copy=copy, out_sharding=out_sharding)
@@ -179,7 +174,7 @@ def reshape(a, shape, order: str = "C", *, copy: bool | None = None, out_shardin
 
 
 @overload
-def ravel(a: _XtructureT, order: str = "C", *, out_sharding: None = None) -> _XtructureT:
+def ravel(a: XtructurableT, order: str = "C", *, out_sharding: None = None) -> XtructurableT:
     ...
 
 
@@ -189,7 +184,7 @@ def ravel(a: ArrayLike, order: str = "C", *, out_sharding: Any = None) -> jax.Ar
 
 
 def ravel(a, order: str = "C", *, out_sharding=None):
-    if _is_xtructurable(a):
+    if isinstance(a, Xtructurable):
         if order != "C":
             raise ValueError("xtructure ravel only supports order='C'.")
         _reject_dataclass_kwargs("ravel", out_sharding=out_sharding)
@@ -198,7 +193,7 @@ def ravel(a, order: str = "C", *, out_sharding=None):
 
 
 @overload
-def flatten(array: _XtructureT, order: str = "C") -> _XtructureT:
+def flatten(array: XtructurableT, order: str = "C") -> XtructurableT:
     ...
 
 
@@ -214,26 +209,26 @@ def flatten(array, order: str = "C"):
 @overload
 def where(
     condition: ArrayLike,
-    x: _XtructureT,
-    y: _XtructureT,
+    x: XtructurableT,
+    y: XtructurableT,
     /,
     *,
     size: None = None,
     fill_value: None = None,
-) -> _XtructureT:
+) -> XtructurableT:
     ...
 
 
 @overload
 def where(
     condition: ArrayLike,
-    x: _XtructureT,
+    x: XtructurableT,
     y: ArrayLike,
     /,
     *,
     size: None = None,
     fill_value: None = None,
-) -> _XtructureT:
+) -> XtructurableT:
     ...
 
 
@@ -265,24 +260,24 @@ def where(
 
 def where(
     condition: ArrayLike,
-    x: _XtructureT | ArrayLike | None = None,
-    y: _XtructureT | ArrayLike | None = None,
+    x: XtructurableT | ArrayLike | None = None,
+    y: XtructurableT | ArrayLike | None = None,
     /,
     *,
     size: int | None = None,
     fill_value: ArrayLike | tuple[ArrayLike, ...] | None = None,
-) -> _XtructureT | jax.Array | tuple[jax.Array, ...]:
+) -> XtructurableT | jax.Array | tuple[jax.Array, ...]:
     if x is None and y is None:
         return jnp.where(condition, size=size, fill_value=fill_value)
-    if _is_xtructurable(x):
+    if isinstance(x, Xtructurable):
         if y is None:
             raise TypeError("x and y must be provided for xtructure dataclass inputs.")
-        if _is_xtructurable(y):
+        if isinstance(y, Xtructurable):
             if jax.tree_util.tree_structure(x) != jax.tree_util.tree_structure(y):
                 raise TypeError("x and y must have the same tree structure.")
         _reject_dataclass_kwargs("where", size=size, fill_value=fill_value)
         return _dc.where(condition, x, y)
-    if _is_xtructurable(y):
+    if isinstance(y, Xtructurable):
         if x is None:
             raise TypeError("x and y must be provided for xtructure dataclass inputs.")
         raise TypeError("x and y must both be xtructure dataclasses for dataclass where.")
@@ -301,7 +296,7 @@ def where_no_broadcast(condition: Any, x: Any, y: Any) -> Any:
 
 @overload
 def take(
-    a: _XtructureT,
+    a: XtructurableT,
     indices: ArrayLike,
     axis: int | None = None,
     out: None = None,
@@ -309,7 +304,7 @@ def take(
     unique_indices: bool = False,
     indices_are_sorted: bool = False,
     fill_value=None,
-) -> _XtructureT:
+) -> XtructurableT:
     ...
 
 
@@ -328,7 +323,7 @@ def take(
 
 
 def take(
-    a: _XtructureT | ArrayLike,
+    a: XtructurableT | ArrayLike,
     indices: ArrayLike,
     axis: int | None = None,
     out=None,
@@ -336,8 +331,8 @@ def take(
     unique_indices: bool = False,
     indices_are_sorted: bool = False,
     fill_value=None,
-) -> _XtructureT | jax.Array:
-    if _is_xtructurable(a):
+) -> XtructurableT | jax.Array:
+    if isinstance(a, Xtructurable):
         _reject_dataclass_kwargs("take", out=out)
         return jax.tree_util.tree_map(
             lambda x: jnp.take(
@@ -365,14 +360,14 @@ def take(
 
 @overload
 def take_along_axis(
-    arr: _XtructureT,
+    arr: XtructurableT,
     indices: ArrayLike,
     axis: int | None = -1,
     mode: Any = None,
     fill_value: Any = None,
     *,
     wrap_negative_indices: bool = True,
-) -> _XtructureT:
+) -> XtructurableT:
     ...
 
 
@@ -399,13 +394,13 @@ def take_along_axis(
     wrap_negative_indices: bool = True,
 ):
     kwargs = dict(mode=mode, fill_value=fill_value, wrap_negative_indices=wrap_negative_indices)
-    if _is_xtructurable(arr):
+    if isinstance(arr, Xtructurable):
         return _dc.take_along_axis(arr, indices, axis=axis, **kwargs)
     return jnp.take_along_axis(arr, indices, axis=axis, **kwargs)
 
 
 @overload
-def tile(A: _XtructureT, reps: int | Sequence[int]) -> _XtructureT:
+def tile(A: XtructurableT, reps: int | Sequence[int]) -> XtructurableT:
     ...
 
 
@@ -415,13 +410,13 @@ def tile(A: ArrayLike, reps: int | Sequence[int]) -> jax.Array:
 
 
 def tile(A, reps):
-    if _is_xtructurable(A):
+    if isinstance(A, Xtructurable):
         return _dc.tile(A, reps)
     return jnp.tile(A, reps)
 
 
 @overload
-def transpose(a: _XtructureT, axes: Sequence[int] | None = None) -> _XtructureT:
+def transpose(a: XtructurableT, axes: Sequence[int] | None = None) -> XtructurableT:
     ...
 
 
@@ -431,13 +426,13 @@ def transpose(a: ArrayLike, axes: Sequence[int] | None = None) -> jax.Array:
 
 
 def transpose(a, axes: Sequence[int] | None = None):
-    if _is_xtructurable(a):
+    if isinstance(a, Xtructurable):
         return a.transpose(axes)
     return jnp.transpose(a, axes=axes)
 
 
 @overload
-def swapaxes(a: _XtructureT, axis1: int, axis2: int) -> _XtructureT:
+def swapaxes(a: XtructurableT, axis1: int, axis2: int) -> XtructurableT:
     ...
 
 
@@ -447,7 +442,7 @@ def swapaxes(a: ArrayLike, axis1: int, axis2: int) -> jax.Array:
 
 
 def swapaxes(a, axis1: int, axis2: int):
-    if _is_xtructurable(a):
+    if isinstance(a, Xtructurable):
         return a.swapaxes(axis1, axis2)
     return jnp.swapaxes(a, axis1, axis2)
 
@@ -474,13 +469,13 @@ def unique_mask(
 
 @overload
 def update_on_condition(
-    dataclass_instance: _XtructureT,
+    dataclass_instance: XtructurableT,
     indices: Any,
     condition: ArrayLike,
     values_to_set: Any,
     *,
     unique_indices: bool = False,
-) -> _XtructureT:
+) -> XtructurableT:
     ...
 
 
@@ -499,8 +494,8 @@ def update_on_condition(
 def update_on_condition(
     dataclass_instance, indices, condition, values_to_set, *, unique_indices: bool = False
 ):
-    if _is_xtructurable(dataclass_instance):
-        if _is_xtructurable(values_to_set):
+    if isinstance(dataclass_instance, Xtructurable):
+        if isinstance(values_to_set, Xtructurable):
             if jax.tree_util.tree_structure(values_to_set) != jax.tree_util.tree_structure(
                 dataclass_instance
             ):
@@ -514,7 +509,7 @@ def update_on_condition(
             values_to_set,
             unique_indices=unique_indices,
         )
-    if _is_xtructurable(values_to_set):
+    if isinstance(values_to_set, Xtructurable):
         raise TypeError("values_to_set must not be an xtructure dataclass when updating an array.")
     return _update_array_on_condition(
         dataclass_instance, indices, condition, values_to_set, unique_indices=unique_indices
@@ -522,7 +517,7 @@ def update_on_condition(
 
 
 @overload
-def expand_dims(a: _XtructureT, axis: int | Sequence[int]) -> _XtructureT:
+def expand_dims(a: XtructurableT, axis: int | Sequence[int]) -> XtructurableT:
     ...
 
 
@@ -532,13 +527,13 @@ def expand_dims(a: ArrayLike, axis: int | Sequence[int]) -> jax.Array:
 
 
 def expand_dims(a, axis: int | Sequence[int]):
-    if _is_xtructurable(a):
+    if isinstance(a, Xtructurable):
         return _dc.expand_dims(a, axis=axis)
     return jnp.expand_dims(a, axis=axis)
 
 
 @overload
-def squeeze(a: _XtructureT, axis: int | Sequence[int] | None = None) -> _XtructureT:
+def squeeze(a: XtructurableT, axis: int | Sequence[int] | None = None) -> XtructurableT:
     ...
 
 
@@ -548,20 +543,20 @@ def squeeze(a: ArrayLike, axis: int | Sequence[int] | None = None) -> jax.Array:
 
 
 def squeeze(a, axis: int | Sequence[int] | None = None):
-    if _is_xtructurable(a):
+    if isinstance(a, Xtructurable):
         return _dc.squeeze(a, axis=axis)
     return jnp.squeeze(a, axis=axis)
 
 
 @overload
 def repeat(
-    a: _XtructureT,
+    a: XtructurableT,
     repeats: Any,
     axis: int | None = None,
     *,
     total_repeat_length: None = None,
     out_sharding: None = None,
-) -> _XtructureT:
+) -> XtructurableT:
     ...
 
 
@@ -585,7 +580,7 @@ def repeat(
     total_repeat_length: int | None = None,
     out_sharding=None,
 ):
-    if _is_xtructurable(a):
+    if isinstance(a, Xtructurable):
         _reject_dataclass_kwargs(
             "repeat", total_repeat_length=total_repeat_length, out_sharding=out_sharding
         )
@@ -600,7 +595,7 @@ def repeat(
 
 
 @overload
-def split(ary: _XtructureT, indices_or_sections: Any, axis: int = 0) -> list[_XtructureT]:
+def split(ary: XtructurableT, indices_or_sections: Any, axis: int = 0) -> list[XtructurableT]:
     ...
 
 
@@ -610,21 +605,21 @@ def split(ary: ArrayLike, indices_or_sections: Any, axis: int = 0) -> list[jax.A
 
 
 def split(ary, indices_or_sections, axis: int = 0):
-    if _is_xtructurable(ary):
+    if isinstance(ary, Xtructurable):
         return _dc.split(ary, indices_or_sections, axis=axis)
     return list(jnp.split(ary, indices_or_sections, axis=axis))
 
 
 @overload
 def full_like(
-    a: _XtructureT,
+    a: XtructurableT,
     fill_value: Any,
     dtype: None = None,
     shape: None = None,
     *,
     device: None = None,
     out_sharding: None = None,
-) -> _XtructureT:
+) -> XtructurableT:
     ...
 
 
@@ -650,7 +645,7 @@ def full_like(
     device=None,
     out_sharding=None,
 ):
-    if _is_xtructurable(a):
+    if isinstance(a, Xtructurable):
         _reject_dataclass_kwargs(
             "full_like", dtype=dtype, shape=shape, device=device, out_sharding=out_sharding
         )
@@ -671,13 +666,13 @@ def full_like(
 
 @overload
 def zeros_like(
-    a: _XtructureT,
+    a: XtructurableT,
     dtype: None = None,
     shape: None = None,
     *,
     device: None = None,
     out_sharding: None = None,
-) -> _XtructureT:
+) -> XtructurableT:
     ...
 
 
@@ -701,7 +696,7 @@ def zeros_like(
     device=None,
     out_sharding=None,
 ):
-    if _is_xtructurable(a):
+    if isinstance(a, Xtructurable):
         _reject_dataclass_kwargs(
             "zeros_like",
             dtype=dtype,
@@ -725,13 +720,13 @@ def zeros_like(
 
 @overload
 def ones_like(
-    a: _XtructureT,
+    a: XtructurableT,
     dtype: None = None,
     shape: None = None,
     *,
     device: None = None,
     out_sharding: None = None,
-) -> _XtructureT:
+) -> XtructurableT:
     ...
 
 
@@ -755,7 +750,7 @@ def ones_like(
     device=None,
     out_sharding=None,
 ):
-    if _is_xtructurable(a):
+    if isinstance(a, Xtructurable):
         _reject_dataclass_kwargs(
             "ones_like",
             dtype=dtype,

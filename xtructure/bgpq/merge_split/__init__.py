@@ -8,15 +8,11 @@ if TYPE_CHECKING:
     from .parallel import merge_arrays_parallel as merge_arrays_parallel
     from .split import merge_sort_split_idx as merge_sort_split_idx
 
-__all__ = [
-    "merge_arrays_parallel",
-    "merge_sort_split_idx",
-]
-
 _EXPORTS = {
     "merge_arrays_parallel": (".parallel", "merge_arrays_parallel"),
     "merge_sort_split_idx": (".split", "merge_sort_split_idx"),
 }
+__all__ = list(_EXPORTS)
 
 
 def __getattr__(name: str):

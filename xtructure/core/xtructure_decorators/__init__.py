@@ -1,8 +1,6 @@
 import functools
 import importlib
-from typing import Callable, Optional, Type, TypeVar
-
-from typing_extensions import dataclass_transform
+from typing import Type, TypeVar
 
 from xtructure.core.dataclass import base_dataclass
 from xtructure.core.layout.instance_layout import (
@@ -115,8 +113,8 @@ def install_xtructure_members(
 ) -> Type[T]:
     """Turn ``target_cls`` into an xtructure dataclass in place.
 
-    Shared by ``Xtructurable.__init_subclass__`` (the primary path) and the
-    transitional ``xtructure_dataclass`` decorator.
+    Called by ``Xtructurable.__init_subclass__``; subclass ``Xtructurable`` instead
+    of calling this directly.
     """
     if bitpack not in ("auto", "aggregate", "field", "off"):
         raise ValueError(
@@ -152,10 +150,7 @@ def install_xtructure_members(
     )
 
     if bitpack == "aggregate" or auto_aggregate:
-        cls = _adapter(".layout_adapters.aggregate_bitpack", "add_aggregate_bitpack")(
-            cls,
-            xtructure_dataclass,
-        )
+        cls = _adapter(".layout_adapters.aggregate_bitpack", "add_aggregate_bitpack")(cls)
 
     # add unpacked accessors / setters for in-memory packed fields
     if bitpack in ("auto", "aggregate", "field"):
@@ -186,47 +181,4 @@ def install_xtructure_members(
     # replacement preserves primitive field shape/dtype signatures.
     cls = _install_layout_cache_replace(cls, validate=validate)
 
-    setattr(cls, "is_xtructed", True)
-
     return cls
-
-
-@dataclass_transform()
-def xtructure_dataclass(
-    cls: Optional[Type[T]] = None,
-    *,
-    validate: bool = False,
-    bitpack: str = "auto",
-) -> Callable[[Type[T]], Type[T]] | Type[T]:
-    """
-    Transitional decorator form of ``class X(Xtructurable, ...)``.
-
-    Prefer inheriting `Xtructurable`, which applies the same transformation and
-    exposes the injected members (``shape``, ``dtype``, ``default``,
-    ``__getitem__``, ``__len__``, ``reshape``, ``flatten``, ``transpose``,
-    ``random``, ...) to type checkers. This decorator remains for classes that
-    have not migrated yet and is rejected on classes that inherit `Xtructurable`.
-
-    Args:
-        cls: The class to be decorated.
-        validate: When True, injects a runtime validator that checks field
-            dtypes and trailing shapes after every instantiation.
-        bitpack: Bitpacking policy: ``"auto"``, ``"aggregate"``, ``"field"``,
-            or ``"off"``.
-
-    Returns:
-        The decorated class.
-    """
-
-    def _decorate(target_cls: Type[T]) -> Type[T]:
-        if issubclass(target_cls, Xtructurable):
-            raise TypeError(
-                f"{target_cls.__name__} inherits Xtructurable, which already applies "
-                "xtructure_dataclass; drop the decorator and pass options as class "
-                f"keywords: class {target_cls.__name__}(Xtructurable, validate=..., bitpack=...)"
-            )
-        return install_xtructure_members(target_cls, validate=validate, bitpack=bitpack)
-
-    if cls is None:
-        return _decorate
-    return _decorate(cls)

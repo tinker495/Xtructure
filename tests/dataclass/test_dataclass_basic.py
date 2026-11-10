@@ -3,12 +3,7 @@ import jax.numpy as jnp
 import pytest
 
 from tests.dataclass.fixtures import MatrixData, NestedData, SimpleData, VectorData
-from xtructure import (
-    FieldDescriptor,
-    StructuredType,
-    Xtructurable,
-    is_xtructure_dataclass_instance,
-)
+from xtructure import StructuredType, Xtructurable
 
 
 def test_dataclass_default():
@@ -119,6 +114,33 @@ def test_len_semantics():
         len(unstructured)
 
 
+# Author: tinker495.
+# Iterating a batched dataclass must behave like iterating a numpy array: it
+# yields one item per entry of the first batch dimension and then stops. JAX
+# clamps out-of-range indices instead of raising IndexError, so before
+# __iter__ existed the fallback __getitem__ protocol never terminated.
+# Unbatched (SINGLE) and UNSTRUCTURED instances raise TypeError, as iterating a
+# 0-d array does.
+def test_iteration_semantics():
+    batched1d = SimpleData.default(shape=(5,))
+    items = list(batched1d)
+    assert len(items) == 5
+    assert all(isinstance(item, SimpleData) for item in items)
+    assert all(item.structured_type == StructuredType.SINGLE for item in items)
+
+    batched2d = SimpleData.default(shape=(3, 4))
+    rows = list(batched2d)
+    assert len(rows) == 3
+    assert all(row.shape.batch == (4,) for row in rows)
+
+    with pytest.raises(TypeError):
+        list(SimpleData.default())
+
+    unstructured = SimpleData(id=jnp.array(1), value=jnp.array([2.0, 3.0, 4.0]))
+    with pytest.raises(TypeError):
+        list(unstructured)
+
+
 def test_ndim_semantics():
     single = SimpleData.default()
     assert single.ndim == 0
@@ -136,23 +158,11 @@ def test_ndim_semantics():
 
 
 # Author: tinker495.
-# Xtructurable is the nominal base that applies the xtructure dataclass
-# transformation through inheritance (class X(Xtructurable): ...), so
-# isinstance(x, Xtructurable) is an ordinary subclass check: instances of
-# inheriting classes pass, class objects never do. Classes still using the
-# transitional @xtructure_dataclass decorator (SimpleData) no longer pass
-# isinstance; is_xtructure_dataclass_instance is the check that accepts both forms
-# during the migration. Plain objects pass neither check.
+# Inheriting Xtructurable is the only way to declare an xtructure dataclass, so
+# isinstance(x, Xtructurable) tells whether a value is one: instances of a
+# declared class (SimpleData) pass, while class objects and plain objects do not.
 def test_xtructurable_isinstance():
-    class InheritedData(Xtructurable):
-        id: FieldDescriptor.scalar(dtype=jnp.uint32)
-
-    assert isinstance(InheritedData.default(), Xtructurable)
-    assert is_xtructure_dataclass_instance(InheritedData.default())
-    assert not isinstance(InheritedData, Xtructurable)
-
-    assert not isinstance(SimpleData.default(), Xtructurable)
-    assert is_xtructure_dataclass_instance(SimpleData.default())
+    assert isinstance(SimpleData.default(), Xtructurable)
     assert not isinstance(SimpleData, Xtructurable)
 
     class Plain:
@@ -160,7 +170,6 @@ def test_xtructurable_isinstance():
 
     assert not isinstance(Plain, Xtructurable)
     assert not isinstance(Plain(), Xtructurable)
-    assert not is_xtructure_dataclass_instance(Plain())
 
 
 def test_reshape():

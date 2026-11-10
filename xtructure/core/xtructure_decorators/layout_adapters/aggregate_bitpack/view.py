@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any
 
 from xtructure.core.field_descriptors import FieldDescriptor
 from xtructure.core.layout.type_layout import get_type_layout
 
-from .generated import GENERATED_UNPACKED_VIEW_ROLE, register_generated_class
+from .generated import GENERATED_UNPACKED_VIEW_ROLE, make_generated_class
 
 
 def build_unpacked_view_cls(
     root_cls: type,
-    dataclass_factory: Callable[..., type],
 ) -> tuple[type, dict[type, type]]:
     """Return the logical view type for the aggregate-packed class and a cache."""
     view_cache: dict[type, type] = {}
@@ -23,12 +22,10 @@ def build_unpacked_view_cls(
         if cached is not None:
             return cached
 
-        view_name = f"{orig.__name__}Unpacked"
-        View = type(view_name, (), {"__module__": orig.__module__})
         annotations: dict[str, Any] = {}
         for field in root_aggregate.view_fields_for(orig):
-            if field.is_nested:
-                nested_view = _build_view_type(field.nested_type)  # type: ignore[arg-type]
+            if field.nested_type is not None:
+                nested_view = _build_view_type(field.nested_type)
                 annotations[field.name] = FieldDescriptor.scalar(dtype=nested_view)
             else:
                 annotations[field.name] = FieldDescriptor.tensor(
@@ -36,14 +33,13 @@ def build_unpacked_view_cls(
                     shape=tuple(field.unpacked_shape),
                     fill_value=0,
                 )
-        View.__annotations__ = annotations
-
-        View = dataclass_factory(  # type: ignore[assignment]
-            View,
-            validate=False,
+        View = make_generated_class(
+            f"{orig.__name__}Unpacked",
+            orig.__module__,
+            annotations,
+            role=GENERATED_UNPACKED_VIEW_ROLE,
             bitpack="off",
         )
-        register_generated_class(View, role=GENERATED_UNPACKED_VIEW_ROLE)
         view_cache[orig] = View
         return View
 

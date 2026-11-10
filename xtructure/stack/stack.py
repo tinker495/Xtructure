@@ -4,7 +4,7 @@ from typing import Generic
 import jax
 import jax.numpy as jnp
 
-from ..core.dataclass import base_dataclass
+from ..core.dataclass import Replaceable, base_dataclass
 from ..core.dtype_facts import SIZE_DTYPE
 from ..core.packing import pack_rows, packed_default_store, unpack_rows
 from ..core.protocol import XtructurableT
@@ -60,13 +60,13 @@ def _stack_pop_jit(stack, num_items: int = 1):
 
 
 @jax.jit
-def _stack_getitem_jit(stack, idx: SIZE_DTYPE) -> XtructurableT:
+def _stack_getitem_jit(stack: "Stack[XtructurableT]", idx: SIZE_DTYPE) -> XtructurableT:
     rows = stack.val_store[jnp.asarray(idx)[None]]
     return jax.tree_util.tree_map(lambda x: x[0], unpack_rows(stack.value_class, rows))
 
 
 @base_dataclass(static_fields=("max_size", "value_class"))
-class Stack(Generic[XtructurableT]):
+class Stack(Replaceable, Generic[XtructurableT]):
     """
     A JAX-compatible batched Stack data structure.
     Optimized for parallel operations on GPU using JAX.

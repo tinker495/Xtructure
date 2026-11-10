@@ -4,57 +4,48 @@ import jax
 import jax.numpy as jnp
 import pytest
 
-from xtructure import FieldDescriptor, StructuredType, xtructure_dataclass
+from xtructure import FieldDescriptor, StructuredType, Xtructurable
 from xtructure.core.layout import get_instance_layout, get_type_layout
 from xtructure.core.layout.traversal import build_instance_from_leaf_values
 
 
-@xtructure_dataclass(bitpack="off")
-class LayoutPrimitive:
+class LayoutPrimitive(Xtructurable, bitpack="off"):
     id: FieldDescriptor.scalar(dtype=jnp.uint32)
     vector: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))
 
 
-@xtructure_dataclass(bitpack="off")
-class LayoutInner:
+class LayoutInner(Xtructurable, bitpack="off"):
     val: FieldDescriptor.scalar(dtype=jnp.int32)
 
 
-@xtructure_dataclass(bitpack="off")
-class LayoutNestedScalar:
+class LayoutNestedScalar(Xtructurable, bitpack="off"):
     inner: FieldDescriptor.scalar(dtype=LayoutInner)
 
 
-@xtructure_dataclass
-class LayoutEmpty:
+class LayoutEmpty(Xtructurable):
     pass
 
 
-@xtructure_dataclass
-class LayoutNestedEmptyAuto:
+class LayoutNestedEmptyAuto(Xtructurable):
     empty: FieldDescriptor.scalar(dtype=LayoutEmpty)
 
 
-@xtructure_dataclass(bitpack="off")
-class LayoutNestedEmptyAndData:
+class LayoutNestedEmptyAndData(Xtructurable, bitpack="off"):
     empty: FieldDescriptor.scalar(dtype=LayoutEmpty)
     data: FieldDescriptor.scalar(dtype=LayoutInner)
 
 
-@xtructure_dataclass(bitpack="off")
-class LayoutNestedDataPair:
+class LayoutNestedDataPair(Xtructurable, bitpack="off"):
     left: FieldDescriptor.scalar(dtype=LayoutInner)
     right: FieldDescriptor.scalar(dtype=LayoutInner)
 
 
-@xtructure_dataclass(validate=True)
-class LayoutAggregateEligible:
+class LayoutAggregateEligible(Xtructurable, validate=True):
     flags: FieldDescriptor.tensor(dtype=jnp.bool_, shape=(7,), bits=1, fill_value=False)
     codes: FieldDescriptor.tensor(dtype=jnp.uint16, shape=(3,), bits=12, fill_value=0)
 
 
-@xtructure_dataclass(validate=True)
-class LayoutPackedField:
+class LayoutPackedField(Xtructurable, validate=True):
     flags: FieldDescriptor.packed_tensor(
         unpacked_dtype=jnp.bool_,
         shape=(17,),
@@ -62,8 +53,7 @@ class LayoutPackedField:
     )
 
 
-@xtructure_dataclass(bitpack="off")
-class LayoutDTypeKindFacts:
+class LayoutDTypeKindFacts(Xtructurable, bitpack="off"):
     flag: FieldDescriptor.scalar(dtype=jnp.bool_)
     code: FieldDescriptor.scalar(dtype=jnp.uint16)
     offset: FieldDescriptor.scalar(dtype=jnp.int16)
@@ -92,8 +82,7 @@ def test_type_layout_adapter_field_plans_use_dtype_kind_facts():
 def test_type_layout_rejects_unsupported_dtype_kind_at_definition_time():
     with pytest.raises(TypeError, match="DType Kind"):
 
-        @xtructure_dataclass(bitpack="off")
-        class LayoutComplexUnsupported:
+        class LayoutComplexUnsupported(Xtructurable, bitpack="off"):
             value: FieldDescriptor.scalar(dtype=jnp.complex64)
 
 

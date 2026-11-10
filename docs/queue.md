@@ -5,12 +5,11 @@ A JAX-compatible batched Queue data structure, designed for FIFO (First-In, Firs
 ```python
 import jax
 import jax.numpy as jnp
-from xtructure import Queue, xtructure_dataclass, FieldDescriptor
+from xtructure import Queue, Xtructurable, FieldDescriptor
 
 
 # Define a data structure to store in the queue
-@xtructure_dataclass
-class Point:
+class Point(Xtructurable):
     x: FieldDescriptor.scalar(dtype=jnp.uint32)
     y: FieldDescriptor.scalar(dtype=jnp.uint32)
 

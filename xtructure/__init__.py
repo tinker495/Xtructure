@@ -18,10 +18,6 @@ if TYPE_CHECKING:
     from .core.protocol import Xtructurable as Xtructurable
     from .core.protocol import XtructurableT as XtructurableT
     from .core.structuredtype import StructuredType as StructuredType
-    from .core.type_utils import (
-        is_xtructure_dataclass_instance as is_xtructure_dataclass_instance,
-    )
-    from .core.xtructure_decorators import xtructure_dataclass as xtructure_dataclass
     from .hashtable.table import HashTable as HashTable
     from .hashtable.types import (
         HashIdx as HashIdx,
@@ -31,25 +27,6 @@ if TYPE_CHECKING:
     from .stack.stack import Stack as Stack
 
 from xtructure._lazy_imports import lazy_dir, load_lazy_export
-
-__all__ = [
-    "BGPQ",
-    "HashTable",
-    "HashIdx",
-    "HashTableProbe",
-    "Queue",
-    "Stack",
-    "Xtructurable",
-    "XtructurableT",
-    "base_dataclass",
-    "xtructure_dataclass",
-    "is_xtructure_dataclass_instance",
-    "StructuredType",
-    "FieldDescriptor",
-    "clone_field_descriptor",
-    "numpy",
-    "io",
-]
 
 _EXPORTS: dict[str, tuple[str, str | None]] = {
     "BGPQ": (".bgpq.bgpq", "BGPQ"),
@@ -61,14 +38,13 @@ _EXPORTS: dict[str, tuple[str, str | None]] = {
     "Xtructurable": (".core.protocol", "Xtructurable"),
     "XtructurableT": (".core.protocol", "XtructurableT"),
     "base_dataclass": (".core.dataclass", "base_dataclass"),
-    "xtructure_dataclass": (".core.xtructure_decorators", "xtructure_dataclass"),
-    "is_xtructure_dataclass_instance": (".core.type_utils", "is_xtructure_dataclass_instance"),
     "StructuredType": (".core.structuredtype", "StructuredType"),
     "FieldDescriptor": (".core.field_descriptors", "FieldDescriptor"),
     "clone_field_descriptor": (".core.field_descriptor_utils", "clone_field_descriptor"),
     "numpy": (".numpy", None),
     "io": (".io", None),
 }
+__all__ = list(_EXPORTS)
 
 
 def __getattr__(name: str):

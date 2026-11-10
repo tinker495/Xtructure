@@ -1,12 +1,11 @@
 import jax.numpy as jnp
 import pytest
 
-from xtructure import FieldDescriptor, xtructure_dataclass
+from xtructure import FieldDescriptor, Xtructurable
 
 
 def test_check_invariants_manual_call():
-    @xtructure_dataclass
-    class MyData:
+    class MyData(Xtructurable):
         x: FieldDescriptor.scalar(dtype=jnp.int32)
 
     # Correct type
@@ -20,8 +19,7 @@ def test_check_invariants_manual_call():
 
 
 def test_check_invariants_auto_validation_enabled():
-    @xtructure_dataclass(validate=True)
-    class MyDataAuto:
+    class MyDataAuto(Xtructurable, validate=True):
         x: FieldDescriptor.tensor(dtype=jnp.float32, shape=(2,))
 
     # Correct shape/dtype
@@ -37,8 +35,7 @@ def test_check_invariants_custom_validator():
         if jnp.any(x < 0):
             raise ValueError("Must be non-negative")
 
-    @xtructure_dataclass(validate=True)
-    class ValidatedData:
+    class ValidatedData(Xtructurable, validate=True):
         val: FieldDescriptor.scalar(dtype=jnp.int32, validator=non_negative)
 
     # Valid
@@ -54,8 +51,7 @@ def test_check_invariants_custom_validator_manual():
         if jnp.any(x < 0):
             raise ValueError("Must be non-negative")
 
-    @xtructure_dataclass(validate=False)
-    class ValidatedDataManual:
+    class ValidatedDataManual(Xtructurable, validate=False):
         val: FieldDescriptor.scalar(dtype=jnp.int32, validator=non_negative)
 
     # validate=False, so init should pass even with invalid data

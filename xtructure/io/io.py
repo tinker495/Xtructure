@@ -71,7 +71,7 @@ def save(path: str, instance: Xtructurable, *, packed: bool = True):
     saving each field as a NumPy array. It also stores metadata to enable
     reconstruction of the original dataclass type upon loading.
     """
-    if not hasattr(instance, "is_xtructed"):
+    if not isinstance(instance, Xtructurable):
         raise TypeError("The provided instance is not a valid xtructure dataclass.")
 
     data_to_save = _flatten_instance_for_save(instance, packed=packed)

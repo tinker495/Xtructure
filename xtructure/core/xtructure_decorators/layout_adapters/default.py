@@ -20,14 +20,14 @@ def _create_default_method(cls_to_modify: Type[T]) -> Callable[..., T]:
     field_plans = type_layout.adapter_field_plans
 
     for field_plan in field_plans:
-        if field_plan.field_kind == "nested":
-            nested_class_type = field_plan.nested_class
+        nested_class_type = field_plan.nested_type
+        if nested_class_type is not None:
             if not hasattr(nested_class_type, "default"):
                 raise TypeError(
                     f"Error during method creation for '{cls_to_modify.__name__}': "
                     f"Nested field '{field_plan.name}' (type '{nested_class_type.__name__}' "
                     f"via FieldDescriptor.dtype) does not have a .default() method. "
-                    f"Ensure it's an @xtructure_data class."
+                    f"Ensure it subclasses Xtructurable."
                 )
         elif not (
             isinstance(field_plan.declared_dtype, jnp.dtype) or field_plan.is_primitive_jax_dtype
@@ -61,8 +61,8 @@ def _create_default_method(cls_to_modify: Type[T]) -> Callable[..., T]:
                     resolve_fill_value(field_plan, field_shape),
                     dtype=field_plan.declared_dtype,
                 )
-            elif field_plan.field_kind == "nested":
-                default_values[field_plan.name] = field_plan.nested_class.default(shape=field_shape)
+            elif field_plan.nested_type is not None:
+                default_values[field_plan.name] = field_plan.nested_type.default(shape=field_shape)
         return cls(**default_values)
 
     return default

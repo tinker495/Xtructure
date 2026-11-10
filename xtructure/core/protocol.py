@@ -1,5 +1,14 @@
 import builtins
-from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, Self, Sequence
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    ClassVar,
+    Iterator,
+    Literal,
+    Protocol,
+    Self,
+    Sequence,
+)
 from typing import Tuple as TypingTuple
 from typing import TypeVar
 
@@ -23,9 +32,8 @@ class Xtructurable:
     ``bitpack`` are class keywords) and, because the injected members are declared
     here, exposes them to type checkers, which ignore class-decorator return types.
     The declarations exist only under ``TYPE_CHECKING``; at runtime the
-    transformation installs the real members. ``isinstance(x, Xtructurable)`` is an
-    ordinary subclass check; ``is_xtructure_dataclass_instance`` also accepts
-    classes still using the transitional ``xtructure_dataclass`` decorator.
+    transformation installs the real members. ``isinstance(x, Xtructurable)`` tells
+    whether a value is an xtructure dataclass.
 
     ``abstract=True`` declares a typed view that is not transformed: its plain
     field annotations describe, for type checkers, the classes built from it at
@@ -47,9 +55,8 @@ class Xtructurable:
         abstract: bool = False,
         validate: bool = False,
         bitpack: Literal["auto", "aggregate", "field", "off"] = "auto",
-        **kwargs: Any,
     ) -> None:
-        super().__init_subclass__(**kwargs)
+        super().__init_subclass__()
         if abstract:
             # A typed view: its field annotations exist for type checkers only.
             return
@@ -59,7 +66,6 @@ class Xtructurable:
         assert installed is cls, "the xtructure transformation must work in place"
 
     if TYPE_CHECKING:
-        is_xtructed: ClassVar[bool]
         default_dtype: ClassVar[Any]
 
         @property
@@ -78,6 +84,9 @@ class Xtructurable:
             ...
 
         def __len__(self) -> int:
+            ...
+
+        def __iter__(self) -> Iterator[Self]:
             ...
 
         @classmethod
@@ -139,10 +148,11 @@ class Xtructurable:
         def hash_with_uint32ed(self, seed: int = 0) -> TypingTuple[jax.Array, jax.Array]:
             ...
 
-        def __eq__(self, other: Any) -> bool:
+        # Like jax.Array: comparisons return a (reduced, scalar) array, not a bool.
+        def __eq__(self, other: Any) -> jax.Array:  # pyrefly: ignore[bad-override]
             ...
 
-        def __ne__(self, other: Any) -> bool:
+        def __ne__(self, other: Any) -> jax.Array:  # pyrefly: ignore[bad-override]
             ...
 
         def save(self, path: builtins.str) -> None:

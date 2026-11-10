@@ -3,12 +3,11 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from xtructure import FieldDescriptor, xtructure_dataclass
+from xtructure import FieldDescriptor, Xtructurable
 from xtructure.core.layout.bitpack import packed_num_bytes
 
 
-@xtructure_dataclass(validate=True)
-class PackedState:
+class PackedState(Xtructurable, validate=True):
     # Store packed bytes, expose faces_unpacked and set_unpacked(faces=...)
     faces: FieldDescriptor.packed_tensor(
         unpacked_dtype=jnp.uint8,
@@ -17,8 +16,7 @@ class PackedState:
     )
 
 
-@xtructure_dataclass(validate=True)
-class PackedBoolState:
+class PackedBoolState(Xtructurable, validate=True):
     flags: FieldDescriptor.packed_tensor(
         unpacked_dtype=jnp.bool_,
         shape=(17,),
@@ -26,8 +24,7 @@ class PackedBoolState:
     )
 
 
-@xtructure_dataclass(validate=True)
-class WidePackedState:
+class WidePackedState(Xtructurable, validate=True):
     values: FieldDescriptor.packed_tensor(
         unpacked_dtype=jnp.uint32,
         shape=(5,),

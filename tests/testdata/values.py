@@ -1,27 +1,23 @@
 import jax.numpy as jnp
 
-from xtructure import FieldDescriptor, xtructure_dataclass
+from xtructure import FieldDescriptor, Xtructurable
 
 
-@xtructure_dataclass
-class PointU32x2:
+class PointU32x2(Xtructurable):
     x: FieldDescriptor.scalar(dtype=jnp.uint32)
     y: FieldDescriptor.scalar(dtype=jnp.uint32)
 
 
-@xtructure_dataclass
-class HashValueAB:
+class HashValueAB(Xtructurable):
     a: FieldDescriptor(jnp.uint8)  # type: ignore
     b: FieldDescriptor(jnp.uint32, (1, 2))  # type: ignore
 
 
-@xtructure_dataclass
-class HeapValueABC:
+class HeapValueABC(Xtructurable):
     a: FieldDescriptor(jnp.uint8)  # type: ignore
     b: FieldDescriptor(jnp.uint32, (1, 2))  # type: ignore
     c: FieldDescriptor(jnp.float32, (1, 2, 3))  # type: ignore
 
 
-@xtructure_dataclass
-class OddBytesValue47:
+class OddBytesValue47(Xtructurable):
     payload: FieldDescriptor(jnp.uint8, (47,))  # type: ignore
