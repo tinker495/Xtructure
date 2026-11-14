@@ -12,30 +12,11 @@ from .layout.types import InstanceLayout
 from .structuredtype import StructuredType
 
 
-# TODO(#43): temporary — accepts decorator-built classes; delete with the decorator.
-# Replace the legacy isinstance(Class, Xtructurable) check with issubclass in #43.
-class _XtructurableMeta(type):
-    def __instancecheck__(cls, instance: Any) -> builtins.bool:
-        if cls is Xtructurable:
-            return super().__instancecheck__(instance) or bool(
-                getattr(instance, "is_xtructed", False)
-            )
-        return super().__instancecheck__(instance)
-
-    def __subclasscheck__(cls, subclass: Any) -> builtins.bool:
-        if cls is Xtructurable:
-            return super().__subclasscheck__(subclass) or bool(
-                getattr(subclass, "is_xtructed", False)
-            )
-        return super().__subclasscheck__(subclass)
-
-
 @dataclass_transform()
-class Xtructurable(metaclass=_XtructurableMeta):
+class Xtructurable:
     """Define a structured JAX dataclass by inheritance, without a decorator.
 
-    Put ``validate`` and ``bitpack`` options in the class header. Applying the
-    legacy ``xtructure_dataclass`` decorator to a subclass raises ``TypeError``.
+    Put ``validate`` and ``bitpack`` options in the class header.
     """
 
     def __new__(cls, *args: Any, **kwargs: Any) -> Self:
@@ -54,9 +35,7 @@ class Xtructurable(metaclass=_XtructurableMeta):
     ) -> None:
         super().__init_subclass__(**kwargs)
         if any(
-            base is not Xtructurable
-            and (Xtructurable in base.__mro__ or getattr(base, "is_xtructed", False))
-            for base in cls.__mro__[1:]
+            base is not Xtructurable and issubclass(base, Xtructurable) for base in cls.__mro__[1:]
         ):
             raise TypeError(
                 f"{cls.__name__} cannot inherit from an already xtructured class; "
@@ -73,7 +52,6 @@ class Xtructurable(metaclass=_XtructurableMeta):
         return (self[index] for index in range(len(self)))
 
     if TYPE_CHECKING:
-        is_xtructed: ClassVar[builtins.bool]
         default_shape: ClassVar[Any]
         default_dtype: ClassVar[Any]
 

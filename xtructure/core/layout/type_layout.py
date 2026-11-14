@@ -17,8 +17,8 @@ from xtructure.core.dtype_facts import (
     unsigned_integer_dtype_for,
 )
 from xtructure.core.field_descriptors import FieldDescriptor, get_field_descriptors
+from xtructure.core.protocol import Xtructurable
 from xtructure.core.shape_utils import normalize_shape
-from xtructure.core.type_utils import is_xtructure_dataclass_type
 
 from .bitpack import (
     build_aggregate_bitpack_layout,
@@ -35,7 +35,7 @@ from .types import (
 
 
 def _field_layout(name: str, descriptor: FieldDescriptor, path: tuple[str, ...]) -> FieldLayout:
-    is_nested = is_xtructure_dataclass_type(descriptor.dtype)
+    is_nested = isinstance(descriptor.dtype, type) and issubclass(descriptor.dtype, Xtructurable)
     fill_value = _layout_fill_value(descriptor, is_nested=is_nested)
     return FieldLayout(
         name=name,

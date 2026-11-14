@@ -1,9 +1,6 @@
 import functools
 import importlib
-import warnings
-from typing import Callable, Optional, Type, TypeVar
-
-from typing_extensions import dataclass_transform
+from typing import Type, TypeVar
 
 from xtructure.core.dataclass import base_dataclass
 from xtructure.core.layout.instance_layout import (
@@ -117,7 +114,7 @@ def install_xtructure_members(
     validate: bool = False,
     bitpack: str = "auto",
 ) -> Type[T]:
-    """Apply the shared transformation for inherited and decorator-built classes."""
+    """Transform a direct Xtructurable subclass."""
     if bitpack not in ("auto", "aggregate", "field", "off"):
         raise ValueError(
             f"bitpack must be one of 'auto', 'aggregate', 'field', 'off', got {bitpack!r}"
@@ -138,10 +135,7 @@ def install_xtructure_members(
         bool(type_layout.fields) and bitpack == "auto" and type_layout.aggregate_bitpack.eligible
     )
     if bitpack == "aggregate" or auto_aggregate:
-        cls = _adapter(".layout_adapters.aggregate_bitpack", "add_aggregate_bitpack")(
-            cls,
-            install_xtructure_members,
-        )
+        cls = _adapter(".layout_adapters.aggregate_bitpack", "add_aggregate_bitpack")(cls)
 
     if bitpack in ("auto", "aggregate", "field"):
         cls = _adapter(".layout_adapters.bitpack_accessors", "add_bitpack_accessors")(cls)
@@ -158,62 +152,4 @@ def install_xtructure_members(
     # Reuse Layout Cache when replacement preserves primitive shape/dtype signatures.
     cls = _install_layout_cache_replace(cls, validate=validate)
 
-    # TODO(#43): temporary — accepts decorator-built classes; delete with the decorator.
-    setattr(cls, "is_xtructed", True)
     return cls
-
-
-@dataclass_transform()
-def xtructure_dataclass(
-    cls: Optional[Type[T]] = None,
-    *,
-    validate: bool = False,
-    bitpack: str = "auto",
-) -> Callable[[Type[T]], Type[T]] | Type[T]:
-    """
-    Legacy compatibility decorator for Xtructure data structures.
-
-    .. warning::
-        Applying this decorator emits :class:`FutureWarning`. Define new classes
-        with ``class MyData(Xtructurable, validate=False, bitpack="auto"):``
-        instead, using ``from xtructure import Xtructurable``.
-        Move any decorator options into the class header and remove the decorator.
-        ``python -W error::FutureWarning`` rejects legacy decoration before the
-        class is transformed. The ``base_dataclass`` decorator is unaffected.
-
-    It adds properties like `shape`, `dtype`, `default_shape`, `structured_type`,
-    `batch_shape`, and methods like `__getitem__`, `__len__`, `reshape`,
-    `flatten`, `transpose`, `random`, and `__str__`.
-
-    Args:
-        cls: The class to be decorated. It is expected to have a `default`
-             classmethod for some functionalities.
-        validate: When True, injects a runtime validator that checks field
-            dtypes and trailing shapes after every instantiation.
-        bitpack: Bitpacking policy: ``"auto"``, ``"aggregate"``, ``"field"``,
-            or ``"off"``.
-
-    Returns:
-        The decorated class with the aforementioned additional functionalities.
-    """
-
-    def _decorate(target_cls: Type[T]) -> Type[T]:
-        if Xtructurable in target_cls.__mro__ or getattr(target_cls, "is_xtructed", False):
-            raise TypeError(
-                f"{target_cls.__name__} is already xtructured; "
-                "do not mix Xtructurable inheritance with legacy @xtructure_dataclass "
-                "or decorate twice."
-            )
-        warnings.warn(
-            f"@xtructure_dataclass on {target_cls.__name__} is legacy and deprecated. "
-            f"Use class {target_cls.__name__}(Xtructurable, "
-            f"validate={validate!r}, bitpack={bitpack!r}): instead; "
-            "import it with 'from xtructure import Xtructurable'.",
-            FutureWarning,
-            stacklevel=2 if cls is None else 3,
-        )
-        return install_xtructure_members(target_cls, validate=validate, bitpack=bitpack)
-
-    if cls is None:
-        return _decorate
-    return _decorate(cls)

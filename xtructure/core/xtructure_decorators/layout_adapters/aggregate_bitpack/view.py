@@ -2,18 +2,16 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any
 
 from xtructure.core.field_descriptors import FieldDescriptor
 from xtructure.core.layout.type_layout import get_type_layout
+from xtructure.core.protocol import Xtructurable
 
 from .generated import GENERATED_UNPACKED_VIEW_ROLE, register_generated_class
 
 
-def build_unpacked_view_cls(
-    root_cls: type,
-    dataclass_factory: Callable[..., type],
-) -> tuple[type, dict[type, type]]:
+def build_unpacked_view_cls(root_cls: type) -> tuple[type, dict[type, type]]:
     """Return the logical view type for the aggregate-packed class and a cache."""
     view_cache: dict[type, type] = {}
     root_aggregate = get_type_layout(root_cls).aggregate_bitpack
@@ -24,8 +22,6 @@ def build_unpacked_view_cls(
             return cached
 
         view_name = f"{orig.__name__}Unpacked"
-        # TODO(#43): use (Xtructurable,) with bitpack="off" when removing is_xtructed.
-        View = type(view_name, (), {"__module__": orig.__module__})
         annotations: dict[str, Any] = {}
         for field in root_aggregate.view_fields_for(orig):
             if field.is_nested:
@@ -37,10 +33,10 @@ def build_unpacked_view_cls(
                     shape=tuple(field.unpacked_shape),
                     fill_value=0,
                 )
-        View.__annotations__ = annotations
-
-        View = dataclass_factory(  # type: ignore[assignment]
-            View,
+        View = type(
+            view_name,
+            (Xtructurable,),
+            {"__module__": orig.__module__, "__annotations__": annotations},
             validate=False,
             bitpack="off",
         )

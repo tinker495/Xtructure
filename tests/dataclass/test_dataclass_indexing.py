@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from tests.dataclass.fixtures import NestedData, SimpleData, VectorData
-from xtructure import FieldDescriptor, xtructure_dataclass
+from xtructure import FieldDescriptor, Xtructurable
 from xtructure.core.xtructure_decorators.layout_adapters import indexing
 
 
@@ -110,24 +110,20 @@ def test_at_set_nested_data():
     assert original_data.simple.id[0] != data_to_set_single_nested.simple.id
 
 
-@xtructure_dataclass(bitpack="off")
-class IndexedData:
+class IndexedData(Xtructurable, bitpack="off"):
     x: FieldDescriptor.tensor(dtype=jnp.float32, shape=())
     y: FieldDescriptor.tensor(dtype=jnp.float32, shape=())
 
 
-@xtructure_dataclass(bitpack="off")
-class DeepLeaf:
+class DeepLeaf(Xtructurable, bitpack="off"):
     value: FieldDescriptor.scalar(dtype=jnp.int32)
 
 
-@xtructure_dataclass(bitpack="off")
-class DeepMiddle:
+class DeepMiddle(Xtructurable, bitpack="off"):
     leaf: FieldDescriptor.scalar(dtype=DeepLeaf)
 
 
-@xtructure_dataclass(bitpack="off")
-class DeepOuter:
+class DeepOuter(Xtructurable, bitpack="off"):
     middle: FieldDescriptor.scalar(dtype=DeepMiddle)
 
 

@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .core.protocol import Xtructurable as Xtructurable
-    from .core.xtructure_decorators import xtructure_dataclass as xtructure_dataclass
 
 from xtructure._lazy_imports import lazy_dir, load_lazy_export
 
@@ -23,7 +22,6 @@ __all__ = [
     "Stack",
     "Xtructurable",
     "base_dataclass",
-    "xtructure_dataclass",
     "StructuredType",
     "FieldDescriptor",
     "clone_field_descriptor",
@@ -40,7 +38,6 @@ _EXPORTS: dict[str, tuple[str, str | None]] = {
     "Stack": (".stack.stack", "Stack"),
     "Xtructurable": (".core.protocol", "Xtructurable"),
     "base_dataclass": (".core.dataclass", "base_dataclass"),
-    "xtructure_dataclass": (".core.xtructure_decorators", "xtructure_dataclass"),
     "StructuredType": (".core.structuredtype", "StructuredType"),
     "FieldDescriptor": (".core.field_descriptors", "FieldDescriptor"),
     "clone_field_descriptor": (".core.field_descriptor_utils", "clone_field_descriptor"),

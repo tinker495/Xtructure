@@ -15,7 +15,7 @@ class FieldDescriptor:
     A descriptor for fields in an Xtructurable subclass.
 
     Specifies the JAX dtype, shape, and default fill value for each field.
-    Inherit from Xtructurable; the legacy @xtructure_dataclass emits FutureWarning.
+    Define structured classes by inheriting directly from Xtructurable.
 
     Example usage::
 

@@ -49,9 +49,9 @@ Quick examples can still be found below for a brief overview.
 
 ## Quick Examples
 
-> **Legacy decorator:** `@xtructure_dataclass` emits `FutureWarning` when applied.
-> Inherit from `Xtructurable` and move `validate` / `bitpack` options into the class header.
-> See the [migration guide](docs/migration.md), including how to treat warnings as errors.
+> Define structures by inheriting from `Xtructurable`, with `validate` / `bitpack`
+> options in the class header. The legacy decorator has been removed; see the
+> [migration guide](docs/migration.md).
 
 ```python
 import jax

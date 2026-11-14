@@ -5,7 +5,6 @@ import jax.numpy as jnp
 
 from xtructure.core.layout import get_type_layout
 from xtructure.core.layout.types import AdapterFieldPlan
-from xtructure.core.protocol import Xtructurable
 
 from ...xtructure_numpy.array_ops import _update_array_on_condition
 
@@ -192,7 +191,6 @@ def add_indexing_methods(cls: Type[T]) -> Type[T]:
         return _AtIndexer(self, compiled_setter, compiled_condition_setter)
 
     setattr(cls, "__getitem__", getitem)
-    setattr(cls, "__iter__", Xtructurable.__iter__)
     setattr(cls, "at", property(at))
 
     return cls

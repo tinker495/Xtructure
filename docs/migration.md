@@ -1,35 +1,13 @@
-# Legacy Decorator Migration
+# Decorator Migration
 
-`@xtructure_dataclass` is a legacy compatibility API. Applying it emits a
-`FutureWarning` at the caller's class definition or explicit decoration call.
-This includes the bare decorator, `@xtructure_dataclass()`, and decorators with
-`validate` or `bitpack` options. The root `xtructure` export, `xtructure.core`
-export, and implementation-module import all use the same warning behavior.
-Importing the decorator alone does not warn.
-
-The warning is visible under Python's default warning filters. Existing decorated
-classes still work when warnings are allowed. There is no scheduled removal
-version in this migration phase.
+`xtructure_dataclass` has been removed from `xtructure`, `xtructure.core`, and its
+implementation module. Existing imports fail immediately. Define structures by
+inheriting directly from `Xtructurable`.
 
 ## Replace the decorator with inheritance
 
-Before (legacy; emits `FutureWarning`):
-
-```python
-from typing import Annotated
-
-import jax
-import jax.numpy as jnp
-
-from xtructure import FieldDescriptor, xtructure_dataclass
-
-
-@xtructure_dataclass(validate=True, bitpack="aggregate")
-class State:
-    flags: Annotated[jax.Array, FieldDescriptor.tensor(dtype=jnp.bool_, shape=(5,), bits=1)]
-```
-
-After:
+Remove the decorator and its import, add `Xtructurable` as a base, and move the
+same `validate` and `bitpack` options into the class header:
 
 ```python
 from typing import Annotated
@@ -49,62 +27,41 @@ packed = state.packed
 restored = packed.as_original()
 ```
 
-Remove the decorator and its import, add `Xtructurable` as a base, and move the
-same options into the class header. For the bare decorator or an empty decorator
-call, use `class State(Xtructurable):`; defaults remain `validate=False` and
-`bitpack="auto"`. The supported bitpacking policies are `"auto"`, `"aggregate"`,
-`"field"`, and `"off"`.
+For a bare decorator or an empty decorator call, use `class State(Xtructurable):`.
+Defaults remain `validate=False` and `bitpack="auto"`. The supported bitpacking
+policies are `"auto"`, `"aggregate"`, `"field"`, and `"off"`.
 
-Constructors, `.default()`, indexing, `.at`, batch reshaping, packing, and IO use
-the shared transformation. Inheritance and generated packed/unpacked classes do
-not emit the legacy warning. Keep the class's module and name when migrating
-persisted data, because IO metadata records them.
+Constructors, `.default()`, indexing, `.at`, batch reshaping, packing, and IO retain
+their behavior. Generated packed and unpacked classes also inherit directly from
+`Xtructurable`. Preserve a migrated class's module and name when loading existing
+data, because IO metadata records them.
 
-Use `typing.Annotated` to expose actual field types to static analyzers. The
-`from xtructure import Xtructurable` public import exposes the nominal base and
-its `Self` return types to static analyzers as well as runtime callers.
-Descriptor-only field annotations remain supported; they are separate from the
-deprecated decorator.
-Legacy decorated classes retain runtime compatibility checks, but a decorator
-does not make them nominal subclasses for static typing.
+Use `typing.Annotated` to expose actual field types to static analyzers.
+Descriptor-only field annotations remain supported. The public `Xtructurable`
+import exposes the nominal base and its `Self` return types.
 
-## Treat legacy usage as an error
+## Runtime checks
 
-To reject legacy declarations when starting a Python application:
-
-```bash
-python -W error::FutureWarning your_application.py
-```
-
-This promotes all `FutureWarning` categories to errors, including warnings from
-dependencies. For Xtructure decorator warnings only, install a message filter
-before importing modules that define legacy classes:
+The `is_xtructed` marker and the `is_xtructure_dataclass_type` and
+`is_xtructure_dataclass_instance` helpers have been removed, along with
+`xtructure.core.type_utils`. Use ordinary Python nominal checks:
 
 ```python
-import warnings
-
-warnings.filterwarnings("error", message=r"@xtructure_dataclass\b", category=FutureWarning)
-
-import your_application
+assert issubclass(State, Xtructurable)
+assert isinstance(state, Xtructurable)
 ```
 
-The exception occurs before dataclass conversion or JAX PyTree registration, so
-the rejected class is not partially transformed. A module that defines legacy
-classes fails to import under this policy until those classes are migrated.
+Use `isinstance(value, type) and issubclass(value, Xtructurable)` when the input
+may not be a class. `isinstance(State, Xtructurable)` is false: a class is not an
+instance of its base class.
 
-## Invalid combinations already raise errors
+## Inheritance boundaries
 
-- Do not decorate an `Xtructurable` subclass: class creation has already applied
-  the transformation, so the decorator raises `TypeError`.
-- Do not apply `@xtructure_dataclass` twice: repeated transformation raises
-  `TypeError`.
-- Subclassing an `Xtructurable` data class, or combining `Xtructurable` with a
-  legacy decorated base, raises `TypeError`. Define each data class directly
-  from `Xtructurable`. Share behavior through plain Python mixins or nest
-  structures with `FieldDescriptor` instead.
-- Do not instantiate `Xtructurable` directly; instantiate a concrete subclass.
+- Define each data class directly from `Xtructurable`. Inheriting from an already
+  transformed data class raises `TypeError`; share behavior through plain Python
+  mixins or compose nested fields with `FieldDescriptor`.
+- Instantiate a concrete subclass, not `Xtructurable` itself.
 
-The `@base_dataclass` decorator remains supported for plain JAX PyTrees such as
-container implementations. It does not emit this legacy warning. See
-[Core Concepts](core_concepts.md) for field descriptors, runtime validation, and
-bitpacking policies.
+`@base_dataclass` remains supported for plain JAX PyTrees such as container
+implementations. See [Core Concepts](core_concepts.md) for field descriptors,
+runtime validation, and bitpacking policies.
