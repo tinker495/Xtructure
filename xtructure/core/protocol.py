@@ -30,6 +30,7 @@ from .xtructure_decorators.pytree_adapters.hash import (
     _uint32ed,
     tree_to_bytes,
 )
+from .xtructure_decorators.pytree_adapters.string_format import _custom_pretty_formatter
 
 
 @runtime_checkable
@@ -78,7 +79,7 @@ class Xtructurable:
     def __post_init__(self, *args: Any, **kwargs: Any) -> None:
         if self._xtructure_state.user_post_init is not None:
             self._xtructure_state.user_post_init(self, *args, **kwargs)
-        self._layout_cache = get_instance_layout(self)
+        object.__setattr__(self, "_layout_cache", get_instance_layout(self))
 
     @property
     def shape(self) -> tuple[int, ...]:
@@ -334,9 +335,10 @@ class Xtructurable:
         return new_default_state
 
     def __str__(self, **kwargs: Any) -> builtins.str:
+        """Provide the base representation for user formatters calling super().__str__()."""
         state = self._xtructure_state
         if self.structured_type == StructuredType.SINGLE:
-            return state.single_formatter(self, **kwargs)
+            return _custom_pretty_formatter(self, **kwargs)
         if self.structured_type == StructuredType.BATCHED:
             return state.renderer.render(
                 self,
@@ -350,7 +352,11 @@ class Xtructurable:
             f"default_shape: {self.default_shape}>"
         )
 
-    str = __str__
+    def str(self, **kwargs: Any) -> builtins.str:
+        if self.structured_type == StructuredType.SINGLE:
+            return self._xtructure_state.single_formatter(self, **kwargs)
+        return Xtructurable.__str__(self, **kwargs)
+
     bytes = property(tree_to_bytes)
     uint32ed = property(_uint32ed)
     hash = _h
@@ -479,8 +485,10 @@ class Xtructurable:
                 ):
                     reusable = False
                     break
-        replacement._layout_cache = (
-            self._layout_cache if reusable else get_instance_layout(replacement)
+        object.__setattr__(
+            replacement,
+            "_layout_cache",
+            self._layout_cache if reusable else get_instance_layout(replacement),
         )
         if state.validate:
             replacement.check_invariants()

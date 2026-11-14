@@ -82,7 +82,7 @@ def install_xtructure_members(
     )
     # These two extension hooks retain their wrapping contract.
     target_cls.__post_init__ = Xtructurable.__post_init__
-    target_cls.__str__ = Xtructurable.__str__
+    target_cls.__str__ = Xtructurable.str
     cls = target_cls
     base_dataclass(cls, eq=False, static_fields=("_layout_cache",))
     type_layout = get_type_layout(cls)
