@@ -27,7 +27,7 @@ def _create_default_method(cls_to_modify: Type[T]) -> Callable[..., T]:
                     f"Error during method creation for '{cls_to_modify.__name__}': "
                     f"Nested field '{field_plan.name}' (type '{nested_class_type.__name__}' "
                     f"via FieldDescriptor.dtype) does not have a .default() method. "
-                    f"Ensure it's an @xtructure_data class."
+                    "Define the nested class by inheriting from Xtructurable."
                 )
         elif not (
             isinstance(field_plan.declared_dtype, jnp.dtype) or field_plan.is_primitive_jax_dtype
@@ -39,7 +39,7 @@ def _create_default_method(cls_to_modify: Type[T]) -> Callable[..., T]:
                 f".dtype attribute: '{dtype}' "
                 f"(type: {type(dtype).__name__}). "
                 f"Expected a JAX primitive type/class (like jnp.int32 or "
-                f"jnp.dtype('int32')), or an @xtructure_data class type (like Parent)."
+                "jnp.dtype('int32')), or an Xtructurable subclass (like Parent)."
             )
 
     @classmethod

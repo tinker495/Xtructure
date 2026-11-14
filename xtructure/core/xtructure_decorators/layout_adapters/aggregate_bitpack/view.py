@@ -24,6 +24,7 @@ def build_unpacked_view_cls(
             return cached
 
         view_name = f"{orig.__name__}Unpacked"
+        # TODO(#43): use (Xtructurable,) with bitpack="off" when removing is_xtructed.
         View = type(view_name, (), {"__module__": orig.__module__})
         annotations: dict[str, Any] = {}
         for field in root_aggregate.view_fields_for(orig):

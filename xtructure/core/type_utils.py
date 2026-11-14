@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+# TODO(#43): temporary — migration helpers for decorator-built classes; delete with the decorator.
+
 
 def is_xtructure_dataclass_type(value: Any) -> bool:
     """Return True if `value` is an @xtructure_dataclass type.

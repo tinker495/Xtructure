@@ -7,7 +7,7 @@ from typing import Any
 import jax
 import jax.numpy as jnp
 
-from ...xtructure_decorators import Xtructurable
+from ...protocol import Xtructurable
 
 
 def full_like(dataclass_instance: Xtructurable, fill_value: Any) -> Xtructurable:

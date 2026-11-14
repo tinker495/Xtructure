@@ -8,6 +8,7 @@ Welcome to Xtructure's documentation!
    :caption: Core Concepts:
 
    core_concepts
+   migration
    layout_flexibility
    xnp
 

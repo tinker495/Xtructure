@@ -6,8 +6,7 @@ import jax
 import jax.numpy as jnp
 import tyro
 
-from xtructure import BGPQ
-from xtructure.core.protocol import Xtructurable
+from xtructure import BGPQ, Xtructurable
 from xtructure_benchmarks.common import (
     BenchmarkValue,
     check_system_load,
