@@ -8,7 +8,6 @@ from typing import Any
 
 import jax.numpy as jnp
 
-from xtructure.core.protocol import Xtructurable
 from xtructure.core.structuredtype import StructuredType
 
 from .type_layout import get_type_layout
@@ -22,6 +21,8 @@ def field_value_shape(value: Any) -> Any:
     Internal Layout Adapter Interface helper: shared between Instance Layout
     construction and the Layout Cache replace fast path.
     """
+    from xtructure.core.protocol import Xtructurable
+
     if isinstance(value, Xtructurable):
         return value.layout.shape_tuple
     shape = getattr(value, "shape", None)

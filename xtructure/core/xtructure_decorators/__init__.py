@@ -1,155 +1,154 @@
+"""Prepare the per-class state and generated members of Xtructurable subclasses."""
+
 import functools
-import importlib
-from typing import Type, TypeVar
+from collections.abc import Callable
+from dataclasses import dataclass
+from inspect import get_annotations
+from operator import attrgetter
+from typing import Any
+
+import jax.numpy as jnp
 
 from xtructure.core.dataclass import base_dataclass
-from xtructure.core.layout.instance_layout import (
-    field_value_shape,
-    get_instance_layout,
-    primitive_value_dtype,
-)
+from xtructure.core.display import BatchedRenderer
+from xtructure.core.field_descriptors import _FIELD_DESCRIPTOR_ATTR
 from xtructure.core.layout.type_layout import get_type_layout
-from xtructure.core.protocol import Xtructurable
+from xtructure.core.layout.types import TypeLayout
 
-T = TypeVar("T")
-X = TypeVar("X", bound=Xtructurable)
-
-
-def _adapter(module_name: str, attr_name: str):
-    return getattr(importlib.import_module(module_name, __name__), attr_name)
+from .layout_adapters.indexing import _compile_field_setter
+from .pytree_adapters.string_format import _custom_pretty_formatter
 
 
-def _inject_layout_cache_post_init(target_cls: Type[T]) -> Type[T]:
-    """Ensure every xtructure instance owns a hashable Layout Cache."""
-    original_post_init = getattr(target_cls, "__post_init__", None)
-
-    if getattr(original_post_init, "__xtructure_layout_cache_hook__", False):
-        return target_cls
-
-    if original_post_init is None:
-
-        def _layout_cache_post_init(self, *args, **kwargs):
-            del args, kwargs
-            object.__setattr__(self, "_layout_cache", get_instance_layout(self))
-
-    else:
-
-        @functools.wraps(original_post_init)
-        def _layout_cache_post_init(self, *args, **kwargs):
-            original_post_init(self, *args, **kwargs)
-            object.__setattr__(self, "_layout_cache", get_instance_layout(self))
-
-    setattr(_layout_cache_post_init, "__xtructure_layout_cache_hook__", True)
-    setattr(_layout_cache_post_init, "__xtructure_user_post_init__", original_post_init)
-    setattr(target_cls, "__post_init__", _layout_cache_post_init)
-    return target_cls
-
-
-def _expected_raw_shape(batch_shape: tuple[int, ...], intrinsic_shape: tuple[int, ...]):
-    return tuple(batch_shape) + tuple(intrinsic_shape)
-
-
-def _can_reuse_layout_cache(old_layout, type_layout, instance, changed_names: set[str]) -> bool:
-    if old_layout is None or old_layout.batch_shape == -1:
-        return False
-
-    for name in changed_names:
-        field_layout = type_layout.field_for(name)
-        if field_layout.is_nested:
-            return False
-
-        value = getattr(instance, name)
-        if field_value_shape(value) != _expected_raw_shape(
-            old_layout.batch_shape,
-            type_layout.storage_intrinsic_shape_for(field_layout),
-        ):
-            return False
-        if primitive_value_dtype(value) != getattr(old_layout.dtype_tuple, name):
-            return False
-
-    return True
-
-
-def _install_layout_cache_replace(cls: Type[X], *, validate: bool) -> Type[X]:
-    """Install a Layout Cache-aware replace fast path for xtructure dataclasses."""
-    type_layout = get_type_layout(cls)
-    field_names = type_layout.field_names
-    field_name_set = frozenset(field_names)
-    post_init = getattr(cls, "__post_init__", None)
-    user_post_init = getattr(post_init, "__xtructure_user_post_init__", None)
-
-    def _layout_cache_replace(self, **kwargs):
-        unexpected = tuple(name for name in kwargs if name not in field_name_set)
-        if unexpected:
-            unexpected_names = ", ".join(repr(name) for name in unexpected)
-            raise TypeError(
-                f"{type_layout.cls.__name__}.replace got unexpected field(s): {unexpected_names}"
-            )
-
-        old_layout = getattr(self, "_layout_cache", None)
-        changed_names = set(kwargs)
-        replacement = cls.__new__(cls)
-        for name in field_names:
-            object.__setattr__(replacement, name, kwargs.get(name, getattr(self, name)))
-
-        if user_post_init is not None:
-            user_post_init(replacement)
-
-        if _can_reuse_layout_cache(old_layout, type_layout, replacement, changed_names):
-            object.__setattr__(replacement, "_layout_cache", old_layout)
-        else:
-            object.__setattr__(replacement, "_layout_cache", get_instance_layout(replacement))
-
-        if validate:
-            replacement.check_invariants()
-        return replacement
-
-    setattr(cls, "replace", _layout_cache_replace)
-    return cls
+@dataclass(frozen=True)
+class _ClassState:
+    type_layout: TypeLayout
+    validate: bool
+    user_post_init: Callable[..., None] | None
+    single_formatter: Callable[..., str]
+    renderer: BatchedRenderer
+    field_getter: Callable[[Any], Any] | None
+    setter: Callable[..., Any]
+    condition_setter: Callable[..., Any]
 
 
 def install_xtructure_members(
-    target_cls: Type[T],
-    *,
-    validate: bool = False,
-    bitpack: str = "auto",
-) -> Type[T]:
-    """Transform a direct Xtructurable subclass."""
+    target_cls: type, *, validate: bool = False, bitpack: str = "auto"
+) -> None:
+    """Prepare layout facts, user hooks, compiled updates, and packed classes."""
+    from xtructure.core.protocol import Xtructurable
+
+    if not issubclass(target_cls, Xtructurable):
+        raise TypeError("Class preparation requires an Xtructurable subclass.")
     if bitpack not in ("auto", "aggregate", "field", "off"):
         raise ValueError(
             f"bitpack must be one of 'auto', 'aggregate', 'field', 'off', got {bitpack!r}"
         )
 
-    target_cls = _inject_layout_cache_post_init(target_cls)
-    cls = base_dataclass(target_cls, static_fields=("_layout_cache",))
-    cls = _adapter(".layout_adapters.default", "add_default_method")(cls)
-    if not hasattr(cls, "default"):
-        raise RuntimeError("xtructureclass must have a default method.")
+    reserved = (
+        set(vars(Xtructurable))
+        | Xtructurable.__annotations__.keys()
+        | {
+            _FIELD_DESCRIPTOR_ATTR,
+            "__dataclass_fields__",
+            "__dataclass_params__",
+            "__init__",
+            "__repr__",
+            "__getstate__",
+            "__setstate__",
+        }
+    )
+    conflicts = reserved.intersection(get_annotations(target_cls))
+    if conflicts:
+        raise TypeError(
+            f"{target_cls.__name__} fields conflict with Xtructurable members: "
+            + ", ".join(sorted(conflicts))
+        )
 
-    cls = _adapter(".layout_adapters.shape", "add_shape_dtype_len")(cls)
-    cls = _adapter(".layout_adapters.indexing", "add_indexing_methods")(cls)
-    cls = _adapter(".layout_adapters.structure_util", "add_structure_utilities")(cls)
-
+    user_post_init = next(
+        (
+            base.__post_init__
+            for base in target_cls.__mro__
+            if base is not Xtructurable and "__post_init__" in vars(base)
+        ),
+        None,
+    )
+    single_formatter = next(
+        (
+            base.__str__
+            for base in target_cls.__mro__
+            if base not in (Xtructurable, object) and "__str__" in vars(base)
+        ),
+        _custom_pretty_formatter,
+    )
+    # These two extension hooks retain their wrapping contract.
+    target_cls.__post_init__ = Xtructurable.__post_init__
+    target_cls.__str__ = Xtructurable.str
+    cls = target_cls
+    base_dataclass(cls, eq=False, static_fields=("_layout_cache",))
     type_layout = get_type_layout(cls)
-    auto_aggregate = (
+    for plan in type_layout.adapter_field_plans:
+        if plan.field_kind == "nested":
+            if not isinstance(plan.nested_type, type) or not issubclass(
+                plan.nested_type, Xtructurable
+            ):
+                raise TypeError(
+                    f"Error during method creation for '{cls.__name__}': "
+                    f"Nested field '{plan.name}' must declare an Xtructurable subclass."
+                )
+        elif not (isinstance(plan.declared_dtype, jnp.dtype) or plan.is_primitive_jax_dtype):
+            raise TypeError(
+                f"Error during method creation for '{cls.__name__}': "
+                f"Field '{plan.name}' uses FieldDescriptor with an unsupported "
+                f".dtype attribute: '{plan.declared_dtype}' "
+                f"(type: {type(plan.declared_dtype).__name__}). "
+                "Expected a JAX primitive type/class (like jnp.int32 or "
+                "jnp.dtype('int32')), or an Xtructurable subclass (like Parent)."
+            )
+
+    cls.default_shape = type_layout.default_shape
+    cls.default_dtype = type_layout.default_dtype
+    cls._xtructure_state = _ClassState(
+        type_layout=type_layout,
+        validate=validate,
+        user_post_init=user_post_init,
+        single_formatter=single_formatter,
+        renderer=BatchedRenderer(single_formatter),
+        field_getter=attrgetter(*type_layout.field_names) if type_layout.field_names else None,
+        setter=_compile_field_setter(cls, type_layout.adapter_field_plans, mode="set"),
+        condition_setter=_compile_field_setter(
+            cls, type_layout.adapter_field_plans, mode="set_as_condition"
+        ),
+    )
+
+    aggregate = bitpack == "aggregate" or (
         bool(type_layout.fields) and bitpack == "auto" and type_layout.aggregate_bitpack.eligible
     )
-    if bitpack == "aggregate" or auto_aggregate:
-        cls = _adapter(".layout_adapters.aggregate_bitpack", "add_aggregate_bitpack")(cls)
+    generated_names = {"Packed", "packed", "bitpack_schema"} if aggregate else set()
+    if bitpack != "off":
+        generated_names.update(
+            f"{field.name}_unpacked" for field in type_layout.packed_field_layouts
+        )
+    conflicts = generated_names.intersection(type_layout.field_names)
+    if conflicts:
+        raise TypeError(
+            f"{cls.__name__} fields conflict with generated members: "
+            + ", ".join(sorted(conflicts))
+        )
 
-    if bitpack in ("auto", "aggregate", "field"):
-        cls = _adapter(".layout_adapters.bitpack_accessors", "add_bitpack_accessors")(cls)
+    if aggregate:
+        from .layout_adapters.aggregate_bitpack import add_aggregate_bitpack
 
-    cls = _adapter(".pytree_adapters.string_format", "add_string_representation_methods")(cls)
-    cls = _adapter(".pytree_adapters.hash", "hash_function_decorator")(cls)
-    cls = _adapter(".pytree_adapters.ops", "add_comparison_operators")(cls)
-    cls = _adapter(".pytree_adapters.io", "add_io_methods")(cls)
-    cls = _adapter(".layout_adapters.validation", "add_runtime_validation")(
-        cls,
-        enabled=validate,
-    )
+        add_aggregate_bitpack(cls)
+    if bitpack != "off":
+        from .layout_adapters.bitpack_accessors import add_bitpack_accessors
 
-    # Reuse Layout Cache when replacement preserves primitive shape/dtype signatures.
-    cls = _install_layout_cache_replace(cls, validate=validate)
+        add_bitpack_accessors(cls)
+    if validate:
+        original_init = vars(cls)["__init__"]
 
-    return cls
+        @functools.wraps(original_init)
+        def _validated_init(self, *args, **kwargs):
+            original_init(self, *args, **kwargs)
+            self.check_invariants()
+
+        cls.__init__ = _validated_init

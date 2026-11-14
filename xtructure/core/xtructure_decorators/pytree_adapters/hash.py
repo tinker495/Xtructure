@@ -297,7 +297,7 @@ def _unstructured_uint32ed_error(cls_name, shape):
     )
 
 
-def _uint32ed(self):
+def _uint32ed(self) -> jax.Array:
     """Polymorphic uint32 lanes dispatched by Instance Layout.
 
     SINGLE  -> 1-D ``(lanes,)`` via :func:`tree_to_uint32`.
@@ -312,7 +312,7 @@ def _uint32ed(self):
     raise _unstructured_uint32ed_error(type(self).__name__, self.layout.shape_tuple)
 
 
-def _h(self, seed=0):
+def _h(self, seed: int = 0) -> jax.Array:
     """Hash polymorphic by Instance Layout.
 
     SINGLE  -> scalar hash.
@@ -328,7 +328,7 @@ def _h(self, seed=0):
     raise _unstructured_uint32ed_error(type(self).__name__, self.layout.shape_tuple)
 
 
-def _h_with_uint32ed(self, seed=0):
+def _h_with_uint32ed(self, seed: int = 0) -> tuple[jax.Array, jax.Array]:
     """Hash and uint32 lanes polymorphic by Instance Layout.
 
     Returns ``(hash, uint32ed)`` whose shapes mirror :func:`_h` and
@@ -342,18 +342,3 @@ def _h_with_uint32ed(self, seed=0):
         u = batched_tree_to_uint32_rows(self, self.shape[0])
         return hash_fast_uint32ed_batched(u, seed), u
     raise _unstructured_uint32ed_error(type(self).__name__, self.layout.shape_tuple)
-
-
-def hash_function_decorator(cls):
-    """Attach Instance Layout-aware hash adapter members to ``cls``.
-
-    All four members are module-level callables (no per-``cls`` closures), so
-    hash semantics remain ``cls``-agnostic; the only ``cls``-specific
-    behaviour is the dispatch on ``self.structured_type`` (read from the
-    Layout Cache).
-    """
-    setattr(cls, "bytes", property(tree_to_bytes))
-    setattr(cls, "uint32ed", property(_uint32ed))
-    setattr(cls, "hash", _h)
-    setattr(cls, "hash_with_uint32ed", _h_with_uint32ed)
-    return cls
