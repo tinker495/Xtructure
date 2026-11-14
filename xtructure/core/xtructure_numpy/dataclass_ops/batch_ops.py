@@ -75,7 +75,7 @@ def concat(dataclasses: List[T], axis: int = 0) -> T:
         return stack(dataclasses, axis=axis)
 
     if first_structured_type == StructuredType.BATCHED:
-        first_batch_shape = dataclasses[0].shape.batch
+        first_batch_shape = dataclasses[0].shape
         concat_axis_adjusted = axis if axis >= 0 else len(first_batch_shape) + axis
 
         if concat_axis_adjusted >= len(first_batch_shape):
@@ -84,7 +84,7 @@ def concat(dataclasses: List[T], axis: int = 0) -> T:
             )
 
         for dc in dataclasses[1:]:
-            batch_shape = dc.shape.batch
+            batch_shape = dc.shape
             if len(batch_shape) != len(first_batch_shape):
                 raise ValueError(
                     f"Incompatible batch dimensions: {first_batch_shape} vs {batch_shape}"
@@ -137,7 +137,7 @@ def pad(
         )
 
     if structured_type == StructuredType.BATCHED:
-        batch_shape = dataclass_instance.shape.batch
+        batch_shape = dataclass_instance.shape
         batch_ndim = len(batch_shape)
         normalized_pad_width = _normalize_pad_width(pad_width, batch_ndim)
         if any(before < 0 or after < 0 for before, after in normalized_pad_width):
@@ -186,11 +186,11 @@ def stack(dataclasses: List[T], axis: int = 0) -> T:
         raise ValueError("All dataclasses must have the same structured type")
 
     if first_structured_type == StructuredType.BATCHED:
-        first_batch_shape = dataclasses[0].shape.batch
+        first_batch_shape = dataclasses[0].shape
         for dc in dataclasses[1:]:
-            if dc.shape.batch != first_batch_shape:
+            if dc.shape != first_batch_shape:
                 raise ValueError(
-                    f"All dataclasses must have the same batch shape: {first_batch_shape} vs {dc.shape.batch}"
+                    f"All dataclasses must have the same batch shape: {first_batch_shape} vs {dc.shape}"
                 )
 
     return jax.tree_util.tree_map(lambda *arrays: jnp.stack(arrays, axis=axis), *dataclasses)

@@ -9,17 +9,21 @@ from typing import Any
 import jax.numpy as jnp
 
 from xtructure.core.structuredtype import StructuredType
+from xtructure.core.type_utils import is_xtructure_dataclass_instance
 
 from .type_layout import get_type_layout
 from .types import InstanceFieldLayout, InstanceLayout
 
 
-def primitive_value_shape(value: Any) -> tuple[int, ...]:
-    """Raw shape of a primitive (non-nested) xtructure field value.
+def field_value_shape(value: Any) -> Any:
+    """Shape signature of a field value: raw array shape, or the Layout shape
+    namedtuple for an xtructure value (so it never passes as a raw array shape).
 
     Internal Layout Adapter Interface helper: shared between Instance Layout
     construction and the Layout Cache replace fast path.
     """
+    if is_xtructure_dataclass_instance(value):
+        return value.layout.shape_tuple
     shape = getattr(value, "shape", None)
     if shape is None:
         shape = jnp.asarray(value).shape
@@ -36,12 +40,6 @@ def primitive_value_dtype(value: Any):
     if dtype is None:
         dtype = jnp.asarray(value).dtype
     return dtype
-
-
-def _value_shape_for_field(field_is_nested: bool, value: Any) -> Any:
-    if field_is_nested:
-        return value.shape
-    return primitive_value_shape(value)
 
 
 def _interpret_field_shape(
@@ -119,10 +117,7 @@ def get_instance_layout(instance: Any) -> InstanceLayout:
         field_values = getter(instance)
         values = (field_values,) if len(type_layout.field_names) == 1 else field_values
 
-    value_shapes = tuple(
-        _value_shape_for_field(field.is_nested, value)
-        for field, value in zip(type_layout.fields, values)
-    )
+    value_shapes = tuple(field_value_shape(value) for value in values)
     value_dtypes = tuple(primitive_value_dtype(value) for value in values)
     return _build_instance_layout_from_signatures(instance.__class__, value_shapes, value_dtypes)
 

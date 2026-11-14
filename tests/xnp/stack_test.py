@@ -17,7 +17,7 @@ def test_stack_single_dataclasses():
     result = xnp.stack([data1, data2])
 
     assert result.structured_type.name == "BATCHED"
-    assert result.shape.batch == (2,)
+    assert result.shape == (2,)
     assert jnp.array_equal(result.id, jnp.array([1, 2]))
     assert jnp.array_equal(result.value, jnp.array([1.0, 2.0]))
 
@@ -32,7 +32,7 @@ def test_stack_batched_dataclasses():
     result = xnp.stack([data1, data2])
 
     assert result.structured_type.name == "BATCHED"
-    assert result.shape.batch == (2, 2)
+    assert result.shape == (2, 2)
     expected_id = jnp.array([[1, 2], [3, 4]])
     expected_value = jnp.array([[1.0, 2.0], [3.0, 4.0]])
     assert jnp.array_equal(result.id, expected_id)
@@ -48,7 +48,7 @@ def test_stack_axis_1():
 
     result = xnp.stack([data1, data2], axis=1)
 
-    assert result.shape.batch == (2, 2)
+    assert result.shape == (2, 2)
     expected_id = jnp.array([[1, 3], [2, 4]])
     expected_value = jnp.array([[1.0, 3.0], [2.0, 4.0]])
     assert jnp.array_equal(result.id, expected_id)
@@ -63,7 +63,7 @@ def test_stack_single_item():
     result = xnp.stack([data])
 
     assert result.structured_type.name == "BATCHED"
-    assert result.shape.batch == (1,)
+    assert result.shape == (1,)
     assert jnp.array_equal(result.id, jnp.array([42]))
     assert jnp.array_equal(result.value, jnp.array([3.14]))
 

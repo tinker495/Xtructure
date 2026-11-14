@@ -8,6 +8,7 @@ import chex
 import jax
 from typing_extensions import Self, dataclass_transform
 
+from .layout.types import InstanceLayout
 from .structuredtype import StructuredType
 
 
@@ -77,7 +78,11 @@ class Xtructurable(metaclass=_XtructurableMeta):
         default_dtype: ClassVar[Any]
 
         @property
-        def shape(self) -> Any:
+        def shape(self) -> TypingTuple[int, ...]:
+            ...
+
+        @property
+        def layout(self) -> InstanceLayout:
             ...
 
         @property

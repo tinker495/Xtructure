@@ -135,7 +135,7 @@ data2 = data2.replace(
 
 # Concatenate dataclasses
 concatenated = xnp.concat([data1, data2])
-print(f"XNP: Concatenated shape: {concatenated.shape.batch}")
+print(f"XNP: Concatenated shape: {concatenated.shape}")
 
 # Stack dataclasses (requires same batch shape)
 data3 = MyDataValue.default((3,))
@@ -144,7 +144,7 @@ data3 = data3.replace(
     b=jnp.array([[[11.0, 12.0]], [[13.0, 14.0]], [[15.0, 16.0]]], dtype=jnp.uint32),
 )
 stacked = xnp.stack([data1, data3])
-print(f"XNP: Stacked shape: {stacked.shape.batch}")
+print(f"XNP: Stacked shape: {stacked.shape}")
 
 # Conditional operations
 condition = jnp.array([True, False, True])

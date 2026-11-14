@@ -141,7 +141,7 @@ def _hashtable_lookup_parallel_internal(
     active: jax.Array | None = None,
 ) -> tuple[BucketIdx, jax.Array]:
     if active is None:
-        active = jnp.ones(inputs.shape.batch, dtype=jnp.bool_)
+        active = jnp.ones(inputs.shape, dtype=jnp.bool_)
 
     bucket_size = int(table.bucket_size)
     max_probes_u32 = SIZE_DTYPE(int(table.max_probes))
@@ -152,7 +152,7 @@ def _hashtable_lookup_parallel_internal(
     slot_offsets = jnp.arange(bucket_size, dtype=SLOT_IDX_DTYPE)
     slot_offsets_u32 = slot_offsets.astype(SIZE_DTYPE)
 
-    probes = jnp.zeros(inputs.shape.batch, dtype=SIZE_DTYPE)
+    probes = jnp.zeros(inputs.shape, dtype=SIZE_DTYPE)
 
     def _cond(val: tuple[BucketIdx, jax.Array, jax.Array, jax.Array]) -> jax.Array:
         _, _, _, active = val
@@ -267,7 +267,7 @@ def _lookup_parallel_from_probe(
     probe afterwards.
     """
     filled = jnp.asarray(filled)
-    batch_size = inputs.shape.batch
+    batch_size = inputs.shape
 
     def _process_batch(filled_mask):
         idxs = BucketIdx(index=probe.index, slot_index=jnp.zeros(batch_size, dtype=SLOT_IDX_DTYPE))
@@ -307,7 +307,7 @@ def _hashtable_lookup_parallel_all_jit(
     table: Any, inputs: Xtructurable
 ) -> tuple[HashIdx, chex.Array]:
     probe = get_new_idx_byterized_batched(inputs, table._capacity, table.seed)
-    mask = jnp.ones(inputs.shape.batch, dtype=jnp.bool_)
+    mask = jnp.ones(inputs.shape, dtype=jnp.bool_)
     return _lookup_parallel_from_probe(table, inputs, probe, mask)
 
 
@@ -324,7 +324,7 @@ def _lookup_parallel_dispatch(
     if isinstance(filled, bool):
         if filled:
             return _hashtable_lookup_parallel_all_jit(table, inputs)
-        batch_size = inputs.shape.batch
+        batch_size = inputs.shape
         return (
             HashIdx(index=jnp.zeros(batch_size, dtype=SIZE_DTYPE)),
             jnp.zeros(batch_size, dtype=jnp.bool_),

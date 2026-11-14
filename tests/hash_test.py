@@ -35,7 +35,7 @@ def test_hash_table_lookup():
 
     idx, found = table.lookup_parallel(sample)
 
-    assert idx.shape.batch == (count,)
+    assert idx.shape == (count,)
     assert found.shape == (count,)
     assert not jnp.any(found)  # Initially all should be not found
 

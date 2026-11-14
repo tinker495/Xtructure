@@ -15,7 +15,7 @@ def test_pad_single_to_batched():
     result = xnp.pad(data, (0, 4))
 
     assert result.structured_type.name == "BATCHED"
-    assert result.shape.batch == (5,)
+    assert result.shape == (5,)
     expected_id = jnp.array([42, 4294967295, 4294967295, 4294967295, 4294967295], dtype=jnp.uint32)
     expected_value = jnp.array([3.14, jnp.inf, jnp.inf, jnp.inf, jnp.inf], dtype=jnp.float32)
     assert jnp.array_equal(result.id, expected_id)
@@ -30,7 +30,7 @@ def test_pad_batched_axis_0():
     result = xnp.pad(data, (0, 2))
 
     assert result.structured_type.name == "BATCHED"
-    assert result.shape.batch == (5,)
+    assert result.shape == (5,)
     expected_id = jnp.array([1, 2, 3, 4294967295, 4294967295], dtype=jnp.uint32)
     expected_value = jnp.array([1.0, 2.0, 3.0, jnp.inf, jnp.inf], dtype=jnp.float32)
     assert jnp.array_equal(result.id, expected_id)
@@ -47,7 +47,7 @@ def test_pad_single_before_after_inserts_correctly():
     result = xnp.pad(data, (2, 1))
 
     assert result.structured_type.name == "BATCHED"
-    assert result.shape.batch == (4,)
+    assert result.shape == (4,)
     expected_id = jnp.array([4294967295, 4294967295, 42, 4294967295], dtype=jnp.uint32)
     expected_value = jnp.array([jnp.inf, jnp.inf, 3.14, jnp.inf], dtype=jnp.float32)
     assert jnp.array_equal(result.id, expected_id)
@@ -62,7 +62,7 @@ def test_pad_batched_before_after_inserts_correctly():
     result = xnp.pad(data, (2, 1))
 
     assert result.structured_type.name == "BATCHED"
-    assert result.shape.batch == (6,)
+    assert result.shape == (6,)
     expected_id = jnp.array([4294967295, 4294967295, 1, 2, 3, 4294967295], dtype=jnp.uint32)
     expected_value = jnp.array([jnp.inf, jnp.inf, 1.0, 2.0, 3.0, jnp.inf], dtype=jnp.float32)
     assert jnp.array_equal(result.id, expected_id)
@@ -79,7 +79,7 @@ def test_pad_uses_existing_padding_as_batch():
 
     assert jnp.array_equal(result_xnp.id, result_builtin.id)
     assert jnp.array_equal(result_xnp.value, result_builtin.value)
-    assert result_xnp.shape.batch == result_builtin.shape.batch
+    assert result_xnp.shape == result_builtin.shape
 
 
 def test_pad_batched_with_constant_values():
@@ -89,7 +89,7 @@ def test_pad_batched_with_constant_values():
 
     result = xnp.pad(data, (0, 2), constant_values=99)
 
-    assert result.shape.batch == (4,)
+    assert result.shape == (4,)
     assert jnp.array_equal(result.id, jnp.array([1, 2, 99, 99], dtype=jnp.uint32))
     assert jnp.array_equal(result.value, jnp.array([1.0, 2.0, 99.0, 99.0], dtype=jnp.float32))
 
@@ -100,7 +100,7 @@ def test_pad_batched_target_shape():
 
     result = xnp.pad(data, [(0, 2), (0, 2)])
 
-    assert result.shape.batch == (4, 5)
+    assert result.shape == (4, 5)
 
 
 def test_pad_tensor_fields_multidim_batch_default_constant():
@@ -112,7 +112,7 @@ def test_pad_tensor_fields_multidim_batch_default_constant():
 
     result = xnp.pad(data, [(1, 0), (0, 2)])
 
-    assert result.shape.batch == (3, 5)
+    assert result.shape == (3, 5)
     assert jnp.array_equal(result.position[1:3, 0:3], position)
     assert jnp.array_equal(result.velocity[1:3, 0:3], velocity)
     assert jnp.all(jnp.isinf(result.position[0]))

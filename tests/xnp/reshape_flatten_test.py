@@ -17,7 +17,7 @@ def test_reshape_wrapper():
 
     assert jnp.array_equal(result_wrapper.id, result_builtin.id)
     assert jnp.array_equal(result_wrapper.value, result_builtin.value)
-    assert result_wrapper.shape.batch == result_builtin.shape.batch == (2, 3)
+    assert result_wrapper.shape == result_builtin.shape == (2, 3)
 
 
 def test_reshape_with_minus_one():
@@ -26,17 +26,17 @@ def test_reshape_with_minus_one():
     data = data.replace(id=jnp.arange(12), value=jnp.arange(12, dtype=jnp.float32))
 
     result1 = xnp.reshape(data, (2, -1))
-    assert result1.shape.batch == (2, 6)
+    assert result1.shape == (2, 6)
     assert jnp.array_equal(result1.id, jnp.arange(12).reshape(2, 6))
     assert jnp.array_equal(result1.value, jnp.arange(12, dtype=jnp.float32).reshape(2, 6))
 
     result2 = xnp.reshape(data, (-1, 3))
-    assert result2.shape.batch == (4, 3)
+    assert result2.shape == (4, 3)
     assert jnp.array_equal(result2.id, jnp.arange(12).reshape(4, 3))
     assert jnp.array_equal(result2.value, jnp.arange(12, dtype=jnp.float32).reshape(4, 3))
 
     result3 = xnp.reshape(data, (-1,))
-    assert result3.shape.batch == (12,)
+    assert result3.shape == (12,)
     assert jnp.array_equal(result3.id, jnp.arange(12))
     assert jnp.array_equal(result3.value, jnp.arange(12, dtype=jnp.float32))
 
@@ -50,14 +50,14 @@ def test_reshape_with_minus_one_2d():
     )
 
     result1 = xnp.reshape(data, (2, -1, 3))
-    assert result1.shape.batch == (2, 4, 3)
+    assert result1.shape == (2, 4, 3)
     expected_id = jnp.arange(24).reshape(2, 4, 3)
     expected_value = jnp.arange(24, dtype=jnp.float32).reshape(2, 4, 3)
     assert jnp.array_equal(result1.id, expected_id)
     assert jnp.array_equal(result1.value, expected_value)
 
     result2 = xnp.reshape(data, (4, -1))
-    assert result2.shape.batch == (4, 6)
+    assert result2.shape == (4, 6)
     expected_id = jnp.arange(24).reshape(4, 6)
     expected_value = jnp.arange(24, dtype=jnp.float32).reshape(4, 6)
     assert jnp.array_equal(result2.id, expected_id)
@@ -90,7 +90,7 @@ def test_reshape_with_minus_one_vector_data():
     )
 
     result = xnp.reshape(data, (3, -1))
-    assert result.shape.batch == (3, 4)
+    assert result.shape == (3, 4)
     assert result.position.shape == (3, 4, 3)
     assert result.velocity.shape == (3, 4, 3)
 

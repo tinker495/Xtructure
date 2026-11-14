@@ -23,7 +23,7 @@ def _queue_build_jit(max_size: int, value_class: Xtructurable):
 
 @jax.jit
 def _queue_enqueue_jit(queue, items: Xtructurable):
-    batch_size = items.shape.batch
+    batch_size = items.shape
     if batch_size == ():
         items = jax.tree_util.tree_map(lambda x: x[None], items)
         num_to_enqueue = 1

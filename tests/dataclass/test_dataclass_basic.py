@@ -67,23 +67,23 @@ def test_structured_type():
 
     batched = SimpleData.default(shape=(5,))
     assert batched.structured_type == StructuredType.BATCHED
-    assert batched.shape.batch == (5,)
+    assert batched.shape == (5,)
 
     batched2d = SimpleData.default(shape=(5, 10))
     assert batched2d.structured_type == StructuredType.BATCHED
-    assert batched2d.shape.batch == (5, 10)
+    assert batched2d.shape == (5, 10)
 
     vector = VectorData.default(shape=(5, 10))
     assert vector.structured_type == StructuredType.BATCHED
-    assert vector.shape.batch == (5, 10)
+    assert vector.shape == (5, 10)
 
     matrix = MatrixData.default(shape=(5, 10))
     assert matrix.structured_type == StructuredType.BATCHED
-    assert matrix.shape.batch == (5, 10)
+    assert matrix.shape == (5, 10)
 
     nested = NestedData.default(shape=(5, 10))
     assert nested.structured_type == StructuredType.BATCHED
-    assert nested.shape.batch == (5, 10)
+    assert nested.shape == (5, 10)
 
 
 def test_batch_shape():
@@ -145,55 +145,55 @@ def test_reshape():
     batched = SimpleData.default(shape=(10,))
     reshaped = batched.reshape((2, 5))
     assert reshaped.structured_type == StructuredType.BATCHED
-    assert reshaped.shape.batch == (2, 5)
+    assert reshaped.shape == (2, 5)
     assert reshaped.id.shape == (2, 5)
     assert reshaped.value.shape == (2, 5)
 
     batched2d = SimpleData.default(shape=(2, 3))
     reshaped2d = batched2d.reshape((6,))
     assert reshaped2d.structured_type == StructuredType.BATCHED
-    assert reshaped2d.shape.batch == (6,)
+    assert reshaped2d.shape == (6,)
     assert reshaped2d.id.shape == (6,)
     assert reshaped2d.value.shape == (6,)
 
     vector = VectorData.default(shape=(10,))
     reshaped_vector = vector.reshape((2, 5))
     assert reshaped_vector.structured_type == StructuredType.BATCHED
-    assert reshaped_vector.shape.batch == (2, 5)
+    assert reshaped_vector.shape == (2, 5)
     assert reshaped_vector.position.shape == (2, 5, 3)
     assert reshaped_vector.velocity.shape == (2, 5, 3)
 
     vector2d = VectorData.default(shape=(2, 3))
     reshaped_vector2d = vector2d.reshape((6,))
     assert reshaped_vector2d.structured_type == StructuredType.BATCHED
-    assert reshaped_vector2d.shape.batch == (6,)
+    assert reshaped_vector2d.shape == (6,)
     assert reshaped_vector2d.position.shape == (6, 3)
     assert reshaped_vector2d.velocity.shape == (6, 3)
 
     matrix = MatrixData.default(shape=(10,))
     reshaped_matrix = matrix.reshape((2, 5))
     assert reshaped_matrix.structured_type == StructuredType.BATCHED
-    assert reshaped_matrix.shape.batch == (2, 5)
+    assert reshaped_matrix.shape == (2, 5)
     assert reshaped_matrix.matrix.shape == (2, 5, 2, 2)
 
     matrix2d = MatrixData.default(shape=(2, 3))
     reshaped_matrix2d = matrix2d.reshape((6,))
     assert reshaped_matrix2d.structured_type == StructuredType.BATCHED
-    assert reshaped_matrix2d.shape.batch == (6,)
+    assert reshaped_matrix2d.shape == (6,)
     assert reshaped_matrix2d.matrix.shape == (6, 2, 2)
     assert reshaped_matrix2d.flags.shape == (6, 4)
 
     nested = NestedData.default(shape=(10,))
     reshaped_nested = nested.reshape((2, 5))
     assert reshaped_nested.structured_type == StructuredType.BATCHED
-    assert reshaped_nested.shape.batch == (2, 5)
+    assert reshaped_nested.shape == (2, 5)
     assert reshaped_nested.simple.id.shape == (2, 5)
     assert reshaped_nested.simple.value.shape == (2, 5)
 
     nested2d = NestedData.default(shape=(2, 3))
     reshaped_nested2d = nested2d.reshape((6,))
     assert reshaped_nested2d.structured_type == StructuredType.BATCHED
-    assert reshaped_nested2d.shape.batch == (6,)
+    assert reshaped_nested2d.shape == (6,)
     assert reshaped_nested2d.simple.id.shape == (6,)
     assert reshaped_nested2d.simple.value.shape == (6,)
 
@@ -206,19 +206,19 @@ def test_reshape_with_minus_one():
 
     reshaped1 = batched.reshape((2, -1))
     assert reshaped1.structured_type == StructuredType.BATCHED
-    assert reshaped1.shape.batch == (2, 6)
+    assert reshaped1.shape == (2, 6)
     assert reshaped1.id.shape == (2, 6)
     assert reshaped1.value.shape == (2, 6)
 
     reshaped2 = batched.reshape((-1, 3))
     assert reshaped2.structured_type == StructuredType.BATCHED
-    assert reshaped2.shape.batch == (4, 3)
+    assert reshaped2.shape == (4, 3)
     assert reshaped2.id.shape == (4, 3)
     assert reshaped2.value.shape == (4, 3)
 
     reshaped3 = batched.reshape((-1,))
     assert reshaped3.structured_type == StructuredType.BATCHED
-    assert reshaped3.shape.batch == (12,)
+    assert reshaped3.shape == (12,)
     assert reshaped3.id.shape == (12,)
     assert reshaped3.value.shape == (12,)
 
@@ -230,7 +230,7 @@ def test_reshape_with_minus_one():
 
     reshaped_vector = vector.reshape((2, -1))
     assert reshaped_vector.structured_type == StructuredType.BATCHED
-    assert reshaped_vector.shape.batch == (2, 5)
+    assert reshaped_vector.shape == (2, 5)
     assert reshaped_vector.position.shape == (2, 5, 3)
     assert reshaped_vector.velocity.shape == (2, 5, 3)
 
@@ -242,7 +242,7 @@ def test_reshape_with_minus_one():
 
     reshaped_matrix = matrix.reshape((2, -1))
     assert reshaped_matrix.structured_type == StructuredType.BATCHED
-    assert reshaped_matrix.shape.batch == (2, 4)
+    assert reshaped_matrix.shape == (2, 4)
     assert reshaped_matrix.matrix.shape == (2, 4, 2, 2)
     assert reshaped_matrix.flags.shape == (2, 4, 4)
 
@@ -259,7 +259,7 @@ def test_reshape_with_minus_one():
 
     reshaped_nested = nested.reshape((2, -1))
     assert reshaped_nested.structured_type == StructuredType.BATCHED
-    assert reshaped_nested.shape.batch == (2, 3)
+    assert reshaped_nested.shape == (2, 3)
     assert reshaped_nested.simple.id.shape == (2, 3)
     assert reshaped_nested.simple.value.shape == (2, 3)
     assert reshaped_nested.vector.position.shape == (2, 3, 3)
@@ -286,35 +286,35 @@ def test_flatten():
     batched = SimpleData.default(shape=(2, 3))
     flattened = batched.flatten()
     assert flattened.structured_type == StructuredType.BATCHED
-    assert flattened.shape.batch == (6,)
+    assert flattened.shape == (6,)
     assert flattened.id.shape == (6,)
     assert flattened.value.shape == (6,)
 
     batched2d = SimpleData.default(shape=(2, 3))
     flattened2d = batched2d.flatten()
     assert flattened2d.structured_type == StructuredType.BATCHED
-    assert flattened2d.shape.batch == (6,)
+    assert flattened2d.shape == (6,)
     assert flattened2d.id.shape == (6,)
     assert flattened2d.value.shape == (6,)
 
     vector = VectorData.default(shape=(2, 3))
     flattened_vector = vector.flatten()
     assert flattened_vector.structured_type == StructuredType.BATCHED
-    assert flattened_vector.shape.batch == (6,)
+    assert flattened_vector.shape == (6,)
     assert flattened_vector.position.shape == (6, 3)
     assert flattened_vector.velocity.shape == (6, 3)
 
     matrix = MatrixData.default(shape=(2, 3))
     flattened_matrix = matrix.flatten()
     assert flattened_matrix.structured_type == StructuredType.BATCHED
-    assert flattened_matrix.shape.batch == (6,)
+    assert flattened_matrix.shape == (6,)
     assert flattened_matrix.matrix.shape == (6, 2, 2)
     assert flattened_matrix.flags.shape == (6, 4)
 
     nested = NestedData.default(shape=(2, 3))
     flattened_nested = nested.flatten()
     assert flattened_nested.structured_type == StructuredType.BATCHED
-    assert flattened_nested.shape.batch == (6,)
+    assert flattened_nested.shape == (6,)
     assert flattened_nested.simple.id.shape == (6,)
     assert flattened_nested.simple.value.shape == (6,)
 
@@ -328,7 +328,7 @@ def test_transpose_simple_data():
 
     result = data.transpose()
 
-    assert result.shape.batch == (3, 2)
+    assert result.shape == (3, 2)
     assert jnp.array_equal(result.id, jnp.transpose(data.id))
     assert jnp.array_equal(result.value, jnp.transpose(data.value))
 
@@ -344,7 +344,7 @@ def test_transpose_vector_data_batch_only():
 
     expected_position = jnp.transpose(data.position, axes=(1, 0, 2))
     expected_velocity = jnp.transpose(data.velocity, axes=(1, 0, 2))
-    assert result.shape.batch == (3, 2)
+    assert result.shape == (3, 2)
     assert jnp.array_equal(result.position, expected_position)
     assert jnp.array_equal(result.velocity, expected_velocity)
 
@@ -359,7 +359,7 @@ def test_transpose_with_custom_axes():
 
     result = data.transpose(axes=axes)
 
-    assert result.shape.batch == (4, 2, 3)
+    assert result.shape == (4, 2, 3)
     assert jnp.array_equal(result.id, jnp.transpose(data.id, axes=axes))
     assert jnp.array_equal(result.value, jnp.transpose(data.value, axes=axes))
 

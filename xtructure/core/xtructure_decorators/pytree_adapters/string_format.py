@@ -51,7 +51,7 @@ def add_string_representation_methods(cls: Type[T]) -> Type[T]:
             )
 
         return (
-            f"<Unstructured {cls.__name__} data, shape: {self.shape}, "
+            f"<Unstructured {cls.__name__} data, shape: {self.layout.shape_tuple}, "
             f"default_shape: {self.default_shape}>"
         )
 

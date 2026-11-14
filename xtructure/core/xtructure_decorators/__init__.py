@@ -7,9 +7,9 @@ from typing_extensions import dataclass_transform
 
 from xtructure.core.dataclass import base_dataclass
 from xtructure.core.layout.instance_layout import (
+    field_value_shape,
     get_instance_layout,
     primitive_value_dtype,
-    primitive_value_shape,
 )
 from xtructure.core.layout.type_layout import get_type_layout
 from xtructure.core.protocol import Xtructurable
@@ -62,7 +62,7 @@ def _can_reuse_layout_cache(old_layout, type_layout, instance, changed_names: se
             return False
 
         value = getattr(instance, name)
-        if primitive_value_shape(value) != _expected_raw_shape(
+        if field_value_shape(value) != _expected_raw_shape(
             old_layout.batch_shape,
             type_layout.storage_intrinsic_shape_for(field_layout),
         ):

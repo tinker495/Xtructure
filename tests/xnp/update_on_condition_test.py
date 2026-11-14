@@ -10,8 +10,8 @@ from xtructure import numpy as xnp
 def _make_simple_default(shape):
     instance = SimpleData.default(shape)
     return instance.replace(
-        id=jnp.zeros(instance.shape.batch, dtype=jnp.uint32),
-        value=jnp.zeros(instance.shape.batch, dtype=jnp.float32),
+        id=jnp.zeros(instance.shape, dtype=jnp.uint32),
+        value=jnp.zeros(instance.shape, dtype=jnp.float32),
     )
 
 

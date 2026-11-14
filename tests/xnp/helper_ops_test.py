@@ -14,7 +14,7 @@ def test_expand_dims_single_dataclass():
     expanded = xnp.expand_dims(data, axis=0)
 
     assert expanded.structured_type.name == "BATCHED"
-    assert expanded.shape.batch == (1,)
+    assert expanded.shape == (1,)
     assert jnp.array_equal(expanded.id, jnp.array([7], dtype=jnp.uint32))
     assert jnp.array_equal(expanded.value, jnp.array([3.14], dtype=jnp.float32))
 
@@ -26,7 +26,7 @@ def test_expand_dims_batched_axis():
 
     expanded = xnp.expand_dims(data, axis=1)
 
-    assert expanded.shape.batch == (2, 1)
+    assert expanded.shape == (2, 1)
     assert jnp.array_equal(expanded.id, data.id[:, None])
     assert jnp.array_equal(expanded.value, data.value[:, None])
 
@@ -41,7 +41,7 @@ def test_squeeze_removes_unit_axes():
 
     squeezed = xnp.squeeze(data)
 
-    assert squeezed.shape.batch == (3,)
+    assert squeezed.shape == (3,)
     assert jnp.array_equal(squeezed.id, jnp.arange(3, dtype=jnp.uint32))
     assert jnp.array_equal(squeezed.value, jnp.arange(3, dtype=jnp.float32))
 
@@ -58,7 +58,7 @@ def test_repeat_matches_jnp_repeat():
 
     expected_id = jnp.repeat(data.id, repeats=2, axis=0)
     expected_value = jnp.repeat(data.value, repeats=2, axis=0)
-    assert repeated.shape.batch == (4,)
+    assert repeated.shape == (4,)
     assert jnp.array_equal(repeated.id, expected_id)
     assert jnp.array_equal(repeated.value, expected_value)
 
@@ -89,7 +89,7 @@ def test_split_even_sections():
     parts = xnp.split(data, 2)
 
     assert len(parts) == 2
-    assert all(part.shape.batch == (2,) for part in parts)
+    assert all(part.shape == (2,) for part in parts)
     assert jnp.array_equal(parts[0].id, jnp.array([1, 2], dtype=jnp.uint32))
     assert jnp.array_equal(parts[1].value, jnp.array([30.0, 40.0], dtype=jnp.float32))
 
@@ -102,9 +102,9 @@ def test_split_by_indices():
     parts = xnp.split(data, jnp.array([2, 4]))
 
     assert len(parts) == 3
-    assert parts[0].shape.batch == (2,)
-    assert parts[1].shape.batch == (2,)
-    assert parts[2].shape.batch == (1,)
+    assert parts[0].shape == (2,)
+    assert parts[1].shape == (2,)
+    assert parts[2].shape == (1,)
     assert jnp.array_equal(parts[2].id, jnp.array([4], dtype=jnp.uint32))
 
 

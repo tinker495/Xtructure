@@ -29,7 +29,8 @@ class MyHeapItem(Xtructurable):
 
 Inheriting from this base transforms a Python class into a JAX-compatible structure and adds several helpful methods and properties:
 
-*   **`shape`** (property): Returns a namedtuple showing the JAX shapes of all fields.
+*   **`shape`** (property): Returns the leading axes shared by every field as a plain tuple, e.g. `(10,)`.
+*   **`layout`** (property): Returns instance layout metadata, including each field's intrinsic shape.
 *   **`dtype`** (property): Returns a namedtuple showing the JAX dtypes of all fields.
 *   **`__getitem__(self, index)`**: Allows indexing or slicing an instance (e.g., `my_data_instance[0]`). The operation is applied to each field.
 *   **`__len__(self)`**: Returns the first batch dimension for `BATCHED` instances and 1 for `SINGLE` instances. Raises `TypeError` for `UNSTRUCTURED` instances.
@@ -55,7 +56,9 @@ Inheriting from this base transforms a Python class into a JAX-compatible struct
         *   Each field will be filled with random values according to its JAX dtype, and the field arrays will have these new batched shapes.
     *   `key`: A JAX PRNG key is required for random number generation.
 *   `structured_type` (property): An enum (`StructuredType.SINGLE`, `StructuredType.BATCHED`, `StructuredType.UNSTRUCTURED`) indicating instance structure relative to its default.
-*   `batch_shape` (property): Shape of batch dimensions if `structured_type` is `BATCHED`.
+*   `shape` (property): The leading axes shared by every field: `()` for `SINGLE`, `(N, ...)` for `BATCHED`. `UNSTRUCTURED` instances raise `TypeError`, like `ndim` and `len()`. Field arrays keep their own full shape, e.g. `instance.data.shape == (10, 3)` while `instance.shape == (10,)`.
+*   `layout` (property): Instance layout metadata. `instance.layout.field_shape_for("data")` returns a field's intrinsic shape, e.g. `(3,)`.
+*   `batch_shape` (property): Same value as `shape` for structured instances; `-1` for `UNSTRUCTURED`.
 *   `reshape(self, new_shape)`: Reshapes batch dimensions.
 *   `flatten(self)`: Flattens batch dimensions.
 *   `__str__(self)` / `str(self)`: Provides a string representation.

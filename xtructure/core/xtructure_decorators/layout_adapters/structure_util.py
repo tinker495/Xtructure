@@ -48,7 +48,7 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
                 f"{op_name} operation is only supported for SINGLE or BATCHED structured types. "
                 f"Current type: {self.structured_type}"
             )
-        return len(self.shape.batch)
+        return len(self.shape)
 
     def reshape(self, *new_shape: int | tuple[int, ...]) -> T:
         if len(new_shape) == 0:
@@ -59,7 +59,7 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
             new_shape = tuple(new_shape)
 
         if self.structured_type == StructuredType.BATCHED:
-            total_length = np.prod(self.shape.batch)
+            total_length = np.prod(self.shape)
 
             # Handle -1 in new_shape by calculating the missing dimension
             new_shape_list = list(new_shape)
@@ -94,7 +94,7 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
                 new_shape = tuple(new_shape_list)
 
             new_total_length = np.prod(new_shape)
-            batch_dim = len(self.shape.batch)
+            batch_dim = len(self.shape)
             if total_length != new_total_length:
                 raise ValueError(
                     f"Total length of the state and new shape does not match: {total_length} != {new_total_length}"
@@ -105,7 +105,7 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
         else:
             raise ValueError(
                 f"Reshape is only supported for BATCHED structured_type. Current type: '{self.structured_type}'."
-                f"Shape: {self.shape}, Default Shape: {self.default_shape}"
+                f"Shape: {self.layout.shape_tuple}, Default Shape: {self.default_shape}"
             )
 
     def flatten(self):
@@ -115,7 +115,7 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
                 f"Current type: {self.structured_type}"
             )
 
-        current_batch_shape = self.shape.batch
+        current_batch_shape = self.shape
         # np.prod of an empty tuple array is 1, which is correct for total_length
         # if current_batch_shape is ().
         total_length = np.prod(np.array(current_batch_shape))
@@ -150,13 +150,9 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
         axis2_norm = axis2 if axis2 >= 0 else batch_ndim + axis2
 
         if axis1_norm < 0 or axis1_norm >= batch_ndim:
-            raise ValueError(
-                f"Axis {axis1} is out of bounds for batch dimensions {self.shape.batch}"
-            )
+            raise ValueError(f"Axis {axis1} is out of bounds for batch dimensions {self.shape}")
         if axis2_norm < 0 or axis2_norm >= batch_ndim:
-            raise ValueError(
-                f"Axis {axis2} is out of bounds for batch dimensions {self.shape.batch}"
-            )
+            raise ValueError(f"Axis {axis2} is out of bounds for batch dimensions {self.shape}")
 
         return jax.tree_util.tree_map(
             lambda field: jnp.swapaxes(field, axis1_norm, axis2_norm), self
@@ -203,18 +199,18 @@ def add_structure_utilities(cls: Type[T]) -> Type[T]:
         return cls(**data)
 
     def padding_as_batch(self, batch_shape: tuple[int, ...]):
-        if self.structured_type != StructuredType.BATCHED or len(self.shape.batch) > 1:
+        if self.structured_type != StructuredType.BATCHED or len(self.shape) > 1:
             raise ValueError(
                 "Padding as batch operation is only supported for BATCHED structured types "
                 "with at most 1 batch dimension. "
                 f"Current type: {self.structured_type}, "
-                f"Current batch shape: {self.shape.batch}"
+                f"Current batch shape: {self.layout.batch_shape}"
             )
-        if self.shape.batch == batch_shape:
+        if self.shape == batch_shape:
             return self
 
         new_default_state = self.default(batch_shape)
-        new_default_state = new_default_state.at[: self.shape.batch[0]].set(self)
+        new_default_state = new_default_state.at[: self.shape[0]].set(self)
         return new_default_state
 
     # add method based on default state
