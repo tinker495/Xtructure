@@ -1,6 +1,7 @@
 """Tests ensuring xnp.tile behaves like numpy.tile across dataclasses."""
 
 import jax.numpy as jnp
+import pytest
 
 from tests.xnp.shared_data import NestedData, SimpleData, VectorData
 from xtructure import numpy as xnp
@@ -9,7 +10,7 @@ from xtructure import numpy as xnp
 def test_tile_single_dataclass():
     """Test tiling a single dataclass to create a batch."""
     data = SimpleData.default()
-    data = data.replace(id=jnp.array(42), value=jnp.array(3.14))
+    data = data.replace(id=jnp.array(42, dtype=jnp.uint32), value=jnp.array(3.14))
 
     result = xnp.tile(data, 3)
 
@@ -69,24 +70,9 @@ def test_tile_vector_dataclass():
         velocity=jnp.array([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]),
     )
 
-    result = xnp.tile(data, 2)
-
-    assert result.position.shape == (2, 6)
-    assert result.velocity.shape == (2, 6)
-    expected_position = jnp.array(
-        [
-            [1.0, 2.0, 3.0, 1.0, 2.0, 3.0],
-            [4.0, 5.0, 6.0, 4.0, 5.0, 6.0],
-        ]
-    )
-    expected_velocity = jnp.array(
-        [
-            [0.1, 0.2, 0.3, 0.1, 0.2, 0.3],
-            [0.4, 0.5, 0.6, 0.4, 0.5, 0.6],
-        ]
-    )
-    assert jnp.allclose(result.position, expected_position)
-    assert jnp.allclose(result.velocity, expected_velocity)
+    # Author: tinker495. Tiling cannot change the declared intrinsic shape.
+    with pytest.raises(ValueError, match="expected trailing shape"):
+        xnp.tile(data, 2)
 
 
 def test_tile_complex_repetition_pattern():
@@ -120,7 +106,7 @@ def test_tile_complex_repetition_pattern():
 def test_tile_nested_dataclass():
     """Test tiling a nested dataclass."""
     simple = SimpleData.default()
-    simple = simple.replace(id=jnp.array(1), value=jnp.array(1.0))
+    simple = simple.replace(id=jnp.array(1, dtype=jnp.uint32), value=jnp.array(1.0))
     vector = VectorData.default()
     vector = vector.replace(
         position=jnp.array([1.0, 2.0, 3.0]), velocity=jnp.array([0.1, 0.2, 0.3])
@@ -128,17 +114,9 @@ def test_tile_nested_dataclass():
     data = NestedData.default()
     data = data.replace(simple=simple, vector=vector)
 
-    result = xnp.tile(data, 2)
-
-    assert result.simple.id.shape == (2,)
-    assert result.simple.value.shape == (2,)
-    assert result.vector.position.shape == (6,)
-    assert result.vector.velocity.shape == (6,)
-
-    assert jnp.array_equal(result.simple.id, jnp.array([1, 1], dtype=jnp.uint32))
-    assert jnp.array_equal(result.simple.value, jnp.array([1.0, 1.0], dtype=jnp.float32))
-    assert jnp.allclose(result.vector.position, jnp.array([1.0, 2.0, 3.0, 1.0, 2.0, 3.0]))
-    assert jnp.allclose(result.vector.velocity, jnp.array([0.1, 0.2, 0.3, 0.1, 0.2, 0.3]))
+    # Author: tinker495. Tiling cannot change the declared intrinsic shape.
+    with pytest.raises(ValueError, match="expected trailing shape"):
+        xnp.tile(data, 2)
 
 
 def test_tile_equivalent_to_jnp_tile():

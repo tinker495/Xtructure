@@ -2,8 +2,7 @@
 
 The `xtructure_numpy` module provides JAX-compatible operations for working with `Xtructurable` instances, offering array-like operations that work seamlessly with structured data.
 
-Define data classes by inheriting from `Xtructurable`. The legacy decorator emits
-`FutureWarning`; see [Legacy Decorator Migration](migration.md).
+Define data classes by inheriting from `Xtructurable`.
 
 ```python
 import jax

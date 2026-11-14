@@ -5,8 +5,7 @@ Xtructure deliberately separates how data is stored from how you use it. Every
 JAX performance, while the public API presents **Array of Structures (AoS)**
 objects for clarity.
 
-Define data classes by inheriting from `Xtructurable`. The legacy decorator emits
-`FutureWarning`; see [Legacy Decorator Migration](migration.md).
+Define data classes by inheriting from `Xtructurable`.
 
 ## Backend: SoA arrays for JAX
 

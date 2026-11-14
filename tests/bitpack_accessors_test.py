@@ -7,7 +7,7 @@ from xtructure import FieldDescriptor, Xtructurable
 from xtructure.core.layout.bitpack import packed_num_bytes
 
 
-class PackedState(Xtructurable, validate=True):
+class PackedState(Xtructurable):
     # Store packed bytes, expose faces_unpacked and set_unpacked(faces=...)
     faces: FieldDescriptor.packed_tensor(
         unpacked_dtype=jnp.uint8,
@@ -16,7 +16,7 @@ class PackedState(Xtructurable, validate=True):
     )
 
 
-class PackedBoolState(Xtructurable, validate=True):
+class PackedBoolState(Xtructurable):
     flags: FieldDescriptor.packed_tensor(
         unpacked_dtype=jnp.bool_,
         shape=(17,),
@@ -24,7 +24,7 @@ class PackedBoolState(Xtructurable, validate=True):
     )
 
 
-class WidePackedState(Xtructurable, validate=True):
+class WidePackedState(Xtructurable):
     values: FieldDescriptor.packed_tensor(
         unpacked_dtype=jnp.uint32,
         shape=(5,),

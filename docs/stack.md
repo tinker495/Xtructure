@@ -2,8 +2,7 @@
 
 A JAX-compatible batched Stack data structure, designed for LIFO (Last-In, First-Out) operations. It is optimized for parallel execution on hardware like GPUs.
 
-Define data classes by inheriting from `Xtructurable`. The legacy decorator emits
-`FutureWarning`; see [Legacy Decorator Migration](migration.md).
+Define data classes by inheriting from `Xtructurable`.
 
 ```python
 import jax

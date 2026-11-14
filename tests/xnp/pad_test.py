@@ -4,13 +4,14 @@ import jax.numpy as jnp
 import pytest
 
 from tests.xnp.shared_data import SimpleData, VectorData
+from xtructure import FieldDescriptor, Xtructurable
 from xtructure import numpy as xnp
 
 
 def test_pad_single_to_batched():
     """Test padding a SINGLE dataclass to create a batched version."""
     data = SimpleData.default()
-    data = data.replace(id=jnp.array(42), value=jnp.array(3.14))
+    data = data.replace(id=jnp.array(42, dtype=jnp.uint32), value=jnp.array(3.14))
 
     result = xnp.pad(data, (0, 4))
 
@@ -85,7 +86,7 @@ def test_pad_uses_existing_padding_as_batch():
 def test_pad_batched_with_constant_values():
     """Test padding with custom constant values."""
     data = SimpleData.default((2,))
-    data = data.replace(id=jnp.array([1, 2]), value=jnp.array([1.0, 2.0]))
+    data = data.replace(id=jnp.array([1, 2], dtype=jnp.uint32), value=jnp.array([1.0, 2.0]))
 
     result = xnp.pad(data, (0, 2), constant_values=99)
 
@@ -136,3 +137,101 @@ def test_pad_invalid_pad_width():
         ValueError, match="pad_width must be int, sequence of int, or sequence of pairs"
     ):
         xnp.pad(data, "invalid")
+
+
+@pytest.mark.parametrize("batched", [False, True])
+@pytest.mark.parametrize("nested", [False, True])
+def test_default_pad_validates_completed_arrays(batched, nested):
+    # Author: tinker495. A zero-filled temporary object violates this validator,
+    # while the completed padding preserves the positive sum. Both batch modes
+    # and nested fields must reach validation only after inserting the input.
+    def positive_sum(value):
+        if jnp.sum(value) <= 0:
+            raise ValueError("sum must be positive")
+
+    class PositiveSum(Xtructurable):
+        value: FieldDescriptor.scalar(dtype=jnp.int32, default=0, validator=positive_sum)
+
+    class Nested(Xtructurable):
+        child: FieldDescriptor.scalar(dtype=PositiveSum)
+
+    data = PositiveSum(value=jnp.array([1] if batched else 1, dtype=jnp.int32))
+    result = xnp.pad(Nested(child=data) if nested else data, 1)
+
+    assert result.shape == (3,)
+    assert jnp.array_equal(
+        result.child.value if nested else result.value,
+        jnp.array([0, 1, 0], dtype=jnp.int32),
+    )
+
+
+@pytest.mark.parametrize("batched", [False, True])
+def test_default_pad_rejects_invalid_completed_arrays(batched):
+    # Author: tinker495. Avoiding validation of temporary fill arrays must not
+    # allow a completed padded result that violates the declared validator.
+    def all_positive(value):
+        if jnp.any(value <= 0):
+            raise ValueError("all values must be positive")
+
+    class AllPositive(Xtructurable):
+        value: FieldDescriptor.scalar(dtype=jnp.int32, default=0, validator=all_positive)
+
+    data = AllPositive(value=jnp.array([1] if batched else 1, dtype=jnp.int32))
+    with pytest.raises(ValueError, match="all values must be positive"):
+        xnp.pad(data, 1)
+
+
+@pytest.mark.parametrize("batched", [False, True])
+@pytest.mark.parametrize("nested", [False, True])
+def test_default_pad_preserves_initialized_arrays(batched, nested):
+    # Author: tinker495. Padding must preserve initialized values and declared
+    # fill values without rerunning either the leaf or parent initialization.
+    hook_calls = []
+
+    class Incremented(Xtructurable):
+        value: FieldDescriptor.scalar(dtype=jnp.int32, default=0)
+
+        def __post_init__(self):
+            hook_calls.append("leaf")
+            self.value = self.value + 1
+
+    class Nested(Xtructurable):
+        child: FieldDescriptor.scalar(dtype=Incremented)
+
+        def __post_init__(self):
+            hook_calls.append("parent")
+
+    child = Incremented(value=jnp.array([1] if batched else 1, dtype=jnp.int32))
+    data = Nested(child=child) if nested else child
+    result = xnp.pad(data, 1)
+
+    assert result.shape == (3,)
+    assert jnp.array_equal(
+        result.child.value if nested else result.value,
+        jnp.array([0, 2, 0], dtype=jnp.int32),
+    )
+    assert hook_calls == (["leaf", "parent"] if nested else ["leaf"])
+    assert jnp.array_equal(child.value, jnp.array([2] if batched else 2, dtype=jnp.int32))
+
+
+@pytest.mark.parametrize("batched", [False, True])
+def test_default_pad_validates_without_initialization_rewriting_result(batched):
+    # Author: tinker495. A hook must not turn invalid padding zeros into positive
+    # values before validation; validate the completed arrays as produced.
+    hook_calls = []
+
+    def positive(value):
+        if jnp.any(value <= 0):
+            raise ValueError("values must stay positive")
+
+    class Incremented(Xtructurable):
+        value: FieldDescriptor.scalar(dtype=jnp.int32, default=0, validator=positive)
+
+        def __post_init__(self):
+            hook_calls.append("leaf")
+            self.value = self.value + 1
+
+    data = Incremented(value=jnp.array([1] if batched else 1, dtype=jnp.int32))
+    with pytest.raises(ValueError, match="values must stay positive"):
+        xnp.pad(data, 1)
+    assert hook_calls == ["leaf"]

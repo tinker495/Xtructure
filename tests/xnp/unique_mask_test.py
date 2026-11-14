@@ -21,7 +21,9 @@ class MixedWidthHashData(Xtructurable):
 def test_unique_mask_basic_uniqueness():
     """Test basic uniqueness without cost consideration."""
     data = HashableData.default(shape=(5,))
-    data = data.replace(id=jnp.array([1, 2, 1, 3, 2]), value=jnp.array([1.0, 2.0, 1.0, 3.0, 2.0]))
+    data = data.replace(
+        id=jnp.array([1, 2, 1, 3, 2], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 1.0, 3.0, 2.0])
+    )
 
     mask = xnp.unique_mask(data)
 
@@ -33,7 +35,7 @@ def test_unique_mask_with_costs():
     """Test unique filtering with cost-based selection."""
     data = HashableData.default(shape=(6,))
     data = data.replace(
-        id=jnp.array([1, 2, 1, 3, 2, 1]),
+        id=jnp.array([1, 2, 1, 3, 2, 1], dtype=jnp.uint32),
         value=jnp.array([1.0, 2.0, 1.0, 3.0, 2.0, 1.0]),
     )
 
@@ -48,7 +50,9 @@ def test_unique_mask_with_costs():
 def test_unique_mask_tie_breaking():
     """Test tie-breaking when costs are equal."""
     data = HashableData.default(shape=(4,))
-    data = data.replace(id=jnp.array([1, 2, 1, 2]), value=jnp.array([1.0, 2.0, 1.0, 2.0]))
+    data = data.replace(
+        id=jnp.array([1, 2, 1, 2], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 1.0, 2.0])
+    )
     costs = jnp.array([3.0, 4.0, 3.0, 4.0])
 
     mask = xnp.unique_mask(data, key=costs)
@@ -60,7 +64,9 @@ def test_unique_mask_tie_breaking():
 def test_unique_mask_infinite_costs():
     """Test that entries with infinite cost are excluded."""
     data = HashableData.default(shape=(4,))
-    data = data.replace(id=jnp.array([1, 2, 1, 2]), value=jnp.array([1.0, 2.0, 1.0, 2.0]))
+    data = data.replace(
+        id=jnp.array([1, 2, 1, 2], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 1.0, 2.0])
+    )
     costs = jnp.array([1.0, jnp.inf, 2.0, 3.0])
 
     mask = xnp.unique_mask(data, key=costs)
@@ -72,7 +78,7 @@ def test_unique_mask_infinite_costs():
 def test_unique_mask_all_same():
     """Test when all elements are the same."""
     data = HashableData.default(shape=(3,))
-    data = data.replace(id=jnp.array([1, 1, 1]), value=jnp.array([1.0, 1.0, 1.0]))
+    data = data.replace(id=jnp.array([1, 1, 1], dtype=jnp.uint32), value=jnp.array([1.0, 1.0, 1.0]))
     costs = jnp.array([3.0, 1.0, 2.0])
 
     mask = xnp.unique_mask(data, key=costs)
@@ -84,7 +90,7 @@ def test_unique_mask_all_same():
 def test_unique_mask_all_unique():
     """Test when all elements are unique."""
     data = HashableData.default(shape=(3,))
-    data = data.replace(id=jnp.array([1, 2, 3]), value=jnp.array([1.0, 2.0, 3.0]))
+    data = data.replace(id=jnp.array([1, 2, 3], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 3.0]))
     costs = jnp.array([3.0, 1.0, 2.0])
 
     mask = xnp.unique_mask(data, key=costs)
@@ -96,7 +102,9 @@ def test_unique_mask_all_unique():
 def test_unique_mask_explicit_batch_len():
     """Test with explicitly provided batch_len."""
     data = HashableData.default(shape=(4,))
-    data = data.replace(id=jnp.array([1, 2, 1, 3]), value=jnp.array([1.0, 2.0, 1.0, 3.0]))
+    data = data.replace(
+        id=jnp.array([1, 2, 1, 3], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 1.0, 3.0])
+    )
     costs = jnp.array([2.0, 3.0, 1.0, 4.0])
 
     mask = xnp.unique_mask(data, key=costs, batch_len=4)
@@ -108,7 +116,9 @@ def test_unique_mask_explicit_batch_len():
 def test_unique_mask_no_key():
     """Test unique_mask without key returns first occurrence."""
     data = HashableData.default(shape=(5,))
-    data = data.replace(id=jnp.array([1, 2, 1, 3, 2]), value=jnp.array([1.0, 2.0, 1.0, 3.0, 2.0]))
+    data = data.replace(
+        id=jnp.array([1, 2, 1, 3, 2], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 1.0, 3.0, 2.0])
+    )
 
     mask = xnp.unique_mask(data, key=None)
 
@@ -119,7 +129,7 @@ def test_unique_mask_no_key():
 def test_unique_mask_single_element():
     """Test with single element."""
     data = HashableData.default(shape=(1,))
-    data = data.replace(id=jnp.array([1]), value=jnp.array([1.0]))
+    data = data.replace(id=jnp.array([1], dtype=jnp.uint32), value=jnp.array([1.0]))
 
     mask = xnp.unique_mask(data)
 
@@ -148,7 +158,7 @@ def test_unique_mask_error_no_uint32ed():
 def test_unique_mask_error_key_length_mismatch():
     """Test that error is raised when key length doesn't match batch_len."""
     data = HashableData.default(shape=(3,))
-    data = data.replace(id=jnp.array([1, 2, 3]), value=jnp.array([1.0, 2.0, 3.0]))
+    data = data.replace(id=jnp.array([1, 2, 3], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 3.0]))
     wrong_key = jnp.array([1.0, 2.0])
 
     with pytest.raises(ValueError, match="key length 2 must match batch_len 3"):
@@ -159,7 +169,7 @@ def test_unique_mask_complex_scenario():
     """Test a more complex scenario with multiple duplicates and costs."""
     data = HashableData.default(shape=(8,))
     data = data.replace(
-        id=jnp.array([1, 2, 3, 1, 2, 3, 1, 4]),
+        id=jnp.array([1, 2, 3, 1, 2, 3, 1, 4], dtype=jnp.uint32),
         value=jnp.array([1.0, 2.0, 3.0, 1.0, 2.0, 3.0, 1.0, 4.0]),
     )
     costs = jnp.array([5.0, 3.0, 4.0, 2.0, 6.0, 1.0, 7.0, 2.0])
@@ -174,7 +184,7 @@ def test_unique_mask_integration_with_other_ops():
     """Test unique_mask integration with other xnp operations."""
     data = HashableData.default(shape=(6,))
     data = data.replace(
-        id=jnp.array([1, 2, 1, 3, 2, 1]),
+        id=jnp.array([1, 2, 1, 3, 2, 1], dtype=jnp.uint32),
         value=jnp.array([1.0, 2.0, 1.0, 3.0, 2.0, 1.0]),
     )
     costs = jnp.array([3.0, 2.0, 1.0, 4.0, 5.0, 0.5])
@@ -194,7 +204,7 @@ def test_unique_mask_with_custom_key_fn():
     """Test unique_mask with custom key function."""
     data = HashableData.default(shape=(6,))
     data = data.replace(
-        id=jnp.array([1, 2, 1, 3, 2, 1]),
+        id=jnp.array([1, 2, 1, 3, 2, 1], dtype=jnp.uint32),
         value=jnp.array([10.0, 20.0, 10.0, 30.0, 20.0, 10.0]),
     )
     costs = jnp.array([3.0, 2.0, 1.0, 4.0, 5.0, 0.5])
@@ -212,7 +222,7 @@ def test_unique_mask_custom_float_key_preserves_fractional_values():
     """Custom float keys must not collide through uint32 truncation."""
     data = HashableData.default(shape=(4,))
     data = data.replace(
-        id=jnp.array([1, 2, 3, 4]),
+        id=jnp.array([1, 2, 3, 4], dtype=jnp.uint32),
         value=jnp.array([1.25, 1.75, 1.25, 2.5]),
     )
     costs = jnp.array([3.0, 1.0, 2.0, 4.0])
@@ -230,7 +240,7 @@ def test_unique_mask_return_index_is_jit_static():
     """return_index should keep a static batch-sized shape under JIT."""
     data = HashableData.default(shape=(5,))
     data = data.replace(
-        id=jnp.array([1, 2, 1, 3, 2]),
+        id=jnp.array([1, 2, 1, 3, 2], dtype=jnp.uint32),
         value=jnp.array([1.0, 2.0, 1.0, 3.0, 2.0]),
     )
 
@@ -253,7 +263,7 @@ def test_unique_mask_return_index_with_cost_is_jit_static():
     """Cost-based return_index should select winning rows without dynamic indexing."""
     data = HashableData.default(shape=(6,))
     data = data.replace(
-        id=jnp.array([1, 2, 1, 3, 2, 1]),
+        id=jnp.array([1, 2, 1, 3, 2, 1], dtype=jnp.uint32),
         value=jnp.array([1.0, 2.0, 1.0, 3.0, 2.0, 1.0]),
     )
     costs = jnp.array([5.0, 3.0, 2.0, 4.0, 7.0, 1.0])

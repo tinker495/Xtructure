@@ -5,7 +5,6 @@ import pytest
 
 from tests.xnp.shared_data import NestedData, SimpleData, VectorData
 from xtructure import numpy as xnp
-from xtructure.core.structuredtype import StructuredType
 
 
 def test_transpose_2d_basic():
@@ -181,11 +180,9 @@ def test_transpose_nested_dataclass():
 
 
 def test_transpose_unstructured_raises():
-    data = SimpleData(id=jnp.array(1), value=jnp.array([2.0, 3.0, 4.0]))
-    assert data.structured_type == StructuredType.UNSTRUCTURED
-
-    with pytest.raises(ValueError):
-        xnp.transpose(data)
+    # Author: tinker495. Construction rejects the mismatch before xnp.transpose.
+    with pytest.raises(ValueError, match="field batch shapes disagree"):
+        SimpleData(id=jnp.array(1, dtype=jnp.uint32), value=jnp.array([2.0, 3.0, 4.0]))
 
 
 def test_swap_axes_2d_basic():
@@ -369,11 +366,9 @@ def test_swap_axes_nested_dataclass():
 
 
 def test_swapaxes_unstructured_raises():
-    data = SimpleData(id=jnp.array(1), value=jnp.array([2.0, 3.0, 4.0]))
-    assert data.structured_type == StructuredType.UNSTRUCTURED
-
-    with pytest.raises(ValueError):
-        xnp.swapaxes(data, 0, 0)
+    # Author: tinker495. Construction rejects the mismatch before xnp.swapaxes.
+    with pytest.raises(ValueError, match="field batch shapes disagree"):
+        SimpleData(id=jnp.array(1, dtype=jnp.uint32), value=jnp.array([2.0, 3.0, 4.0]))
 
 
 def test_swap_axes_integration_with_other_ops():

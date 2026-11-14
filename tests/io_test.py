@@ -4,9 +4,12 @@ import os
 
 import chex
 import jax
+import jax.numpy as jnp
+import numpy as np
 import pytest
 
 from tests.testdata import NestedData, SimpleData, VectorData
+from xtructure import FieldDescriptor, Xtructurable
 from xtructure.core.layout.types import LeafLayout
 from xtructure.io import io as io_module
 
@@ -105,3 +108,47 @@ def test_load_leaf_value_cast_failure_includes_leaf_context(monkeypatch):
 
     with pytest.raises(TypeError, match="payload.*loading ExampleOwner"):
         io_module._load_leaf_value(leaf, data, "ExampleOwner")
+
+
+@pytest.mark.parametrize(
+    "position,error",
+    [(np.ones((2,), dtype=np.float32), ValueError), (np.ones((3,), dtype=np.int32), TypeError)],
+)
+def test_raw_npz_restore_validates_stored_shape_and_dtype(tmp_path, position, error):
+    # Author: tinker495. Raw NPZ preserves stored dtypes; malformed data must be
+    # rejected at load, before an instance with a broken schema can escape.
+    path = tmp_path / "invalid.npz"
+    VectorData.default().save(str(path), packed=False)
+    with np.load(path) as saved:
+        payload = dict(saved)
+    payload["position"] = position
+    np.savez_compressed(path, **payload)
+    with pytest.raises(error):
+        VectorData.load(str(path))
+
+
+def _require_nonzero_codes(value):
+    if jnp.any(value == 0):
+        raise ValueError("zero code")
+
+
+class StoredCodes(Xtructurable, bitpack="off"):
+    codes: FieldDescriptor.tensor(
+        dtype=jnp.uint16, shape=(4,), bits=3, fill_value=1, validator=_require_nonzero_codes
+    )
+
+
+def test_packed_npz_converts_declared_dtype_then_checks_original_validator(tmp_path):
+    # Author: tinker495. Packed IO promises an explicit declared-dtype restore;
+    # that conversion remains valid, but decoded values still need validation.
+    path = tmp_path / "codes.npz"
+    StoredCodes.default().save(str(path))
+    assert StoredCodes.load(str(path)).codes.dtype == jnp.uint16
+    with np.load(path) as saved:
+        payload = dict(saved)
+    payload["codes.__xtructure_bitpack__.data"] = np.zeros_like(
+        payload["codes.__xtructure_bitpack__.data"]
+    )
+    np.savez_compressed(path, **payload)
+    with pytest.raises(ValueError, match="zero code"):
+        StoredCodes.load(str(path))

@@ -2,7 +2,7 @@
 
 Packed fields are those whose FieldDescriptor declares `packed_bits` plus a
 logical unpacked shape. Type Layout / Bitpack Layout interpret that Schema
-declaration into stored byte-stream facts, and the decorator adds:
+declaration into stored byte-stream facts, and class preparation adds:
 
 - `<field>_unpacked` property: returns logical array of shape batch + unpacked_shape
 Common construction and update methods are inherited from Xtructurable.

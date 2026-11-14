@@ -2,8 +2,7 @@
 
 A bucketed double hash table optimized for JAX.
 
-Define data classes by inheriting from `Xtructurable`. The legacy decorator emits
-`FutureWarning`; see [Legacy Decorator Migration](migration.md).
+Define data classes by inheriting from `Xtructurable`.
 
 ```python
 import jax

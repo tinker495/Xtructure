@@ -287,6 +287,8 @@ def unique_mask(
     Returns:
         Mask (bool array) or tuple (mask, index, inverse).
     """
+    if isinstance(val, Xtructurable):
+        val.layout
     if batch_len is None:
         try:
             batch_len = val.shape[0]

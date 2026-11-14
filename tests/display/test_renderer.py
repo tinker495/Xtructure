@@ -1,4 +1,5 @@
 import jax.numpy as jnp
+import pytest
 
 from tests.dataclass.fixtures import SimpleData
 from xtructure.core.display import BatchedRenderer
@@ -113,11 +114,12 @@ def test_renderer_produces_non_empty_string_with_title():
 def test_decorator_str_dispatches_on_structured_type():
     single = SimpleData.default()
     batched = SimpleData.default(shape=(3,))
-    unstructured = SimpleData(id=jnp.array(1), value=jnp.array([2.0, 3.0, 4.0]))
 
     assert "SimpleData" in str(single)
     assert "Batched SimpleData" in str(batched)
-    assert "Unstructured SimpleData" in str(unstructured)
+    # Author: tinker495. Invalid data is rejected before it reaches the renderer.
+    with pytest.raises(ValueError, match="field batch shapes disagree"):
+        SimpleData(id=jnp.array(1, dtype=jnp.uint32), value=jnp.array([2.0, 3.0, 4.0]))
 
 
 def test_decorator_str_and_dunder_str_are_same_callable():

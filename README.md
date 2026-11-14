@@ -37,7 +37,6 @@ For local development, run `uv sync --group dev`, then use `uv run pytest`.
 Detailed documentation on how to use Xtructure is available at [https://tinker495.github.io/Xtructure/](https://tinker495.github.io/Xtructure/).
 
 *   **[Core Concepts](https://tinker495.github.io/Xtructure/core_concepts.html)**: Learn how to define custom data structures by inheriting from `Xtructurable` and declaring fields with `FieldDescriptor`.
-*   **[Xtructurable Migration](docs/migration.md)**: Replace removed APIs with inheritance and review field-name and method-override rules.
 *   **[Stack Usage](https://tinker495.github.io/Xtructure/stack.html)**: Guide to using the Stack data structure.
 *   **[Queue Usage](https://tinker495.github.io/Xtructure/queue.html)**: Guide to using the Queue data structure.
 *   **[BGPQ Usage](https://tinker495.github.io/Xtructure/bgpq.html)**: Guide to using the Batched GPU Priority Queue.
@@ -49,9 +48,15 @@ Quick examples can still be found below for a brief overview.
 
 ## Quick Examples
 
-> Define structures by inheriting from `Xtructurable`, with `validate` / `bitpack`
-> options in the class header. The legacy decorator has been removed; see the
-> [migration guide](docs/migration.md).
+Define structures by inheriting from `Xtructurable`, with options in the class header.
+
+An instance's `.shape` is a plain tuple of shared batch axes. Read field shape
+metadata with `.layout.field_shape_for("field")`.
+
+Data construction and operations validate field dtypes, intrinsic shapes, shared
+batch axes, and custom validators. Use `replace` for validated changes. JAX PyTree
+reconstruction preserves structure and defers validation until a data API is used;
+see [runtime validation](docs/core_concepts.md#runtime-validation) for the boundary.
 
 ```python
 import jax

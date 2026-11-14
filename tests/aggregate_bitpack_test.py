@@ -3,12 +3,10 @@ import jax.numpy as jnp
 import pytest
 
 from xtructure import FieldDescriptor, Xtructurable
-from xtructure.core.xtructure_decorators.layout_adapters import (
-    aggregate_bitpack as aggregate_bitpack_module,
-)
+from xtructure.core import aggregate_bitpack as aggregate_bitpack_module
 
 
-class AggState(Xtructurable, validate=True, bitpack="aggregate"):
+class AggState(Xtructurable, bitpack="aggregate"):
     # 1-bit flags
     flags: FieldDescriptor.tensor(dtype=jnp.bool_, shape=(17,), bits=1, fill_value=False)
     # 3-bit values in [0,7]
@@ -66,11 +64,49 @@ def test_aggregate_pack_roundtrip_batched():
     chex.assert_trees_all_equal(o, s)
 
 
-class AggStateAuto(Xtructurable, validate=True):
+class AggStateAuto(Xtructurable):
     # Same structure as AggState, but rely on auto aggregate activation (all fields have bits, no nesting)
     flags: FieldDescriptor.tensor(dtype=jnp.bool_, shape=(17,), bits=1, fill_value=False)
     faces: FieldDescriptor.tensor(dtype=jnp.uint8, shape=(6, 9), bits=3, fill_value=0)
     codes: FieldDescriptor.tensor(dtype=jnp.uint16, shape=(5,), bits=12, fill_value=0)
+
+
+def test_generated_representations_validate_their_own_schema():
+    # Author: tinker495. Packed storage and logical views have distinct declared
+    # dtypes/shapes; each constructor must enforce its own representation.
+    packed = AggState.Packed.default()
+    with pytest.raises(TypeError, match="expected dtype"):
+        packed.replace(words=packed.words.astype(jnp.int32))
+    with pytest.raises(ValueError, match="expected trailing shape"):
+        packed.replace(words=jnp.zeros((packed.words.size + 1,), dtype=jnp.uint32))
+    view = packed.unpacked
+    with pytest.raises(TypeError, match="expected dtype"):
+        view.replace(codes=view.codes.astype(jnp.uint16))
+    with pytest.raises(ValueError, match="expected trailing shape"):
+        view.replace(codes=jnp.zeros((6,), dtype=jnp.uint32))
+
+
+def test_original_validators_run_on_original_restore_not_packed_views():
+    # Author: tinker495. The raw representations do not inherit logical value
+    # validators; reconstructing an original, including a nested one, does.
+    def nonzero(value):
+        if jnp.any(value == 0):
+            raise ValueError("zero code")
+
+    class Codes(Xtructurable, bitpack="aggregate"):
+        value: FieldDescriptor.tensor(dtype=jnp.uint16, shape=(4,), bits=12, validator=nonzero)
+
+    class NestedCodes(Xtructurable, bitpack="aggregate"):
+        codes: FieldDescriptor.scalar(dtype=Codes)
+
+    packed = Codes.Packed.default()
+    assert jnp.array_equal(packed.unpacked.value, jnp.zeros((4,), dtype=jnp.uint32))
+    with pytest.raises(ValueError, match="zero code"):
+        packed.as_original()
+    nested = NestedCodes.Packed.default()
+    assert nested.unpacked.codes.value.dtype == jnp.uint32
+    with pytest.raises(ValueError, match="zero code"):
+        nested.as_original()
 
 
 def test_aggregate_auto_enabled_when_all_fields_have_bits():
@@ -148,14 +184,14 @@ def test_aggregate_unpack_field_declared_dtype_uses_layout_cast_policy(monkeypat
     assert context == "unpacking AggStatePacked.codes"
 
 
-class InnerState(Xtructurable, validate=True):
+class InnerState(Xtructurable):
     # 4-bit values
     a: FieldDescriptor.tensor(dtype=jnp.uint8, shape=(6,), bits=4, fill_value=0)
     # 12-bit values
     codes: FieldDescriptor.tensor(dtype=jnp.uint16, shape=(5,), bits=12, fill_value=0)
 
 
-class OuterState(Xtructurable, validate=True, bitpack="aggregate"):
+class OuterState(Xtructurable, bitpack="aggregate"):
     inner: FieldDescriptor.scalar(dtype=InnerState)
     flags: FieldDescriptor.tensor(dtype=jnp.bool_, shape=(7,), bits=1, fill_value=False)
 

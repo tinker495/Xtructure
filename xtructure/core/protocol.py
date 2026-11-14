@@ -1,5 +1,5 @@
 import builtins
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from operator import attrgetter
 from types import NotImplementedType
 from typing import Any, ClassVar, Literal, Protocol, runtime_checkable
@@ -10,27 +10,15 @@ import jax.numpy as jnp
 import numpy as np
 from typing_extensions import Self, dataclass_transform
 
+from .class_setup import _ClassState, install_xtructure_members
 from .display import MAX_PRINT_BATCH_SIZE, SHOW_BATCH_SIZE
+from .display.formatting import _custom_pretty_formatter
+from .hash import _h, _h_with_uint32ed, _uint32ed, tree_to_bytes
+from .indexing import _AtIndexer, _tuple_getter_values
 from .layout.bitpack import pack_field
-from .layout.instance_layout import (
-    field_value_shape,
-    get_instance_layout,
-    primitive_value_dtype,
-)
+from .layout.instance_layout import get_instance_layout
 from .layout.types import AdapterFieldPlan, InstanceLayout
 from .structuredtype import StructuredType
-from .xtructure_decorators import _ClassState, install_xtructure_members
-from .xtructure_decorators.layout_adapters.indexing import (
-    _AtIndexer,
-    _tuple_getter_values,
-)
-from .xtructure_decorators.pytree_adapters.hash import (
-    _h,
-    _h_with_uint32ed,
-    _uint32ed,
-    tree_to_bytes,
-)
-from .xtructure_decorators.pytree_adapters.string_format import _custom_pretty_formatter
 
 
 @runtime_checkable
@@ -50,19 +38,20 @@ class Xtructurable:
     default_shape: ClassVar[Any]
     default_dtype: ClassVar[Any]
     _xtructure_state: ClassVar[_ClassState]
-    _layout_cache: InstanceLayout
+    _layout_cache: InstanceLayout | None
 
     def __new__(cls, *args: Any, **kwargs: Any) -> Self:
         if cls is Xtructurable:
             raise TypeError(
                 "Xtructurable cannot be instantiated directly; subclass Xtructurable instead."
             )
-        return super().__new__(cls)
+        instance = super().__new__(cls)
+        object.__setattr__(instance, "_layout_cache", None)
+        return instance
 
     def __init_subclass__(
         cls,
         *,
-        validate: builtins.bool = False,
         bitpack: Literal["auto", "aggregate", "field", "off"] = "auto",
         **kwargs: Any,
     ) -> None:
@@ -74,38 +63,42 @@ class Xtructurable:
                 f"{cls.__name__} cannot inherit from an already xtructured class; "
                 "use a plain Python mixin or nested FieldDescriptor composition instead."
             )
-        install_xtructure_members(cls, validate=validate, bitpack=bitpack)
+        install_xtructure_members(cls, bitpack=bitpack)
 
     def __post_init__(self, *args: Any, **kwargs: Any) -> None:
         if self._xtructure_state.user_post_init is not None:
             self._xtructure_state.user_post_init(self, *args, **kwargs)
-        object.__setattr__(self, "_layout_cache", get_instance_layout(self))
 
     @property
     def shape(self) -> tuple[int, ...]:
-        """Shared batch axes; UNSTRUCTURED instances raise TypeError."""
-        if not isinstance(self._layout_cache.batch_shape, tuple):
-            raise TypeError(
-                f"shape is not defined for UNSTRUCTURED {type(self).__name__} instances. "
-                f"shape={self.layout.shape_tuple}, default_shape={self.default_shape}"
-            )
-        return self._layout_cache.batch_shape
+        """The shared batch axes of validated data."""
+        batch_shape = self.layout.batch_shape
+        assert isinstance(batch_shape, tuple)
+        return batch_shape
 
     @property
     def layout(self) -> InstanceLayout:
+        if self._layout_cache is None:
+            self.check_invariants()
+        assert self._layout_cache is not None
         return self._layout_cache
 
     @property
     def dtype(self) -> Any:
-        return self._layout_cache.dtype_tuple
+        return self.layout.dtype_tuple
 
     @property
     def structured_type(self) -> StructuredType:
-        return self._layout_cache.structured_type
+        return self.layout.structured_type
 
-    @property
-    def batch_shape(self) -> tuple[int, ...] | int:
-        return self._layout_cache.batch_shape
+    def _map_data(self, function: Callable[..., Any], *others: Self) -> Self:
+        """Map array leaves at a data boundary, validating inputs and the result."""
+        self.layout
+        for other in others:
+            other.layout
+        result = jax.tree_util.tree_map(function, self, *others)
+        result.layout
+        return result
 
     @property
     def ndim(self) -> int:
@@ -117,11 +110,12 @@ class Xtructurable:
 
     def __iter__(self) -> Iterator[Self]:
         """Iterate over the first batch axis; reject non-batched instances."""
-        if self.batch_shape == ():
+        if self.shape == ():
             raise TypeError(f"Cannot iterate over SINGLE {type(self).__name__} instances.")
         return (self[index] for index in range(len(self)))
 
     def __getitem__(self, index: Any) -> Self:
+        self.layout
         state = self._xtructure_state
         values = _tuple_getter_values(state.field_getter, self, len(state.type_layout.field_names))
         return type(self)(
@@ -133,6 +127,7 @@ class Xtructurable:
 
     @property
     def at(self) -> _AtIndexer[Self]:
+        self.layout
         return _AtIndexer(
             self, self._xtructure_state.setter, self._xtructure_state.condition_setter
         )
@@ -159,14 +154,6 @@ class Xtructurable:
                 assert nested_type is not None
                 default_values[field_plan.name] = nested_type.default(shape=field_shape)
         return cls(**default_values)
-
-    def _structured_batch_ndim(self, op_name: str) -> int:
-        if self.structured_type == StructuredType.UNSTRUCTURED:
-            raise ValueError(
-                f"{op_name} operation is only supported for SINGLE or BATCHED structured types. "
-                f"Current type: {self.structured_type}"
-            )
-        return len(self.shape)
 
     def reshape(self, *new_shape: int | tuple[int, ...]) -> Self:
         if len(new_shape) == 0:
@@ -217,9 +204,7 @@ class Xtructurable:
                 raise ValueError(
                     f"Total length of the state and new shape does not match: {total_length} != {new_total_length}"
                 )
-            return jax.tree_util.tree_map(
-                lambda x: jnp.reshape(x, new_shape + x.shape[batch_dim:]), self
-            )
+            return self._map_data(lambda x: jnp.reshape(x, new_shape + x.shape[batch_dim:]))
         else:
             raise ValueError(
                 f"Reshape is only supported for BATCHED structured_type. Current type: '{self.structured_type}'."
@@ -239,15 +224,14 @@ class Xtructurable:
         total_length = np.prod(np.array(current_batch_shape))
         len_current_batch_shape = len(current_batch_shape)
 
-        return jax.tree_util.tree_map(
+        return self._map_data(
             # Reshape each leaf: flatten batch dims, keep core dims.
             # core_dims are obtained by stripping batch_dims from the start of x.shape.
             lambda x: jnp.reshape(x, (total_length,) + x.shape[len_current_batch_shape:]),
-            self,
         )
 
     def transpose(self, axes: Sequence[int] | None = None) -> Self:
-        batch_ndim = self._structured_batch_ndim("Transpose")
+        batch_ndim = len(self.shape)
 
         if axes is None:
             axes = tuple(range(batch_ndim - 1, -1, -1))
@@ -259,10 +243,10 @@ class Xtructurable:
             full_axes = list(axes) + list(range(batch_ndim, field_ndim))
             return jnp.transpose(field, axes=full_axes)
 
-        return jax.tree_util.tree_map(transpose_batch_only, self)
+        return self._map_data(transpose_batch_only)
 
     def swapaxes(self, axis1: int, axis2: int) -> Self:
-        batch_ndim = self._structured_batch_ndim("Swapaxes")
+        batch_ndim = len(self.shape)
 
         axis1_norm = axis1 if axis1 >= 0 else batch_ndim + axis1
         axis2_norm = axis2 if axis2 >= 0 else batch_ndim + axis2
@@ -272,9 +256,7 @@ class Xtructurable:
         if axis2_norm < 0 or axis2_norm >= batch_ndim:
             raise ValueError(f"Axis {axis2} is out of bounds for batch dimensions {self.shape}")
 
-        return jax.tree_util.tree_map(
-            lambda field: jnp.swapaxes(field, axis1_norm, axis2_norm), self
-        )
+        return self._map_data(lambda field: jnp.swapaxes(field, axis1_norm, axis2_norm))
 
     @classmethod
     def random(cls, shape: tuple[int, ...] = (), key: chex.PRNGKey | None = None) -> Self:
@@ -339,17 +321,12 @@ class Xtructurable:
         state = self._xtructure_state
         if self.structured_type == StructuredType.SINGLE:
             return _custom_pretty_formatter(self, **kwargs)
-        if self.structured_type == StructuredType.BATCHED:
-            return state.renderer.render(
-                self,
-                max_size=kwargs.pop("max_size", MAX_PRINT_BATCH_SIZE),
-                show_size=kwargs.pop("show_size", SHOW_BATCH_SIZE),
-                title=f"Batched {type(self).__name__}",
-                **kwargs,
-            )
-        return (
-            f"<Unstructured {type(self).__name__} data, shape: {self.layout.shape_tuple}, "
-            f"default_shape: {self.default_shape}>"
+        return state.renderer.render(
+            self,
+            max_size=kwargs.pop("max_size", MAX_PRINT_BATCH_SIZE),
+            show_size=kwargs.pop("show_size", SHOW_BATCH_SIZE),
+            title=f"Batched {type(self).__name__}",
+            **kwargs,
         )
 
     def str(self, **kwargs: Any) -> builtins.str:
@@ -365,8 +342,10 @@ class Xtructurable:
     # Array equality intentionally differs from object.__eq__'s bool annotation.
     # pyrefly: ignore [bad-override]
     def __eq__(self, other: Any) -> jax.Array | NotImplementedType:
+        self.layout
         if not isinstance(other, self.__class__):
             return NotImplemented
+        other.layout
 
         tree_equal = jax.tree_util.tree_map(lambda x, y: jnp.all(x == y), self, other)
         return jax.tree_util.tree_reduce(jnp.logical_and, tree_equal)
@@ -374,8 +353,10 @@ class Xtructurable:
     # Array inequality intentionally differs from object.__ne__'s bool annotation.
     # pyrefly: ignore [bad-override]
     def __ne__(self, other: Any) -> jax.Array | NotImplementedType:
+        self.layout
         if not isinstance(other, self.__class__):
             return NotImplemented
+        other.layout
 
         tree_equal = jax.tree_util.tree_map(lambda x, y: jnp.any(x != y), self, other)
         return jax.tree_util.tree_reduce(jnp.logical_or, tree_equal)
@@ -401,7 +382,12 @@ class Xtructurable:
 
     def _validate_array_field(self, field_plan: AdapterFieldPlan, value: Any) -> None:
         try:
-            array = jnp.asarray(value)
+            # Array metadata is enough; inspecting host data must not transfer it.
+            array = (
+                value
+                if isinstance(value, (jax.Array, np.ndarray, np.generic))
+                else jnp.asarray(value)
+            )
         except TypeError as err:
             raise TypeError(
                 f"{type(self).__name__}.{field_plan.name} could not be coerced to a JAX array for validation."
@@ -437,11 +423,10 @@ class Xtructurable:
                 )
 
     def check_invariants(self) -> None:
+        """Validate actual fields and cache their layout after all checks pass."""
+        object.__setattr__(self, "_layout_cache", None)
         for field_plan in self._xtructure_state.type_layout.adapter_field_plans:
             value = attrgetter(field_plan.name)(self)
-
-            if field_plan.validator is not None:
-                field_plan.validator(value)
 
             if field_plan.field_kind == "nested":
                 nested_type = field_plan.nested_type
@@ -451,48 +436,33 @@ class Xtructurable:
                         f"{type(self).__name__}.{field_plan.name} expected instance of "
                         f"{nested_type.__name__}, got {type(value).__name__}."
                     )
-                continue
-            self._validate_array_field(field_plan, value)
+                value.check_invariants()
+            else:
+                self._validate_array_field(field_plan, value)
+
+        layout = get_instance_layout(self)
+        if layout.structured_type == StructuredType.UNSTRUCTURED:
+            raise ValueError(f"{type(self).__name__}: {layout.mismatch_reason}")
+        for field_plan in self._xtructure_state.type_layout.adapter_field_plans:
+            if field_plan.validator is not None:
+                field_plan.validator(attrgetter(field_plan.name)(self))
+        object.__setattr__(self, "_layout_cache", layout)
 
     def replace(self, **kwargs: Any) -> Self:
-        state = self._xtructure_state
-        type_layout = state.type_layout
+        self.layout
+        type_layout = self._xtructure_state.type_layout
         unexpected = tuple(name for name in kwargs if not type_layout.has_field(name))
         if unexpected:
             raise TypeError(
                 f"{type(self).__name__}.replace got unexpected field(s): "
                 + ", ".join(repr(name) for name in unexpected)
             )
-        replacement = type(self).__new__(type(self))
-        for name in type_layout.field_names:
-            object.__setattr__(
-                replacement, name, kwargs[name] if name in kwargs else attrgetter(name)(self)
-            )
-        if state.user_post_init is not None:
-            state.user_post_init(replacement)
-
-        reusable = isinstance(self._layout_cache.batch_shape, tuple)
-        if reusable:
-            for name in kwargs:
-                field = type_layout.field_for(name)
-                value = attrgetter(name)(replacement)
-                if (
-                    field.is_nested
-                    or field_value_shape(value)
-                    != self.shape + type_layout.storage_intrinsic_shape_for(field)
-                    or primitive_value_dtype(value)
-                    != attrgetter(name)(self._layout_cache.dtype_tuple)
-                ):
-                    reusable = False
-                    break
-        object.__setattr__(
-            replacement,
-            "_layout_cache",
-            self._layout_cache if reusable else get_instance_layout(replacement),
+        return type(self)(
+            **{
+                name: kwargs[name] if name in kwargs else attrgetter(name)(self)
+                for name in type_layout.field_names
+            }
         )
-        if state.validate:
-            replacement.check_invariants()
-        return replacement
 
     def set_unpacked(self, **kwargs: Any) -> Self:
         """Return a new instance with provided packed fields updated from unpacked arrays."""
