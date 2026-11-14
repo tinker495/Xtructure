@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 import pytest
 
@@ -79,3 +80,38 @@ def test_validation_cache_bypasses_user_setattr():
 
     data = Restricted(value=jnp.array(1, dtype=jnp.float32))
     assert data.replace(value=jnp.array(2, dtype=jnp.float32)).shape == ()
+
+
+@pytest.mark.parametrize(
+    "operation, expected_value, expected_doubled",
+    [("identity", 3, 6), ("roundtrip", 3, 6), ("increment", 4, 7)],
+)
+def test_pytree_restores_dynamic_attributes_without_post_init(
+    operation, expected_value, expected_doubled
+):
+    # Author: tinker495. Hook-created attributes are independent PyTree leaves;
+    # restoration must keep their supplied values without rerunning the hook or
+    # restoring a layout cache computed for the original leaves.
+    hook_calls = []
+
+    class Derived(Xtructurable):
+        value: FieldDescriptor.scalar(dtype=jnp.int32)
+
+        def __post_init__(self):
+            hook_calls.append(1)
+            self.doubled = self.value * 2
+
+    data = Derived(value=jnp.array(3, dtype=jnp.int32))
+    assert data._layout_cache is not None
+    if operation == "identity":
+        restored = jax.tree_util.tree_map(lambda leaf: leaf, data)
+    elif operation == "roundtrip":
+        leaves, treedef = jax.tree_util.tree_flatten(data)
+        restored = jax.tree_util.tree_unflatten(treedef, leaves)
+    else:
+        restored = jax.tree_util.tree_map(lambda leaf: leaf + 1, data)
+
+    assert int(restored.value) == expected_value
+    assert int(restored.doubled) == expected_doubled
+    assert hook_calls == [1]
+    assert restored._layout_cache is None

@@ -4,6 +4,7 @@ import jax.numpy as jnp
 import pytest
 
 from tests.xnp.shared_data import SimpleData, VectorData
+from xtructure import FieldDescriptor, Xtructurable
 from xtructure import numpy as xnp
 
 
@@ -136,3 +137,45 @@ def test_pad_invalid_pad_width():
         ValueError, match="pad_width must be int, sequence of int, or sequence of pairs"
     ):
         xnp.pad(data, "invalid")
+
+
+@pytest.mark.parametrize("batched", [False, True])
+@pytest.mark.parametrize("nested", [False, True])
+def test_default_pad_validates_completed_arrays(batched, nested):
+    # Author: tinker495. A zero-filled temporary object violates this validator,
+    # while the completed padding preserves the positive sum. Both batch modes
+    # and nested fields must reach validation only after inserting the input.
+    def positive_sum(value):
+        if jnp.sum(value) <= 0:
+            raise ValueError("sum must be positive")
+
+    class PositiveSum(Xtructurable):
+        value: FieldDescriptor.scalar(dtype=jnp.int32, default=0, validator=positive_sum)
+
+    class Nested(Xtructurable):
+        child: FieldDescriptor.scalar(dtype=PositiveSum)
+
+    data = PositiveSum(value=jnp.array([1] if batched else 1, dtype=jnp.int32))
+    result = xnp.pad(Nested(child=data) if nested else data, 1)
+
+    assert result.shape == (3,)
+    assert jnp.array_equal(
+        result.child.value if nested else result.value,
+        jnp.array([0, 1, 0], dtype=jnp.int32),
+    )
+
+
+@pytest.mark.parametrize("batched", [False, True])
+def test_default_pad_rejects_invalid_completed_arrays(batched):
+    # Author: tinker495. Avoiding validation of temporary fill arrays must not
+    # allow a completed padded result that violates the declared validator.
+    def all_positive(value):
+        if jnp.any(value <= 0):
+            raise ValueError("all values must be positive")
+
+    class AllPositive(Xtructurable):
+        value: FieldDescriptor.scalar(dtype=jnp.int32, default=0, validator=all_positive)
+
+    data = AllPositive(value=jnp.array([1] if batched else 1, dtype=jnp.int32))
+    with pytest.raises(ValueError, match="all values must be positive"):
+        xnp.pad(data, 1)

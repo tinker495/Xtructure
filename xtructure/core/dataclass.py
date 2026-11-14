@@ -165,13 +165,10 @@ def _dataclass_unflatten(dcls, keys, values):
     from xtructure.core.protocol import Xtructurable
 
     dcls_object = dcls.__new__(dcls)
-    attribute_dict = dict(zip(keys, values))
-    # Looping over fields instead of keys & values preserves the field order.
-    # Using dataclasses.fields fails because dataclass uids change after
-    # serialisation (eg, with cloudpickle).
-    for field in dcls.__dataclass_fields__.values():
-        if field.name in attribute_dict:  # Filter pseudo-fields.
-            object.__setattr__(dcls_object, field.name, attribute_dict[field.name])
+    # Flatten already orders declared fields before dynamic attributes.
+    for name, value in zip(keys, values):
+        if name not in _TRANSIENT_STATIC_FIELDS:
+            object.__setattr__(dcls_object, name, value)
     # Need to manual call post_init here as we have avoided calling __init__
     if not isinstance(dcls_object, Xtructurable) and getattr(dcls_object, "__post_init__", None):
         dcls_object.__post_init__()
@@ -347,9 +344,9 @@ def register_dataclass_type_with_jax_tree_util(data_class, static_fields: tuple[
             dcls_object = data_class.__new__(data_class)
             attribute_dict = dict(zip(child_keys, children))
             attribute_dict.update(dict(static_items))
-            for field in data_class.__dataclass_fields__.values():
-                if field.name in attribute_dict:
-                    object.__setattr__(dcls_object, field.name, attribute_dict[field.name])
+            for name, value in attribute_dict.items():
+                if name not in _TRANSIENT_STATIC_FIELDS:
+                    object.__setattr__(dcls_object, name, value)
             if not isinstance(dcls_object, Xtructurable) and getattr(
                 dcls_object, "__post_init__", None
             ):

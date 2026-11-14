@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from typing import List, TypeVar, Union
+from typing import Any, List, TypeVar, Union
 
 import jax
 import jax.numpy as jnp
 
+from xtructure.core.indexing import _tuple_getter_values
 from xtructure.core.protocol import Xtructurable
 from xtructure.core.structuredtype import StructuredType
 
@@ -102,6 +103,36 @@ def concat(dataclasses: List[T], axis: int = 0) -> T:
     raise ValueError(f"Concatenation not supported for structured type: {first_structured_type}")
 
 
+def _pad_with_defaults(
+    dataclass_instance: T,
+    target_shape: tuple[int, ...],
+    insert_index: int | tuple[slice, ...],
+) -> T:
+    """Complete padded field arrays before constructing validated data."""
+    state = dataclass_instance._xtructure_state
+    field_plans = state.type_layout.adapter_field_plans
+    padded_values: dict[str, Any] = {}
+    for plan, value in zip(
+        field_plans, _tuple_getter_values(state.field_getter, dataclass_instance, len(field_plans))
+    ):
+        field_shape = target_shape + plan.storage_intrinsic_shape
+        if plan.field_kind == "nested":
+            padded_values[plan.name] = _pad_with_defaults(value, field_shape, insert_index)
+            continue
+        padded_values[plan.name] = (
+            jnp.full(
+                field_shape,
+                plan.fill_value_factory(field_shape, plan.declared_dtype)
+                if plan.fill_value_factory is not None
+                else plan.fill_value,
+                dtype=plan.declared_dtype,
+            )
+            .at[insert_index]
+            .set(value)
+        )
+    return type(dataclass_instance)(**padded_values)
+
+
 def pad(
     dataclass_instance: T,
     pad_width: Union[int, tuple[int, ...], tuple[tuple[int, int], ...]],
@@ -123,8 +154,7 @@ def pad(
         target_size = 1 + pad_before + pad_after
 
         if mode == "constant" and "constant_values" not in kwargs:
-            result = dataclass_instance.default((target_size,))
-            return result.at[pad_before].set(dataclass_instance)
+            return _pad_with_defaults(dataclass_instance, (target_size,), pad_before)
 
         expanded = dataclass_instance._map_data(lambda x: jnp.expand_dims(x, axis=0))
         batch_ndim = 1
@@ -155,8 +185,7 @@ def pad(
                 slice(before, before + dim)
                 for dim, (before, after) in zip(batch_shape, normalized_pad_width)
             )
-            result = dataclass_instance.default(target_shape)
-            return result.at[insert_slices].set(dataclass_instance)
+            return _pad_with_defaults(dataclass_instance, target_shape, insert_slices)
 
         pad_width_spec = normalized_pad_width
         return dataclass_instance._map_data(
