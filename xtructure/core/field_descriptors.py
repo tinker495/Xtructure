@@ -1,3 +1,4 @@
+from inspect import get_annotations
 from typing import Any, Callable, Dict, Tuple, Type
 
 import jax.numpy as jnp
@@ -259,9 +260,7 @@ def extract_field_descriptors_from_annotations(
 
 
 def cache_field_descriptors(cls: Type[Any]) -> Dict[str, FieldDescriptor]:
-    descriptors = extract_field_descriptors_from_annotations(
-        cls.__dict__.get("__annotations__", {})
-    )
+    descriptors = extract_field_descriptors_from_annotations(get_annotations(cls))
     setattr(cls, _FIELD_DESCRIPTOR_ATTR, descriptors)
     return descriptors
 
