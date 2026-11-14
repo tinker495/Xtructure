@@ -26,7 +26,11 @@ class MyHeapItem(Xtructurable):
 
 ## `Xtructurable`
 
-Inheriting from this base transforms a Python class into a JAX-compatible structure and adds several helpful methods and properties:
+Inheriting from this base transforms a Python class into a JAX-compatible structure.
+Common methods and properties are inherited; class preparation builds layout facts
+and generated packed representations. Explicit subclass methods take precedence,
+except that `__str__` and `__post_init__` remain wrapped extension hooks. Field names
+that collide with the base API or internal state are rejected at class definition.
 
 *   **`shape`** (property): Returns the leading axes shared by every field as a plain tuple, e.g. `(10,)`.
 *   **`layout`** (property): Returns instance layout metadata, including each field's intrinsic shape.
@@ -37,7 +41,7 @@ Inheriting from this base transforms a Python class into a JAX-compatible struct
     *   `BATCHED`: Iterates exactly `len(instance)` times over the first batch axis. Remaining batch axes stay on each yielded item; an empty first batch axis yields no items.
     *   `SINGLE`: Calling `iter(instance)` raises `TypeError`, even though `len(instance)` is 1.
     *   `UNSTRUCTURED`: Calling `iter(instance)` raises `TypeError`, matching the `len()` contract.
-    *   Iteration stops at the batch boundary even when JAX array indexing would clamp an out-of-bounds index. The same behavior applies to legacy decorator-built classes and generated packed/unpacked classes.
+    *   Iteration stops at the batch boundary even when JAX array indexing would clamp an out-of-bounds index. The same behavior applies to generated packed/unpacked classes.
 *   **`default(cls, shape=())`** (classmethod): Creates an instance with default values for all fields.
     *   The optional `shape` argument (e.g., `(10,)` or `(5, 2)`) creates a "batched" instance. This means the provided `shape` tuple is prepended to the `intrinsic_shape` of each field defined in the dataclass.
         *   For example, if a field is `data: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))` (intrinsic shape `(3,)`):
@@ -45,7 +49,7 @@ Inheriting from this base transforms a Python class into a JAX-compatible struct
             *   Calling `YourClass.default(shape=(10,))` results in `instance.data.shape` being `(10, 3)`.
             *   Calling `YourClass.default(shape=(5, 2))` results in `instance.data.shape` being `(5, 2, 3)`.
         *   Each field in the instance will be filled with its default value, tiled or broadcasted to this new batched shape.
-    *   This method is auto-generated based on `FieldDescriptor` definitions if not explicitly provided.
+    *   The inherited method reads the class's field layout unless explicitly overridden.
 *   **`random(cls, shape=(), key: jax.random.PRNGKey = ...)`** (classmethod): Creates an instance with random data.
     *   `shape`: Specifies batch dimensions (e.g., `(10,)` or `(5, 2)`), which are prepended to the `intrinsic_shape` of each field.
         *   For example, if a field is `data: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))` (intrinsic shape `(3,)`):

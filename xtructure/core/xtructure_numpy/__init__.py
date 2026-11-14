@@ -102,7 +102,23 @@ def pad(array, pad_width, mode: str | Any = "constant", **kwargs):
     return jnp.pad(array, pad_width, mode=mode, **kwargs)
 
 
-def stack(arrays, axis: int = 0, out: None = None, dtype: Any | None = None):
+@overload
+def stack(
+    arrays: Iterable[_XtructureT], axis: int = 0, out: None = None, dtype: None = None
+) -> _XtructureT:
+    ...
+
+
+@overload
+def stack(
+    arrays: Iterable[ArrayLike], axis: int = 0, out: None = None, dtype: DTypeLike | None = None
+) -> jax.Array:
+    ...
+
+
+def stack(
+    arrays, axis: int = 0, out: None = None, dtype: Any | None = None
+) -> Xtructurable | jax.Array:
     arrays_list = list(arrays)
     if _check_homogeneous_inputs("stack", arrays_list):
         _reject_dataclass_kwargs("stack", out=out, dtype=dtype)
@@ -110,7 +126,33 @@ def stack(arrays, axis: int = 0, out: None = None, dtype: Any | None = None):
     return jnp.stack(arrays_list, axis=axis, out=out, dtype=dtype)
 
 
-def reshape(a, shape, order: str = "C", *, copy: bool | None = None, out_sharding=None):
+@overload
+def reshape(
+    a: _XtructureT,
+    shape: int | tuple[int, ...] | list[int],
+    order: str = "C",
+    *,
+    copy: None = None,
+    out_sharding: None = None,
+) -> _XtructureT:
+    ...
+
+
+@overload
+def reshape(
+    a: ArrayLike,
+    shape: Any,
+    order: str = "C",
+    *,
+    copy: bool | None = None,
+    out_sharding: Any = None,
+) -> jax.Array:
+    ...
+
+
+def reshape(
+    a, shape, order: str = "C", *, copy: bool | None = None, out_sharding=None
+) -> Xtructurable | jax.Array:
     if isinstance(a, Xtructurable):
         if order != "C":
             raise ValueError("xtructure reshape only supports order='C'.")
@@ -363,7 +405,17 @@ def update_on_condition(
     )
 
 
-def expand_dims(a, axis: int | Sequence[int]):
+@overload
+def expand_dims(a: _XtructureT, axis: int | Sequence[int]) -> _XtructureT:
+    ...
+
+
+@overload
+def expand_dims(a: ArrayLike, axis: int | Sequence[int]) -> jax.Array:
+    ...
+
+
+def expand_dims(a, axis: int | Sequence[int]) -> Xtructurable | jax.Array:
     if isinstance(a, Xtructurable):
         return _dc.expand_dims(a, axis=axis)
     return jnp.expand_dims(a, axis=axis)

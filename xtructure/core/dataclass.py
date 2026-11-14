@@ -9,7 +9,7 @@ from absl import logging
 from typing_extensions import dataclass_transform  # pytype: disable=not-supported-yet
 
 FrozenInstanceError = dataclasses.FrozenInstanceError
-_RESERVED_DCLS_FIELD_NAMES = frozenset(("from_tuple", "replace", "to_tuple"))
+_RESERVED_DCLS_FIELD_NAMES = frozenset(("replace",))
 _TRANSIENT_STATIC_FIELDS = frozenset(("_layout_cache",))
 
 
@@ -90,12 +90,6 @@ def base_dataclass(
                 f"The following dataclass fields are disallowed: " f"{invalid_fields} ({dcls})."
             )
 
-        def _from_tuple(args):
-            return dcls(zip(dcls.__dataclass_fields__.keys(), args))
-
-        def _to_tuple(self):
-            return tuple(getattr(self, k) for k in self.__dataclass_fields__.keys())
-
         def _replace(self, **kwargs):
             return dataclasses.replace(self, **kwargs)
 
@@ -147,9 +141,10 @@ def base_dataclass(
             register_dataclass_type_with_jax_tree_util(dcls, static_fields)
             return orig_init(self, *args, **kwargs)
 
-        setattr(dcls, "from_tuple", _from_tuple)
-        setattr(dcls, "to_tuple", _to_tuple)
-        setattr(dcls, "replace", _replace)
+        from xtructure.core.protocol import Xtructurable
+
+        if not issubclass(dcls, Xtructurable):
+            dcls.replace = _replace
         setattr(dcls, "__getstate__", _getstate)
         setattr(dcls, "__setstate__", _setstate)
         setattr(dcls, "__init__", _init)

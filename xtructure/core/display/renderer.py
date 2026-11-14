@@ -20,9 +20,8 @@ def _visible_len(line: str) -> int:
 class BatchedRenderer:
     """Render a BATCHED xtructure instance to a string.
 
-    Created once per xtructure class at decorator-application time with a
-    class-bound single-item formatter, then captured in a closure for the
-    class's ``__str__`` / ``str``.
+    Created once during class preparation and stored with the class's
+    single-item formatter for the inherited ``__str__`` / ``str`` methods.
     """
 
     __slots__ = ("_format_item",)

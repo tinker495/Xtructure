@@ -37,7 +37,7 @@ For local development, run `uv sync --group dev`, then use `uv run pytest`.
 Detailed documentation on how to use Xtructure is available at [https://tinker495.github.io/Xtructure/](https://tinker495.github.io/Xtructure/).
 
 *   **[Core Concepts](https://tinker495.github.io/Xtructure/core_concepts.html)**: Learn how to define custom data structures by inheriting from `Xtructurable` and declaring fields with `FieldDescriptor`.
-*   **[Legacy Decorator Migration](docs/migration.md)**: Replace decorators with inheritance and configure warning handling.
+*   **[Xtructurable Migration](docs/migration.md)**: Replace removed APIs with inheritance and review field-name and method-override rules.
 *   **[Stack Usage](https://tinker495.github.io/Xtructure/stack.html)**: Guide to using the Stack data structure.
 *   **[Queue Usage](https://tinker495.github.io/Xtructure/queue.html)**: Guide to using the Queue data structure.
 *   **[BGPQ Usage](https://tinker495.github.io/Xtructure/bgpq.html)**: Guide to using the Batched GPU Priority Queue.

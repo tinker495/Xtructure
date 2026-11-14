@@ -1,12 +1,10 @@
+from collections.abc import Callable
 from operator import attrgetter
-from typing import Any, Type, TypeVar
+from typing import Any, Generic, TypeVar
 
 import jax.numpy as jnp
 
-from xtructure.core.layout import get_type_layout
 from xtructure.core.layout.types import AdapterFieldPlan
-
-from ...xtructure_numpy.array_ops import _update_array_on_condition
 
 T = TypeVar("T")
 
@@ -33,6 +31,8 @@ def _compile_field_setter(
     - ``'set_as_condition'`` branches on ``field_kind`` (nested → recursive
       ``set_as_condition``, primitive → ``_UOC``) and returns ``_compiled_condition_set``.
     """
+    from ...xtructure_numpy.array_ops import _update_array_on_condition
+
     if mode == "set":
         fn_name = "_compiled_set"
         signature = "def _compiled_set(obj_instance, indices, values_to_set):"
@@ -86,7 +86,7 @@ def _compile_field_setter(
         "    new_field_data = {}",
     ]
     for i, plan in enumerate(field_plans):
-        lines.append(f"    current_{i} = getattr(obj_instance, {plan.name!r})")
+        lines.append(f"    current_{i} = obj_instance.{plan.name}")
         lines.append(f"    value_{i} = values_tuple[{i}]")
         lines.append(f"    new_field_data[{plan.name!r}] = {_per_field_assignment(i, plan)}")
     lines.append("    return _CLS(**new_field_data)")
@@ -102,19 +102,25 @@ def _compile_field_setter(
     return namespace[fn_name]
 
 
-class _Updater:
+class _Updater(Generic[T]):
     __slots__ = ("obj_instance", "indices", "_set", "_set_as_condition")
 
-    def __init__(self, obj_instance, index, compiled_set, compiled_set_as_condition):
+    def __init__(
+        self,
+        obj_instance: T,
+        index: Any,
+        compiled_set: Callable[[T, Any, Any], T],
+        compiled_set_as_condition: Callable[[T, Any, Any, Any], T],
+    ):
         self.obj_instance = obj_instance
         self.indices = index
         self._set = compiled_set
         self._set_as_condition = compiled_set_as_condition
 
-    def set(self, values_to_set):
+    def set(self, values_to_set: Any) -> T:
         return self._set(self.obj_instance, self.indices, values_to_set)
 
-    def set_as_condition(self, condition: jnp.ndarray, value_to_conditionally_set: Any):
+    def set_as_condition(self, condition: jnp.ndarray, value_to_conditionally_set: Any) -> T:
         """
         Sets parts of the fields of the dataclass instance based on a condition.
         This is an out-of-place update.
@@ -141,56 +147,20 @@ class _Updater:
         )
 
 
-class _AtIndexer:
+class _AtIndexer(Generic[T]):
     __slots__ = ("obj_instance", "_compiled_set", "_compiled_set_as_condition")
 
-    def __init__(self, obj_instance, compiled_set, compiled_set_as_condition):
+    def __init__(
+        self,
+        obj_instance: T,
+        compiled_set: Callable[[T, Any, Any], T],
+        compiled_set_as_condition: Callable[[T, Any, Any, Any], T],
+    ):
         self.obj_instance = obj_instance
         self._compiled_set = compiled_set
         self._compiled_set_as_condition = compiled_set_as_condition
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: Any) -> _Updater[T]:
         return _Updater(
             self.obj_instance, index, self._compiled_set, self._compiled_set_as_condition
         )
-
-
-def add_indexing_methods(cls: Type[T]) -> Type[T]:
-    """
-    Augments the class with indexing/slicing, finite batch iteration,
-    and an `at` property that enables JAX-like out-of-place updates
-    (e.g., `instance.at[index].set(value)`).
-
-    The `__getitem__` method allows instances to be indexed, applying the
-    index to each field.
-    The `at` property provides access to an updater object for specific indices.
-    """
-    type_layout = get_type_layout(cls)
-    field_plans = type_layout.adapter_field_plans
-    field_names = tuple(plan.name for plan in field_plans)
-    field_getter = attrgetter(*field_names) if field_names else None
-
-    compiled_setter = _compile_field_setter(cls, field_plans, mode="set")
-    compiled_condition_setter = _compile_field_setter(cls, field_plans, mode="set_as_condition")
-
-    def getitem(self, index):
-        """Support indexing operations on the dataclass."""
-        if not field_names:
-            return cls()
-
-        values = _tuple_getter_values(field_getter, self, len(field_names))
-        new_values = {}
-        for field_name, field_value in zip(field_names, values):
-            if hasattr(field_value, "__getitem__"):
-                new_values[field_name] = field_value[index]
-            else:
-                new_values[field_name] = field_value
-        return cls(**new_values)
-
-    def at(self):
-        return _AtIndexer(self, compiled_setter, compiled_condition_setter)
-
-    setattr(cls, "__getitem__", getitem)
-    setattr(cls, "at", property(at))
-
-    return cls

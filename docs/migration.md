@@ -1,4 +1,4 @@
-# Decorator Migration
+# Xtructurable Migration
 
 `xtructure_dataclass` has been removed from `xtructure`, `xtructure.core`, and its
 implementation module. Existing imports fail immediately. Define structures by
@@ -65,3 +65,29 @@ instance of its base class.
 `@base_dataclass` remains supported for plain JAX PyTrees such as container
 implementations. See [Core Concepts](core_concepts.md) for field descriptors,
 runtime validation, and bitpacking policies.
+
+## Inherited methods and field names
+
+Common methods and properties are implemented on `Xtructurable`, including
+construction helpers, indexing, batch operations, comparison, hashing, validation,
+and IO. Explicit subclass methods take precedence through ordinary Python method
+resolution. The `__str__` and `__post_init__` extension hooks retain their wrapping
+behavior: user formatting still supports batched display, and the layout cache is
+built after the user post-init hook runs.
+
+Field names must not shadow the base's members or internal state. Names such as
+`shape`, `layout`, `hash`, `default`, and `_layout_cache` raise `TypeError` at class
+definition. Enabled generated members, such as `packed` or `<field>_unpacked`, also
+cannot collide with fields. This restriction does not extend to plain classes
+using `@base_dataclass`.
+
+`__eq__` and `__ne__` return scalar JAX boolean arrays for instances of the same
+type, and `NotImplemented` for other types. `Xtructurable` classes use dataclass
+`eq=False` to inherit these methods and remain unhashable with Python's `hash()`;
+the explicit `.hash()` method remains available. Direct `@base_dataclass` usage
+keeps its existing `eq=True` default.
+
+`from_tuple` and `to_tuple` have been removed from both declaration paths. Their
+names are no longer reserved as fields. `set_unpacked` and `from_unpacked` are
+inherited metadata-based helpers; field-specific unpacked properties and
+aggregate packed classes are still generated according to the bitpack policy.
