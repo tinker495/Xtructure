@@ -4,7 +4,7 @@ import pytest
 
 from tests.testdata import HashValueAB, OddBytesValue47
 from xtructure import HashTable
-from xtructure.core.xtructure_decorators.pytree_adapters import hash as hash_adapter
+from xtructure.core import hash as hash_adapter
 from xtructure.hashtable.hash_utils import (
     _compute_unique_mask_from_uint32eds,
     get_new_idx_byterized_batched,

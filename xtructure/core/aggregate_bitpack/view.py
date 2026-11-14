@@ -37,7 +37,6 @@ def build_unpacked_view_cls(root_cls: type) -> tuple[type, dict[type, type]]:
             view_name,
             (Xtructurable,),
             {"__module__": orig.__module__, "__annotations__": annotations},
-            validate=False,
             bitpack="off",
         )
         register_generated_class(View, role=GENERATED_UNPACKED_VIEW_ROLE)

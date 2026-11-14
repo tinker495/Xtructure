@@ -2,9 +2,6 @@
 
 Before using `HashTable` or `BGPQ` in xtructure, you often need to define the structure of the data you want to store. Inherit from `Xtructurable` and declare fields with `FieldDescriptor`.
 
-> The legacy decorator has been removed. See [Decorator Migration](migration.md)
-> for class options and supported inheritance patterns. `@base_dataclass` remains supported.
-
 ```python
 import jax
 import jax.numpy as jnp
@@ -32,15 +29,24 @@ and generated packed representations. Explicit subclass methods take precedence,
 except that `__str__` and `__post_init__` remain wrapped extension hooks. Field names
 that collide with the base API or internal state are rejected at class definition.
 
+Define each structured class directly from `Xtructurable`. Share behavior through
+plain Python mixins or compose nested fields with `FieldDescriptor`. Instantiate
+a concrete subclass; `Xtructurable` itself is a base class. Plain JAX PyTrees can
+use `@base_dataclass`.
+
+Use `isinstance(value, Xtructurable)` for instances and
+`issubclass(cls, Xtructurable)` for classes. Equality and inequality return scalar
+JAX boolean arrays for instances of the same class. Use `.hash()` for Xtructure
+hashing; instances do not support Python's `hash()`.
+
 *   **`shape`** (property): Returns the leading axes shared by every field as a plain tuple, e.g. `(10,)`.
 *   **`layout`** (property): Returns instance layout metadata, including each field's intrinsic shape.
 *   **`dtype`** (property): Returns a namedtuple showing the JAX dtypes of all fields.
 *   **`__getitem__(self, index)`**: Allows indexing or slicing an instance (e.g., `my_data_instance[0]`). The operation is applied to each field.
-*   **`__len__(self)`**: Returns the first batch dimension for `BATCHED` instances and 1 for `SINGLE` instances. Raises `TypeError` for `UNSTRUCTURED` instances.
+*   **`__len__(self)`**: Returns the first batch dimension for `BATCHED` instances and 1 for `SINGLE` instances.
 *   **`__iter__(self)`**: Supports `for item in instance` and `list(instance)`, yielding instances of the same class.
     *   `BATCHED`: Iterates exactly `len(instance)` times over the first batch axis. Remaining batch axes stay on each yielded item; an empty first batch axis yields no items.
     *   `SINGLE`: Calling `iter(instance)` raises `TypeError`, even though `len(instance)` is 1.
-    *   `UNSTRUCTURED`: Calling `iter(instance)` raises `TypeError`, matching the `len()` contract.
     *   Iteration stops at the batch boundary even when JAX array indexing would clamp an out-of-bounds index. The same behavior applies to generated packed/unpacked classes.
 *   **`default(cls, shape=())`** (classmethod): Creates an instance with default values for all fields.
     *   The optional `shape` argument (e.g., `(10,)` or `(5, 2)`) creates a "batched" instance. This means the provided `shape` tuple is prepended to the `intrinsic_shape` of each field defined in the dataclass.
@@ -58,17 +64,15 @@ that collide with the base API or internal state are rejected at class definitio
             *   Calling `YourClass.random(shape=(5, 2), key=k)` results in `instance.data.shape` being `(5, 2, 3)`.
         *   Each field will be filled with random values according to its JAX dtype, and the field arrays will have these new batched shapes.
     *   `key`: A JAX PRNG key is required for random number generation.
-*   `structured_type` (property): An enum (`StructuredType.SINGLE`, `StructuredType.BATCHED`, `StructuredType.UNSTRUCTURED`) indicating instance structure relative to its default.
-*   `shape` (property): The leading axes shared by every field: `()` for `SINGLE`, `(N, ...)` for `BATCHED`. `UNSTRUCTURED` instances raise `TypeError`, like `ndim` and `len()`. Field arrays keep their own full shape, e.g. `instance.data.shape == (10, 3)` while `instance.shape == (10,)`.
+*   `structured_type` (property): `StructuredType.SINGLE` or `StructuredType.BATCHED`, indicating whether valid data has batch axes.
+*   `shape` (property): The leading axes shared by every field: `()` for `SINGLE`, `(N, ...)` for `BATCHED`. Field arrays keep their own full shape, e.g. `instance.data.shape == (10, 3)` while `instance.shape == (10,)`.
 *   `layout` (property): Instance layout metadata. `instance.layout.field_shape_for("data")` returns a field's intrinsic shape, e.g. `(3,)`.
-*   `batch_shape` (property): Same value as `shape` for structured instances; `-1` for `UNSTRUCTURED`.
 *   `reshape(self, new_shape)`: Reshapes batch dimensions.
 *   `flatten(self)`: Flattens batch dimensions.
 *   `__str__(self)` / `str(self)`: Provides a string representation.
     *   Handles instances based on their `structured_type`:
         *   `SINGLE`: Uses the original `__str__` method of the instance or a custom pretty formatter for a detailed field-by-field view.
         *   `BATCHED`: For small batches, all items are formatted. For large batches (controlled by `MAX_PRINT_BATCH_SIZE` and `SHOW_BATCH_SIZE`), it provides a summarized view showing the first few and last few elements, along with the batch shape, using `tabulate` for neat formatting.
-        *   `UNSTRUCTURED`: Indicates that the data is unstructured relative to its default shape.
 *   `default_shape` (property): Returns a namedtuple showing the JAX shapes of all fields as they would be in an instance created by `cls.default()_` (i.e., without any batch dimensions).
 *   `at[index_or_slice]` (property): Provides access to an updater object for out-of-place modifications of the instance's fields at the given `index_or_slice`.
     *   `set(values_to_set)`: Returns a new instance with the fields at the specified `index_or_slice` updated with `values_to_set`. If `values_to_set` is an instance of the same dataclass, corresponding fields are used for the update; otherwise, `values_to_set` is applied to all selected field slices.
@@ -82,9 +86,9 @@ that collide with the base API or internal state are rejected at class definitio
     *   Raises a `TypeError` if the loaded instance is not of the expected class type.
     *   Xtructure `.npz` files should be treated as trusted inputs: loading imports the module recorded in file metadata so the class can be reconstructed.
 *   `check_invariants(self)`: Manually triggers validation logic.
-    *   Checks if all fields match their declared `dtype` and `intrinsic_shape`.
+    *   Checks declared dtypes, intrinsic shapes, nested types, and shared batch axes.
     *   Runs any custom `validator` callbacks defined in `FieldDescriptor`.
-    *   Automatically called after `__init__` if `validate=True` was passed in the class header.
+    *   Runs automatically at data construction boundaries. An explicit call rechecks the actual fields and refreshes the layout cache.
 
 ## `FieldDescriptor`
 
@@ -94,7 +98,7 @@ Defines the type and shape of each field within an `Xtructurable` subclass.
     *   **Factory Methods (Recommended)**:
         *   `FieldDescriptor.tensor(dtype=..., shape=..., fill_value=..., validator=...)`: Explicitly define a tensor field.
         *   `FieldDescriptor.scalar(dtype=..., default=..., validator=...)`: Explicitly define a scalar field.
-    *   **Legacy/Direct**:
+    *   **Descriptor shorthand**:
         *   `FieldDescriptor[jax_dtype]`
         *   `FieldDescriptor[jax_dtype, intrinsic_shape_tuple]`
         *   `FieldDescriptor(dtype=..., intrinsic_shape=..., fill_value=..., validator=...)`
@@ -144,9 +148,7 @@ class AnnotatedSyntax(Xtructurable):
     value: Annotated[jnp.ndarray, FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))]
 ```
 
-Descriptor shorthand remains supported; it is independent of the removed class decorator.
-Both field styles produce identical runtime behavior, so feel free to mix them as you incrementally migrate older
-code toward the Annotated form.
+Both field styles produce identical runtime behavior and can be used together.
 
 ### Nested structures
 
@@ -190,26 +192,61 @@ class WithFactory(Xtructurable):
     )
 ```
 
-### Runtime validation mode
+### Runtime validation
 
-Use `class StrictData(Xtructurable, validate=True):` to opt into runtime checks that ensure every field matches its
-descriptor’s dtype and trailing shape, and satisfies any custom validators. Validation runs after each initialization
-(including user-defined `__post_init__` logic).
+Every ordinary constructor checks field dtypes, trailing intrinsic shapes, nested
+types, shared batch axes, and custom validators after user `__post_init__` logic.
+The same data contract applies to `replace`, indexing and updates, `xnp` operations,
+and file or pickle restoration. Operations validate their inputs and their results.
+Wrong dtypes raise `TypeError`; incompatible intrinsic shapes or batch axes raise
+`ValueError`. Constructors inspect inputs without casting them to the declared dtype.
+`UNSTRUCTURED` is an internal shape-mismatch diagnostic, not a usable data state.
 
 ```python
-class StrictData(Xtructurable, validate=True):
+def require_positive(value):
+    if jnp.any(value <= 0):
+        raise ValueError("Must be positive")
+
+
+class StrictData(Xtructurable):
     vector: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))
-    positive: FieldDescriptor.scalar(dtype=jnp.int32, validator=lambda x: x > 0 or raise_error("Must be positive"))
+    positive: FieldDescriptor.scalar(dtype=jnp.int32, validator=require_positive)
 
 
-StrictData(vector=jnp.ones((5, 3), dtype=jnp.float32), positive=10)  # OK
+StrictData(
+    vector=jnp.ones((5, 3), dtype=jnp.float32),
+    positive=jnp.full((5,), 10, dtype=jnp.int32),
+)  # Shared batch shape (5,)
 
 # Raises TypeError: StrictData.vector expected dtype float32, got int32
-StrictData(vector=jnp.ones((5, 3), dtype=jnp.int32), positive=10)
+StrictData(vector=jnp.ones((3,), dtype=jnp.int32), positive=jnp.int32(10))
 
 # Raises error from validator: Must be positive
-StrictData(vector=jnp.ones((5, 3), dtype=jnp.float32), positive=-1)
+StrictData(vector=jnp.ones((3,), dtype=jnp.float32), positive=jnp.int32(-1))
 ```
+
+JAX `tree_map` and `tree_unflatten` restore structure without running user
+`__post_init__` or data validation. This permits axis specifications, abstract
+metadata, and temporary trees used during transformations. The first Xtructure
+data API call validates a reconstructed object and caches its layout. Plain field
+access and JAX tree traversal remain structural operations. Normal `jit`, `vmap`,
+and differentiation can use these paths without treating metadata as data.
+
+Validators execute at data boundaries, including during JIT tracing. A validator
+must therefore support tracing when used in compiled code. The value-dependent
+Python `if` in `require_positive` above is suitable for eager execution; JIT raises
+a tracing error instead of silently skipping it. Validated layout queries reuse
+the cache; explicit `check_invariants()` rechecks the object.
+
+Use `replace` to change data while preserving validation and layout consistency.
+Direct field reassignment and user overrides of data methods are not automatically
+tracked. User `__post_init__` runs for ordinary construction, `replace`, and pickle
+restoration, before the resulting fields are checked.
+
+Each generated packed class and unpacked view validates its own declared schema.
+Original validators run when `as_original()` or a declared-dtype restore constructs
+the original class. Packed file loading retains its explicit dtype conversion;
+ordinary NPZ fields retain their stored dtypes and are checked as loaded.
 
 ## In-memory bitpacked fields (memory-optimized runtime state)
 
@@ -222,6 +259,7 @@ for a field that **Type Layout** stores as packed bytes, then:
 - Access `<field>_unpacked` to get the logical array.
 - Use `set_unpacked(field=...)` to update from a logical array (it will be packed automatically).
 - Use `from_unpacked(...)` to construct a packed instance directly from logical arrays (avoids an extra `.default()`).
+- Ordinary fields passed alongside packed fields must already have their declared dtype; only packed fields are converted by this method.
 - Read storage byte facts from **Packed Field Layout** via `get_type_layout(...)`, not from `FieldDescriptor`.
 
 Example:
@@ -296,7 +334,7 @@ p = AggState.Packed.default()  # AggStatePacked(words=uint32[...], tail=uint8[0.
 
 # Unpack view only when needed (observation/transition):
 u = p.unpacked  # AggStateUnpacked view (default dtypes: bool/uint8/uint32)
-o = p.as_original()  # AggState reconstructed with declared dtypes (passes validate=True)
+o = p.as_original()  # AggState reconstructed and validated with its declared dtypes
 
 # Partial decode: unpack a single field (and optionally only some indices) without materializing all fields.
 faces_only = p.unpack_field("faces")  # same as u.faces, but avoids unpacking flags/codes

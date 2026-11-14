@@ -66,7 +66,9 @@ def concat(arrays, /, *, axis: int | None = 0):
     arrays_list = list(arrays)
     if _check_homogeneous_inputs("concat", arrays_list):
         if axis is None:
-            return jax.tree_util.tree_map(lambda *xs: jnp.concatenate(xs, axis=None), *arrays_list)
+            return arrays_list[0]._map_data(
+                lambda *xs: jnp.concatenate(xs, axis=None), *arrays_list[1:]
+            )
         return _dc.concat(arrays_list, axis=axis)
     return jnp.concat(arrays_list, axis=axis)
 
@@ -91,7 +93,9 @@ def concatenate(arrays, axis: int | None = 0, dtype: Any | None = None) -> Xtruc
         if dtype is not None:
             raise TypeError("concatenate does not support dtype for xtructure dataclass inputs.")
         if axis is None:
-            return jax.tree_util.tree_map(lambda *xs: jnp.concatenate(xs, axis=None), *arrays_list)
+            return arrays_list[0]._map_data(
+                lambda *xs: jnp.concatenate(xs, axis=None), *arrays_list[1:]
+            )
         return _dc.concat(arrays_list, axis=axis)
     return jnp.concatenate(arrays_list, axis=axis, dtype=dtype)
 
@@ -303,7 +307,7 @@ def take(
 ) -> _XtructureT | jax.Array:
     if isinstance(a, Xtructurable):
         _reject_dataclass_kwargs("take", out=out)
-        return jax.tree_util.tree_map(
+        return a._map_data(
             lambda x: jnp.take(
                 x,
                 indices,
@@ -312,8 +316,7 @@ def take(
                 unique_indices=unique_indices,
                 indices_are_sorted=indices_are_sorted,
                 fill_value=fill_value,
-            ),
-            a,
+            )
         )
     return jnp.take(
         a,

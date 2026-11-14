@@ -28,8 +28,7 @@ def where(condition: ArrayLike, x: T, y: T | ArrayLike) -> T:
                 f"`condition` with shape {condition_array.shape} cannot be broadcast to target shape {target_shape}."
             ) from err
 
-    y_leaves = jax.tree_util.tree_leaves(y)
-    if len(y_leaves) > 1 or (len(y_leaves) == 1 and hasattr(y, "__dataclass_fields__")):
+    if isinstance(y, Xtructurable):
 
         def _apply_dataclass_where(x_field, y_field):
             cond = _align_condition(x_field.shape)
@@ -50,7 +49,7 @@ def where(condition: ArrayLike, x: T, y: T | ArrayLike) -> T:
                 jnp.asarray(y_array, dtype=target_dtype),
             )
 
-        return jax.tree_util.tree_map(_apply_dataclass_where, x, y)
+        return x._map_data(_apply_dataclass_where, y)
 
     scalar_value = jnp.asarray(y)
 
@@ -71,7 +70,7 @@ def where(condition: ArrayLike, x: T, y: T | ArrayLike) -> T:
             jnp.asarray(y_array, dtype=target_dtype),
         )
 
-    return jax.tree_util.tree_map(_apply_scalar_where, x)
+    return x._map_data(_apply_scalar_where)
 
 
 def where_no_broadcast(
@@ -85,9 +84,7 @@ def where_no_broadcast(
             "`x` and `y` must be instances of the same dataclass for where_no_broadcast."
         )
 
-    condition_is_dataclass = hasattr(condition, "__dataclass_fields__")
-
-    if condition_is_dataclass:
+    if isinstance(condition, Xtructurable):
         condition_structure = jax.tree_util.tree_structure(condition)
         x_structure = jax.tree_util.tree_structure(x)
         if condition_structure != x_structure:
@@ -96,18 +93,15 @@ def where_no_broadcast(
                 "when provided as a dataclass."
             )
 
-        return jax.tree_util.tree_map(
+        return condition._map_data(
             lambda cond_field, x_field, y_field: _where_no_broadcast(cond_field, x_field, y_field),
-            condition,
             x,
             y,
         )
 
     condition_array = jnp.asarray(condition, dtype=jnp.bool_)
-    return jax.tree_util.tree_map(
-        lambda x_field, y_field: _where_no_broadcast(condition_array, x_field, y_field),
-        x,
-        y,
+    return x._map_data(
+        lambda x_field, y_field: _where_no_broadcast(condition_array, x_field, y_field), y
     )
 
 
@@ -124,20 +118,15 @@ def update_on_condition(
     ``unique_indices=True`` promises no duplicate selected index and takes the
     single-scatter fast path (see ``_update_array_on_condition``).
     """
-    values_leaves = jax.tree_util.tree_leaves(values_to_set)
-    if len(values_leaves) > 1 or (
-        len(values_leaves) == 1 and hasattr(values_to_set, "__dataclass_fields__")
-    ):
-        return jax.tree_util.tree_map(
+    if isinstance(values_to_set, Xtructurable):
+        return dataclass_instance._map_data(
             lambda field, values_field: _update_array_on_condition(
                 field, indices, condition, values_field, unique_indices=unique_indices
             ),
-            dataclass_instance,
             values_to_set,
         )
-    return jax.tree_util.tree_map(
+    return dataclass_instance._map_data(
         lambda field: _update_array_on_condition(
             field, indices, condition, values_to_set, unique_indices=unique_indices
-        ),
-        dataclass_instance,
+        )
     )

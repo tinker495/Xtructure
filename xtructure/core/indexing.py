@@ -31,7 +31,7 @@ def _compile_field_setter(
     - ``'set_as_condition'`` branches on ``field_kind`` (nested → recursive
       ``set_as_condition``, primitive → ``_UOC``) and returns ``_compiled_condition_set``.
     """
-    from ...xtructure_numpy.array_ops import _update_array_on_condition
+    from .xtructure_numpy.array_ops import _update_array_on_condition
 
     if mode == "set":
         fn_name = "_compiled_set"
@@ -77,8 +77,10 @@ def _compile_field_setter(
 
     lines = [
         signature,
+        "    obj_instance.layout",
         f"    is_value_instance = isinstance({value_var}, _CLS)",
         "    if is_value_instance:",
+        f"        {value_var}.layout",
         f"        values_tuple = _TUPLE_GETTER_VALUES("
         f"_FIELD_GETTER, {value_var}, _FIELD_COUNT)",
         "    else:",

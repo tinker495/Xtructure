@@ -10,11 +10,11 @@ from xtructure import numpy as xnp
 def test_concat_single_dataclasses():
     """Test concatenating SINGLE structured dataclasses."""
     data1 = SimpleData.default()
-    data1 = data1.replace(id=jnp.array(1), value=jnp.array(1.0))
+    data1 = data1.replace(id=jnp.array(1, dtype=jnp.uint32), value=jnp.array(1.0))
     data2 = SimpleData.default()
-    data2 = data2.replace(id=jnp.array(2), value=jnp.array(2.0))
+    data2 = data2.replace(id=jnp.array(2, dtype=jnp.uint32), value=jnp.array(2.0))
     data3 = SimpleData.default()
-    data3 = data3.replace(id=jnp.array(3), value=jnp.array(3.0))
+    data3 = data3.replace(id=jnp.array(3, dtype=jnp.uint32), value=jnp.array(3.0))
 
     result = xnp.concatenate([data1, data2, data3])
 
@@ -27,9 +27,11 @@ def test_concat_single_dataclasses():
 def test_concat_batched_dataclasses():
     """Test concatenating BATCHED structured dataclasses."""
     data1 = SimpleData.default(shape=(2,))
-    data1 = data1.replace(id=jnp.array([1, 2]), value=jnp.array([1.0, 2.0]))
+    data1 = data1.replace(id=jnp.array([1, 2], dtype=jnp.uint32), value=jnp.array([1.0, 2.0]))
     data2 = SimpleData.default(shape=(3,))
-    data2 = data2.replace(id=jnp.array([3, 4, 5]), value=jnp.array([3.0, 4.0, 5.0]))
+    data2 = data2.replace(
+        id=jnp.array([3, 4, 5], dtype=jnp.uint32), value=jnp.array([3.0, 4.0, 5.0])
+    )
 
     result = xnp.concatenate([data1, data2])
 

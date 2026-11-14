@@ -6,11 +6,8 @@ import jax
 import jax.numpy as jnp
 
 from ..core.dtype_facts import SIZE_DTYPE
+from ..core.hash import hash_fast_uint32ed, hash_fast_uint32ed_batched
 from ..core.protocol import Xtructurable
-from ..core.xtructure_decorators.pytree_adapters.hash import (
-    hash_fast_uint32ed,
-    hash_fast_uint32ed_batched,
-)
 from .constants import (
     DOUBLE_HASH_SECONDARY_DELTA,
     FINGERPRINT_MIX_CONSTANT_A,

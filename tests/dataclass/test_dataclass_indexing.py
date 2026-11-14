@@ -7,7 +7,7 @@ import pytest
 
 from tests.dataclass.fixtures import NestedData, SimpleData, VectorData
 from xtructure import FieldDescriptor, Xtructurable
-from xtructure.core.xtructure_decorators.layout_adapters import indexing
+from xtructure.core import indexing
 
 
 def test_at_set_simple_data():
@@ -157,7 +157,9 @@ class TestIndexingDecorator(unittest.TestCase):
         self.assertTrue(jnp.array_equal(updated_instance.y, expected_x))
 
     def test_set_as_condition_with_scalar_value_broadcast(self):
-        instance = IndexedData(x=jnp.arange(10), y=jnp.arange(10))
+        instance = IndexedData(
+            x=jnp.arange(10, dtype=jnp.float32), y=jnp.arange(10, dtype=jnp.float32)
+        )
 
         indices = jnp.array([1, 3, 5, 7])
         condition = jnp.array([True, False, True, False])

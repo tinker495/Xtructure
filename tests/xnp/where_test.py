@@ -5,15 +5,24 @@ import jax.numpy as jnp
 import pytest
 
 from tests.xnp.shared_data import SimpleData
+from xtructure import FieldDescriptor, Xtructurable
 from xtructure import numpy as xnp
+
+
+class SignedData(Xtructurable, bitpack="off"):
+    # Author: tinker495. Negative fallback values require a signed data contract.
+    id: FieldDescriptor.scalar(dtype=jnp.int32)
+    value: FieldDescriptor.scalar(dtype=jnp.float32)
 
 
 def test_where_with_dataclasses():
     """Test xnp.where with two dataclasses"""
     dc1 = SimpleData.default(shape=(3,))
-    dc1 = dc1.replace(id=jnp.array([1, 2, 3]), value=jnp.array([1.0, 2.0, 3.0]))
+    dc1 = dc1.replace(id=jnp.array([1, 2, 3], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 3.0]))
     dc2 = SimpleData.default(shape=(3,))
-    dc2 = dc2.replace(id=jnp.array([10, 20, 30]), value=jnp.array([10.0, 20.0, 30.0]))
+    dc2 = dc2.replace(
+        id=jnp.array([10, 20, 30], dtype=jnp.uint32), value=jnp.array([10.0, 20.0, 30.0])
+    )
     condition = jnp.array([True, False, True])
 
     result = xnp.where(condition, dc1, dc2)
@@ -27,7 +36,7 @@ def test_where_with_dataclasses():
 
 def test_where_with_scalar():
     """Test xnp.where with dataclass and scalar fallback"""
-    dc = SimpleData.default(shape=(3,))
+    dc = SignedData.default(shape=(3,))
     dc = dc.replace(id=jnp.array([1, 2, 3]), value=jnp.array([1.0, 2.0, 3.0]))
     condition = jnp.array([True, False, True])
     fallback = -1
@@ -44,9 +53,9 @@ def test_where_with_scalar():
 def test_where_batched_dataclasses():
     """Test xnp.where with batched dataclasses"""
     dc1 = SimpleData.default(shape=(2,))
-    dc1 = dc1.replace(id=jnp.array([1, 2]), value=jnp.array([1.0, 2.0]))
+    dc1 = dc1.replace(id=jnp.array([1, 2], dtype=jnp.uint32), value=jnp.array([1.0, 2.0]))
     dc2 = SimpleData.default(shape=(2,))
-    dc2 = dc2.replace(id=jnp.array([10, 20]), value=jnp.array([10.0, 20.0]))
+    dc2 = dc2.replace(id=jnp.array([10, 20], dtype=jnp.uint32), value=jnp.array([10.0, 20.0]))
     condition = jnp.array([True, False])
 
     result = xnp.where(condition, dc1, dc2)
@@ -61,9 +70,11 @@ def test_where_batched_dataclasses():
 def test_where_scalar_condition():
     """Test xnp.where with scalar boolean condition"""
     dc1 = SimpleData.default(shape=(3,))
-    dc1 = dc1.replace(id=jnp.array([1, 2, 3]), value=jnp.array([1.0, 2.0, 3.0]))
+    dc1 = dc1.replace(id=jnp.array([1, 2, 3], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 3.0]))
     dc2 = SimpleData.default(shape=(3,))
-    dc2 = dc2.replace(id=jnp.array([10, 20, 30]), value=jnp.array([10.0, 20.0, 30.0]))
+    dc2 = dc2.replace(
+        id=jnp.array([10, 20, 30], dtype=jnp.uint32), value=jnp.array([10.0, 20.0, 30.0])
+    )
 
     result_true = xnp.where(True, dc1, dc2)
     assert jnp.array_equal(result_true.id, dc1.id)
@@ -77,9 +88,11 @@ def test_where_scalar_condition():
 def test_where_equivalent_to_tree_map():
     """Test that xnp.where produces same result as manual tree_map"""
     dc1 = SimpleData.default(shape=(3,))
-    dc1 = dc1.replace(id=jnp.array([1, 2, 3]), value=jnp.array([1.0, 2.0, 3.0]))
+    dc1 = dc1.replace(id=jnp.array([1, 2, 3], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 3.0]))
     dc2 = SimpleData.default(shape=(3,))
-    dc2 = dc2.replace(id=jnp.array([10, 20, 30]), value=jnp.array([10.0, 20.0, 30.0]))
+    dc2 = dc2.replace(
+        id=jnp.array([10, 20, 30], dtype=jnp.uint32), value=jnp.array([10.0, 20.0, 30.0])
+    )
     condition = jnp.array([True, False, True])
 
     result_xnp = xnp.where(condition, dc1, dc2)
@@ -91,7 +104,7 @@ def test_where_equivalent_to_tree_map():
 
 def test_where_scalar_equivalent_to_tree_map():
     """Test that xnp.where with scalar produces same result as manual tree_map"""
-    dc = SimpleData.default(shape=(3,))
+    dc = SignedData.default(shape=(3,))
     dc = dc.replace(id=jnp.array([1, 2, 3]), value=jnp.array([1.0, 2.0, 3.0]))
     condition = jnp.array([True, False, True])
     fallback = -1

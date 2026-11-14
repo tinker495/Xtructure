@@ -10,9 +10,9 @@ from xtructure import numpy as xnp
 def test_stack_single_dataclasses():
     """Test stacking SINGLE structured dataclasses."""
     data1 = SimpleData.default()
-    data1 = data1.replace(id=jnp.array(1), value=jnp.array(1.0))
+    data1 = data1.replace(id=jnp.array(1, dtype=jnp.uint32), value=jnp.array(1.0))
     data2 = SimpleData.default()
-    data2 = data2.replace(id=jnp.array(2), value=jnp.array(2.0))
+    data2 = data2.replace(id=jnp.array(2, dtype=jnp.uint32), value=jnp.array(2.0))
 
     result = xnp.stack([data1, data2])
 
@@ -25,9 +25,9 @@ def test_stack_single_dataclasses():
 def test_stack_batched_dataclasses():
     """Test stacking BATCHED structured dataclasses."""
     data1 = SimpleData.default(shape=(2,))
-    data1 = data1.replace(id=jnp.array([1, 2]), value=jnp.array([1.0, 2.0]))
+    data1 = data1.replace(id=jnp.array([1, 2], dtype=jnp.uint32), value=jnp.array([1.0, 2.0]))
     data2 = SimpleData.default(shape=(2,))
-    data2 = data2.replace(id=jnp.array([3, 4]), value=jnp.array([3.0, 4.0]))
+    data2 = data2.replace(id=jnp.array([3, 4], dtype=jnp.uint32), value=jnp.array([3.0, 4.0]))
 
     result = xnp.stack([data1, data2])
 
@@ -42,9 +42,9 @@ def test_stack_batched_dataclasses():
 def test_stack_axis_1():
     """Test stacking along axis 1."""
     data1 = SimpleData.default(shape=(2,))
-    data1 = data1.replace(id=jnp.array([1, 2]), value=jnp.array([1.0, 2.0]))
+    data1 = data1.replace(id=jnp.array([1, 2], dtype=jnp.uint32), value=jnp.array([1.0, 2.0]))
     data2 = SimpleData.default(shape=(2,))
-    data2 = data2.replace(id=jnp.array([3, 4]), value=jnp.array([3.0, 4.0]))
+    data2 = data2.replace(id=jnp.array([3, 4], dtype=jnp.uint32), value=jnp.array([3.0, 4.0]))
 
     result = xnp.stack([data1, data2], axis=1)
 
@@ -58,7 +58,7 @@ def test_stack_axis_1():
 def test_stack_single_item():
     """Test stacking a single item adds a dimension."""
     data = SimpleData.default()
-    data = data.replace(id=jnp.array(42), value=jnp.array(3.14))
+    data = data.replace(id=jnp.array(42, dtype=jnp.uint32), value=jnp.array(3.14))
 
     result = xnp.stack([data])
 

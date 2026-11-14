@@ -88,14 +88,14 @@ def test_structured_type():
 
 def test_batch_shape():
     single = SimpleData.default()
-    assert single.batch_shape == ()
+    assert single.shape == ()
 
     batched = SimpleData.default(shape=(5, 10))
-    assert batched.batch_shape == (5, 10)
+    assert batched.shape == (5, 10)
 
-    unstructured = SimpleData(id=jnp.array(1), value=jnp.array([2.0, 3.0, 4.0]))
-    assert unstructured.structured_type == StructuredType.UNSTRUCTURED
-    assert unstructured.batch_shape == -1
+    # Author: tinker495. Mismatched batches are rejected at construction (#53).
+    with pytest.raises(ValueError, match="field batch shapes disagree"):
+        SimpleData(id=jnp.array(1, dtype=jnp.uint32), value=jnp.array([2.0, 3.0, 4.0]))
 
 
 def test_len_semantics():
@@ -108,10 +108,9 @@ def test_len_semantics():
     batched2d = SimpleData.default(shape=(5, 10))
     assert len(batched2d) == 5
 
-    unstructured = SimpleData(id=jnp.array(1), value=jnp.array([2.0, 3.0, 4.0]))
-    assert unstructured.structured_type == StructuredType.UNSTRUCTURED
-    with pytest.raises(TypeError):
-        len(unstructured)
+    # Author: tinker495. Invalid data cannot be retained for a later len() call.
+    with pytest.raises(ValueError, match="field batch shapes disagree"):
+        SimpleData(id=jnp.array(1, dtype=jnp.uint32), value=jnp.array([2.0, 3.0, 4.0]))
 
 
 def test_ndim_semantics():
@@ -124,10 +123,9 @@ def test_ndim_semantics():
     batched2d = SimpleData.default(shape=(5, 10))
     assert batched2d.ndim == 2
 
-    unstructured = SimpleData(id=jnp.array(1), value=jnp.array([2.0, 3.0, 4.0]))
-    assert unstructured.structured_type == StructuredType.UNSTRUCTURED
-    with pytest.raises(TypeError):
-        _ = unstructured.ndim
+    # Author: tinker495. Invalid data cannot be retained for a later ndim query.
+    with pytest.raises(ValueError, match="field batch shapes disagree"):
+        SimpleData(id=jnp.array(1, dtype=jnp.uint32), value=jnp.array([2.0, 3.0, 4.0]))
 
 
 def test_xtructurable_isinstance():
@@ -365,27 +363,17 @@ def test_transpose_with_custom_axes():
 
 
 def test_transpose_unstructured_raises():
-    unstructured = SimpleData(id=jnp.array(1), value=jnp.array([2.0, 3.0, 4.0]))
-    assert unstructured.structured_type == StructuredType.UNSTRUCTURED
-    with pytest.raises(ValueError):
-        unstructured.transpose()
+    # Author: tinker495. Construction rejects incompatible batches before transpose.
+    with pytest.raises(ValueError, match="field batch shapes disagree"):
+        SimpleData(id=jnp.array(1, dtype=jnp.uint32), value=jnp.array([2.0, 3.0, 4.0]))
 
 
 def test_unstructured_generation():
-    unstructured = SimpleData(id=jnp.array(1), value=jnp.array([2.0, 3.0, 4.0]))
-    assert unstructured.structured_type == StructuredType.UNSTRUCTURED
-    assert unstructured.id.shape == ()
-    assert unstructured.value.shape == (3,)
-
-    batched_unstructured = SimpleData(
-        id=jnp.array([1, 2]), value=jnp.array([[2.0, 3.0, 4.0], [5.0, 6.0, 7.0]])
-    )
-    assert batched_unstructured.structured_type == StructuredType.UNSTRUCTURED
-    assert batched_unstructured.id.shape == (2,)
-    assert batched_unstructured.value.shape == (2, 3)
-
-    with pytest.raises(ValueError):
-        batched_unstructured.reshape((2, 3))
-
-    with pytest.raises(ValueError):
-        batched_unstructured.flatten()
+    # Author: tinker495. Neither scalar nor batched mismatches form valid data.
+    with pytest.raises(ValueError, match="field batch shapes disagree"):
+        SimpleData(id=jnp.array(1, dtype=jnp.uint32), value=jnp.array([2.0, 3.0, 4.0]))
+    with pytest.raises(ValueError, match="field batch shapes disagree"):
+        SimpleData(
+            id=jnp.array([1, 2], dtype=jnp.uint32),
+            value=jnp.array([[2.0, 3.0, 4.0], [5.0, 6.0, 7.0]]),
+        )

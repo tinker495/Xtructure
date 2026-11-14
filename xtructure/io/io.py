@@ -73,6 +73,7 @@ def save(path: str, instance: Xtructurable, *, packed: bool = True):
     """
     if not isinstance(instance, Xtructurable):
         raise TypeError("The provided instance is not a valid xtructure dataclass.")
+    instance.layout
 
     data_to_save = _flatten_instance_for_save(instance, packed=packed)
 

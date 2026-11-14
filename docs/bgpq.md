@@ -2,8 +2,7 @@
 
 A priority queue optimized for batched operations on GPUs. It maintains items sorted by a key.
 
-Define data classes by inheriting from `Xtructurable`. The legacy decorator emits
-`FutureWarning`; see [Legacy Decorator Migration](migration.md).
+Define data classes by inheriting from `Xtructurable`.
 
 ```python
 import jax

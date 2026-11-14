@@ -61,6 +61,7 @@ def concat(dataclasses: List[T], axis: int = 0) -> T:
         raise ValueError("Cannot concatenate empty list of dataclasses")
 
     if len(dataclasses) == 1:
+        dataclasses[0].layout
         return dataclasses[0]
 
     first_type = type(dataclasses[0])
@@ -94,8 +95,8 @@ def concat(dataclasses: List[T], axis: int = 0) -> T:
                 if i != concat_axis_adjusted and dim1 != dim2:
                     raise ValueError(f"Incompatible batch dimensions at axis {i}: {dim1} vs {dim2}")
 
-        return jax.tree_util.tree_map(
-            lambda *arrays: jnp.concatenate(arrays, axis=axis), *dataclasses
+        return dataclasses[0]._map_data(
+            lambda *arrays: jnp.concatenate(arrays, axis=axis), *dataclasses[1:]
         )
 
     raise ValueError(f"Concatenation not supported for structured type: {first_structured_type}")
@@ -125,15 +126,14 @@ def pad(
             result = dataclass_instance.default((target_size,))
             return result.at[pad_before].set(dataclass_instance)
 
-        expanded = jax.tree_util.tree_map(lambda x: jnp.expand_dims(x, axis=0), dataclass_instance)
+        expanded = dataclass_instance._map_data(lambda x: jnp.expand_dims(x, axis=0))
         batch_ndim = 1
         pad_width_spec = normalized_pad_width
 
-        return jax.tree_util.tree_map(
+        return expanded._map_data(
             lambda x: jnp.pad(
                 x, pad_width_spec + [(0, 0)] * (x.ndim - batch_ndim), mode=mode, **kwargs
-            ),
-            expanded,
+            )
         )
 
     if structured_type == StructuredType.BATCHED:
@@ -159,11 +159,10 @@ def pad(
             return result.at[insert_slices].set(dataclass_instance)
 
         pad_width_spec = normalized_pad_width
-        return jax.tree_util.tree_map(
+        return dataclass_instance._map_data(
             lambda x: jnp.pad(
                 x, pad_width_spec + [(0, 0)] * (x.ndim - batch_ndim), mode=mode, **kwargs
-            ),
-            dataclass_instance,
+            )
         )
 
     raise ValueError(f"Padding not supported for structured type: {structured_type}")
@@ -175,7 +174,7 @@ def stack(dataclasses: List[T], axis: int = 0) -> T:
         raise ValueError("Cannot stack empty list of dataclasses")
 
     if len(dataclasses) == 1:
-        return jax.tree_util.tree_map(lambda x: jnp.expand_dims(x, axis=axis), dataclasses[0])
+        return dataclasses[0]._map_data(lambda x: jnp.expand_dims(x, axis=axis))
 
     first_type = type(dataclasses[0])
     if not all(isinstance(dc, first_type) for dc in dataclasses):
@@ -193,12 +192,12 @@ def stack(dataclasses: List[T], axis: int = 0) -> T:
                     f"All dataclasses must have the same batch shape: {first_batch_shape} vs {dc.shape}"
                 )
 
-    return jax.tree_util.tree_map(lambda *arrays: jnp.stack(arrays, axis=axis), *dataclasses)
+    return dataclasses[0]._map_data(lambda *arrays: jnp.stack(arrays, axis=axis), *dataclasses[1:])
 
 
 def take(dataclass_instance: T, indices: jnp.ndarray, axis: int = 0) -> T:
     """Take elements along an axis from every field."""
-    return jax.tree_util.tree_map(lambda x: jnp.take(x, indices, axis=axis), dataclass_instance)
+    return dataclass_instance._map_data(lambda x: jnp.take(x, indices, axis=axis))
 
 
 def take_along_axis(
@@ -244,20 +243,21 @@ def take_along_axis(
 
         return jnp.take_along_axis(leaf, expanded, axis=axis_in_leaf, **options)
 
-    return jax.tree_util.tree_map(_reorder_leaf, dataclass_instance)
+    return dataclass_instance._map_data(_reorder_leaf)
 
 
 def tile(dataclass_instance: T, reps: Union[int, tuple[int, ...]]) -> T:
     """Tile every field of the dataclass."""
     if isinstance(reps, int):
         reps = (reps,)
-    return jax.tree_util.tree_map(lambda x: jnp.tile(x, reps), dataclass_instance)
+    return dataclass_instance._map_data(lambda x: jnp.tile(x, reps))
 
 
 def split(
     dataclass_instance: T, indices_or_sections: Union[int, jnp.ndarray], axis: int = 0
 ) -> List[T]:
     """Split a dataclass along the given axis."""
+    dataclass_instance.layout
     leaves, treedef = jax.tree_util.tree_flatten(dataclass_instance)
     split_leaves = [jnp.split(leaf, indices_or_sections, axis=axis) for leaf in leaves]
 
@@ -268,6 +268,8 @@ def split(
     result_dataclasses: List[T] = []
     for i in range(num_splits):
         new_leaves = [sl[i] for sl in split_leaves]
-        result_dataclasses.append(jax.tree_util.tree_unflatten(treedef, new_leaves))
+        result = jax.tree_util.tree_unflatten(treedef, new_leaves)
+        result.layout
+        result_dataclasses.append(result)
 
     return result_dataclasses

@@ -10,7 +10,7 @@ from xtructure import numpy as xnp
 def test_pad_single_to_batched():
     """Test padding a SINGLE dataclass to create a batched version."""
     data = SimpleData.default()
-    data = data.replace(id=jnp.array(42), value=jnp.array(3.14))
+    data = data.replace(id=jnp.array(42, dtype=jnp.uint32), value=jnp.array(3.14))
 
     result = xnp.pad(data, (0, 4))
 
@@ -85,7 +85,7 @@ def test_pad_uses_existing_padding_as_batch():
 def test_pad_batched_with_constant_values():
     """Test padding with custom constant values."""
     data = SimpleData.default((2,))
-    data = data.replace(id=jnp.array([1, 2]), value=jnp.array([1.0, 2.0]))
+    data = data.replace(id=jnp.array([1, 2], dtype=jnp.uint32), value=jnp.array([1.0, 2.0]))
 
     result = xnp.pad(data, (0, 2), constant_values=99)
 

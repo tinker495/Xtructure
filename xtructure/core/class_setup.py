@@ -1,6 +1,5 @@
 """Prepare the per-class state and generated members of Xtructurable subclasses."""
 
-import functools
 from collections.abc import Callable
 from dataclasses import dataclass
 from inspect import get_annotations
@@ -15,14 +14,13 @@ from xtructure.core.field_descriptors import _FIELD_DESCRIPTOR_ATTR
 from xtructure.core.layout.type_layout import get_type_layout
 from xtructure.core.layout.types import TypeLayout
 
-from .layout_adapters.indexing import _compile_field_setter
-from .pytree_adapters.string_format import _custom_pretty_formatter
+from .display.formatting import _custom_pretty_formatter
+from .indexing import _compile_field_setter
 
 
 @dataclass(frozen=True)
 class _ClassState:
     type_layout: TypeLayout
-    validate: bool
     user_post_init: Callable[..., None] | None
     single_formatter: Callable[..., str]
     renderer: BatchedRenderer
@@ -31,9 +29,7 @@ class _ClassState:
     condition_setter: Callable[..., Any]
 
 
-def install_xtructure_members(
-    target_cls: type, *, validate: bool = False, bitpack: str = "auto"
-) -> None:
+def install_xtructure_members(target_cls: type, *, bitpack: str = "auto") -> None:
     """Prepare layout facts, user hooks, compiled updates, and packed classes."""
     from xtructure.core.protocol import Xtructurable
 
@@ -109,7 +105,6 @@ def install_xtructure_members(
     cls.default_dtype = type_layout.default_dtype
     cls._xtructure_state = _ClassState(
         type_layout=type_layout,
-        validate=validate,
         user_post_init=user_post_init,
         single_formatter=single_formatter,
         renderer=BatchedRenderer(single_formatter),
@@ -136,19 +131,10 @@ def install_xtructure_members(
         )
 
     if aggregate:
-        from .layout_adapters.aggregate_bitpack import add_aggregate_bitpack
+        from .aggregate_bitpack import add_aggregate_bitpack
 
         add_aggregate_bitpack(cls)
     if bitpack != "off":
-        from .layout_adapters.bitpack_accessors import add_bitpack_accessors
+        from .bitpack_accessors import add_bitpack_accessors
 
         add_bitpack_accessors(cls)
-    if validate:
-        original_init = vars(cls)["__init__"]
-
-        @functools.wraps(original_init)
-        def _validated_init(self, *args, **kwargs):
-            original_init(self, *args, **kwargs)
-            self.check_invariants()
-
-        cls.__init__ = _validated_init

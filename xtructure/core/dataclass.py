@@ -131,6 +131,8 @@ def base_dataclass(
                 self, "__post_init__", None
             ):
                 self.__post_init__()
+            if isinstance(self, Xtructurable):
+                self.check_invariants()
 
         orig_init = dcls.__init__
 
@@ -139,7 +141,9 @@ def base_dataclass(
         @functools.wraps(orig_init)
         def _init(self, *args, **kwargs):
             register_dataclass_type_with_jax_tree_util(dcls, static_fields)
-            return orig_init(self, *args, **kwargs)
+            orig_init(self, *args, **kwargs)
+            if isinstance(self, Xtructurable):
+                self.check_invariants()
 
         from xtructure.core.protocol import Xtructurable
 
@@ -158,6 +162,8 @@ def base_dataclass(
 
 def _dataclass_unflatten(dcls, keys, values):
     """Creates a chex dataclass from a flatten jax.tree_util representation."""
+    from xtructure.core.protocol import Xtructurable
+
     dcls_object = dcls.__new__(dcls)
     attribute_dict = dict(zip(keys, values))
     # Looping over fields instead of keys & values preserves the field order.
@@ -167,7 +173,7 @@ def _dataclass_unflatten(dcls, keys, values):
         if field.name in attribute_dict:  # Filter pseudo-fields.
             object.__setattr__(dcls_object, field.name, attribute_dict[field.name])
     # Need to manual call post_init here as we have avoided calling __init__
-    if getattr(dcls_object, "__post_init__", None):
+    if not isinstance(dcls_object, Xtructurable) and getattr(dcls_object, "__post_init__", None):
         dcls_object.__post_init__()
     return dcls_object
 
@@ -320,6 +326,8 @@ def register_dataclass_type_with_jax_tree_util(data_class, static_fields: tuple[
     else:
 
         def unflatten(aux_data, children):
+            from xtructure.core.protocol import Xtructurable
+
             # JAX versions may wrap/extend aux_data; we only require that the first
             # two entries are (child_keys, static_items), and ignore extras.
             # - Old: aux_data == (child_keys, static_items)
@@ -342,7 +350,9 @@ def register_dataclass_type_with_jax_tree_util(data_class, static_fields: tuple[
             for field in data_class.__dataclass_fields__.values():
                 if field.name in attribute_dict:
                     object.__setattr__(dcls_object, field.name, attribute_dict[field.name])
-            if getattr(dcls_object, "__post_init__", None):
+            if not isinstance(dcls_object, Xtructurable) and getattr(
+                dcls_object, "__post_init__", None
+            ):
                 dcls_object.__post_init__()
             return dcls_object
 

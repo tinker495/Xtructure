@@ -73,7 +73,7 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
     register_generated_class(Packed, role=GENERATED_PACKED_ROLE)
 
     # Build nested logical-view unpacked classes mirroring the original structure,
-    # but using default unpack dtypes (bool/uint8/uint32) and with validate=False.
+    # using the decoded dtypes (bool/uint8/uint32).
     build_unpacked_view_cls = getattr(
         importlib.import_module(".view", __name__),
         "build_unpacked_view_cls",

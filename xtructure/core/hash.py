@@ -11,7 +11,7 @@ Owns both ends of the hash pipeline in one Module:
 * Hash reducers — ``hash_fast_uint32ed`` for flat uint32 streams and
   ``hash_fast_uint32ed_batched`` for ``(n, k) -> (n,)``.
 
-The decorator attaches four Instance Layout-aware members onto each class:
+Xtructurable exposes four Instance Layout-aware members:
 ``bytes`` / ``uint32ed`` / ``hash`` / ``hash_with_uint32ed``. ``StructuredType``
 dispatch happens in the polymorphic helpers below; per-``cls`` closures are
 forbidden so hash semantics stay ``cls``-agnostic.
@@ -64,6 +64,10 @@ def leaf_to_bytes(leaf: Any) -> jnp.ndarray:
 @jax.jit
 def tree_to_bytes(value: Any) -> jnp.ndarray:
     """Convert an entire PyTree to a flattened byte array."""
+    from xtructure.core.protocol import Xtructurable
+
+    if isinstance(value, Xtructurable):
+        value.layout
     byte_leaves = jax.tree_util.tree_map(leaf_to_bytes, value)
     flat_leaves, _ = jax.tree_util.tree_flatten(byte_leaves)
     if len(flat_leaves) == 0:
@@ -291,25 +295,16 @@ def hash_fast_uint32ed_batched(rows, seed=jnp.uint32(0)):
 # ---------------------------------------------------------------------------
 
 
-def _unstructured_uint32ed_error(cls_name, shape):
-    return TypeError(
-        f"{cls_name}.uint32ed is undefined for UNSTRUCTURED instance " f"(shape: {shape})."
-    )
-
-
 def _uint32ed(self) -> jax.Array:
     """Polymorphic uint32 lanes dispatched by Instance Layout.
 
     SINGLE  -> 1-D ``(lanes,)`` via :func:`tree_to_uint32`.
     BATCHED -> ``(batch, lanes)`` via :func:`batched_tree_to_uint32_rows`.
-    UNSTRUCTURED -> ``TypeError``.
     """
     st = self.structured_type
     if st is StructuredType.SINGLE:
         return tree_to_uint32(self)
-    if st is StructuredType.BATCHED:
-        return batched_tree_to_uint32_rows(self, self.shape[0])
-    raise _unstructured_uint32ed_error(type(self).__name__, self.layout.shape_tuple)
+    return batched_tree_to_uint32_rows(self, self.shape[0])
 
 
 def _h(self, seed: int = 0) -> jax.Array:
@@ -317,15 +312,12 @@ def _h(self, seed: int = 0) -> jax.Array:
 
     SINGLE  -> scalar hash.
     BATCHED -> ``(batch,)`` hash array via :func:`hash_fast_uint32ed_batched`.
-    UNSTRUCTURED -> ``TypeError``.
     """
     st = self.structured_type
     if st is StructuredType.SINGLE:
         return hash_fast_uint32ed(tree_to_uint32(self), seed)
-    if st is StructuredType.BATCHED:
-        rows = batched_tree_to_uint32_rows(self, self.shape[0])
-        return hash_fast_uint32ed_batched(rows, seed)
-    raise _unstructured_uint32ed_error(type(self).__name__, self.layout.shape_tuple)
+    rows = batched_tree_to_uint32_rows(self, self.shape[0])
+    return hash_fast_uint32ed_batched(rows, seed)
 
 
 def _h_with_uint32ed(self, seed: int = 0) -> tuple[jax.Array, jax.Array]:
@@ -338,7 +330,5 @@ def _h_with_uint32ed(self, seed: int = 0) -> tuple[jax.Array, jax.Array]:
     if st is StructuredType.SINGLE:
         u = tree_to_uint32(self)
         return hash_fast_uint32ed(u, seed), u
-    if st is StructuredType.BATCHED:
-        u = batched_tree_to_uint32_rows(self, self.shape[0])
-        return hash_fast_uint32ed_batched(u, seed), u
-    raise _unstructured_uint32ed_error(type(self).__name__, self.layout.shape_tuple)
+    u = batched_tree_to_uint32_rows(self, self.shape[0])
+    return hash_fast_uint32ed_batched(u, seed), u

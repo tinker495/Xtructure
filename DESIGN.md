@@ -51,18 +51,13 @@ Three surfaces:
 
 | Surface | Trigger | Code |
 | --- | --- | --- |
-| Record | `str(x)` / `x.str(**kw)` on a SINGLE instance | the class's own `__str__`, else `_custom_pretty_formatter` (`xtructure/core/xtructure_decorators/pytree_adapters/string_format.py`) |
+| Record | `str(x)` / `x.str(**kw)` on a SINGLE instance | the class's own `__str__`, else `_custom_pretty_formatter` (`xtructure/core/display/formatting.py`) |
 | Batch | `str(x)` / `x.str(**kw)` on a BATCHED instance | `BatchedRenderer` (`xtructure/core/display/renderer.py`), limits in `xtructure/core/display/__init__.py` |
 | Benchmark tables | `xtructure_benchmarks` scripts | `xtructure_benchmarks/common.py` `print_results_table`, `xtructure_benchmarks/run_all.py` |
 
-An instance with an unexpected shape (UNSTRUCTURED) renders as a one-line diagnostic:
-`<Unstructured P data, shape: ..., default_shape: ...>`.
-
-History: `e9878b1` introduced `BatchedRenderer` with a rich backend, and `413b70a` inlined that
-rich code: a Panel titled in bold yellow, a bold green `shape:` subtitle, a borderless grid of
-`Text.from_ansi` cells and a vertically centered `...`. `90d12bc` ("remove rich from xtructure
-runtime") dropped `rich` from the runtime dependencies. The plain-text frame below keeps that grid
-layout (cells side by side, vertically centered) without rich. Rich now lives only in JAxtar.
+Rendering requires valid data. Ordinary construction rejects invalid field shapes and dtypes;
+unchecked PyTree reconstructions are validated when rendering starts. The plain-text batch layout
+places cells side by side and vertically centers shorter cells, without a rich dependency.
 
 Out of scope: benchmark plots (`xtructure_benchmarks/visualize.py`, default matplotlib style,
 10×6 in figures) and developer `__repr__`s such as `FieldDescriptor.__repr__`.
