@@ -1,20 +1,17 @@
 import jax.numpy as jnp
 
-from xtructure import FieldDescriptor, xtructure_dataclass
+from xtructure import FieldDescriptor, Xtructurable
 
 
-@xtructure_dataclass
-class Inner:
+class Inner(Xtructurable):
     val: FieldDescriptor.scalar(dtype=jnp.int32)
 
 
-@xtructure_dataclass
-class OuterScalar:
+class OuterScalar(Xtructurable):
     inner: FieldDescriptor.scalar(dtype=Inner)
 
 
-@xtructure_dataclass
-class OuterTensor:
+class OuterTensor(Xtructurable):
     inner_array: FieldDescriptor.tensor(dtype=Inner, shape=(2,))
 
 

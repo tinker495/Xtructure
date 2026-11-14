@@ -2,9 +2,8 @@
 
 Before using `HashTable` or `BGPQ` in xtructure, you often need to define the structure of the data you want to store. Inherit from `Xtructurable` and declare fields with `FieldDescriptor`.
 
-> **Legacy decorator:** `@xtructure_dataclass` emits `FutureWarning` at class definition.
-> New code should use inheritance; see [Legacy Decorator Migration](migration.md) for options,
-> warning handling, and unsupported inheritance patterns. `@base_dataclass` remains supported.
+> The legacy decorator has been removed. See [Decorator Migration](migration.md)
+> for class options and supported inheritance patterns. `@base_dataclass` remains supported.
 
 ```python
 import jax
@@ -141,7 +140,7 @@ class AnnotatedSyntax(Xtructurable):
     value: Annotated[jnp.ndarray, FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))]
 ```
 
-Descriptor shorthand remains supported; it is separate from the deprecated class decorator.
+Descriptor shorthand remains supported; it is independent of the removed class decorator.
 Both field styles produce identical runtime behavior, so feel free to mix them as you incrementally migrate older
 code toward the Annotated form.
 

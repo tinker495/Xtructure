@@ -131,13 +131,13 @@ def test_ndim_semantics():
 
 
 def test_xtructurable_isinstance():
-    assert isinstance(SimpleData, Xtructurable)
+    assert issubclass(SimpleData, Xtructurable)
     assert isinstance(SimpleData.default(), Xtructurable)
 
     class Plain:
         pass
 
-    assert not isinstance(Plain, Xtructurable)
+    assert not issubclass(Plain, Xtructurable)
     assert not isinstance(Plain(), Xtructurable)
 
 

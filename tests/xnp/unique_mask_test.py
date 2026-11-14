@@ -5,13 +5,11 @@ import jax.numpy as jnp
 import pytest
 
 from tests.xnp.shared_data import HashableData
-from xtructure import FieldDescriptor
+from xtructure import FieldDescriptor, Xtructurable
 from xtructure import numpy as xnp
-from xtructure import xtructure_dataclass
 
 
-@xtructure_dataclass
-class MixedWidthHashData:
+class MixedWidthHashData(Xtructurable):
     """Dataclass covering sub-32-bit leaves in default unique key generation."""
 
     flag: FieldDescriptor.scalar(dtype=jnp.bool_)
