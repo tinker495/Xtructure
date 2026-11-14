@@ -436,7 +436,7 @@ class Xtructurable:
                         f"{type(self).__name__}.{field_plan.name} expected instance of "
                         f"{nested_type.__name__}, got {type(value).__name__}."
                     )
-                value.layout
+                value.check_invariants()
             else:
                 self._validate_array_field(field_plan, value)
 

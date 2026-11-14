@@ -61,18 +61,24 @@ def leaf_to_bytes(leaf: Any) -> jnp.ndarray:
     return jax.lax.bitcast_convert_type(leaf, jnp.uint8).reshape(-1)
 
 
-@jax.jit
 def tree_to_bytes(value: Any) -> jnp.ndarray:
-    """Convert an entire PyTree to a flattened byte array."""
+    """Validate structured nodes eagerly, then encode the PyTree's leaves."""
     from xtructure.core.protocol import Xtructurable
 
-    if isinstance(value, Xtructurable):
-        value.layout
-    byte_leaves = jax.tree_util.tree_map(leaf_to_bytes, value)
-    flat_leaves, _ = jax.tree_util.tree_flatten(byte_leaves)
-    if len(flat_leaves) == 0:
+    def validate_node(node: Any) -> bool:
+        if isinstance(node, Xtructurable):
+            node.layout
+        # Keep descending through containers and nested structured nodes.
+        return False
+
+    return _leaves_to_bytes(jax.tree_util.tree_leaves(value, is_leaf=validate_node))
+
+
+@jax.jit
+def _leaves_to_bytes(leaves: list[Any]) -> jnp.ndarray:
+    if not leaves:
         return jnp.array([], dtype=jnp.uint8)
-    return jnp.concatenate(flat_leaves)
+    return jnp.concatenate([leaf_to_bytes(leaf) for leaf in leaves])
 
 
 def bytes_to_uint32(byte_array: Any) -> jnp.ndarray:

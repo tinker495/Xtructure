@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import pytest
 
 from tests.testdata import HashValueAB, OddBytesValue47
-from xtructure import HashTable
+from xtructure import FieldDescriptor, HashTable, Xtructurable
 from xtructure.core import hash as hash_adapter
 from xtructure.hashtable.hash_utils import (
     _compute_unique_mask_from_uint32eds,
@@ -222,6 +222,41 @@ def test_hash_decorator_attaches_module_level_functions():
     assert jnp.array_equal(sample.bytes, hash_adapter.tree_to_bytes(sample))
     assert jnp.array_equal(sample.uint32ed, hash_adapter.tree_to_uint32(sample))
     assert sample.hash(0) == hash_adapter._h(sample, 0)
+
+
+@pytest.mark.parametrize("restore", [False, True])
+def test_eager_bytes_accepts_python_value_validator(restore):
+    # Author: tinker495. Eager encoding must validate concrete values before JIT,
+    # including data restored without a cache by a raw PyTree operation.
+    def nonnegative(value):
+        if jnp.any(value < 0):
+            raise ValueError("negative value")
+
+    class Values(Xtructurable, bitpack="off"):
+        value: FieldDescriptor.tensor(dtype=jnp.uint8, shape=(2,), validator=nonnegative)
+
+    sample = Values(value=jnp.array([1, 2], dtype=jnp.uint8))
+    if restore:
+        sample = jax.tree_util.tree_map(lambda value: value, sample)
+    assert jnp.array_equal(sample.bytes, jnp.array([1, 2], dtype=jnp.uint8))
+
+
+@pytest.mark.parametrize(
+    "wrap",
+    [
+        pytest.param(lambda value: value, id="direct"),
+        pytest.param(lambda value: [value], id="list"),
+        pytest.param(lambda value: (value,), id="tuple"),
+        pytest.param(lambda value: {"items": [value]}, id="dict"),
+    ],
+)
+def test_tree_to_bytes_rejects_invalid_structured_nodes(wrap):
+    # Author: tinker495. Containers must not bypass the data contract when raw
+    # PyTree reconstruction changes a declared uint8 field to uint16.
+    sample = OddBytesValue47(payload=jnp.arange(47, dtype=jnp.uint8))
+    invalid = jax.tree_util.tree_map(lambda value: value.astype(jnp.uint16), sample)
+    with pytest.raises(TypeError, match="expected dtype"):
+        hash_adapter.tree_to_bytes(wrap(invalid))
 
 
 def test_uint32ed_is_instance_layout_aware():

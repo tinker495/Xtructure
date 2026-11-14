@@ -101,3 +101,46 @@ def test_jit_incompatible_validator_is_not_silently_skipped():
     Values(value=jnp.array(1, dtype=jnp.float32))
     with pytest.raises(jax.errors.TracerBoolConversionError):
         jax.jit(lambda value: Values(value=value))(jnp.array(1, dtype=jnp.float32))
+
+
+@pytest.mark.parametrize(
+    "replacement, error, message",
+    [
+        (jnp.ones(2, dtype=jnp.float32), TypeError, "expected dtype"),
+        (jnp.ones(3, dtype=jnp.int32), ValueError, "expected trailing shape"),
+        (-jnp.ones(2, dtype=jnp.int32), ValueError, "negative value"),
+    ],
+)
+def test_parent_check_invariants_revalidates_cached_child(replacement, error, message):
+    # Author: tinker495. Explicit revalidation must inspect current nested data;
+    # a cache populated before direct mutation cannot establish its validity.
+    def nonnegative(value):
+        if jnp.any(value < 0):
+            raise ValueError("negative value")
+
+    class Child(Xtructurable, bitpack="off"):
+        value: FieldDescriptor.tensor(dtype=jnp.int32, shape=(2,), validator=nonnegative)
+
+    class Parent(Xtructurable, bitpack="off"):
+        child: FieldDescriptor.scalar(dtype=Child)
+
+    parent = Parent(child=Child(value=jnp.ones(2, dtype=jnp.int32)))
+    parent.child.value = replacement
+    with pytest.raises(error, match=message):
+        parent.check_invariants()
+
+
+def test_parent_check_invariants_refreshes_child_layout():
+    # Author: tinker495. Revalidation must refresh the child's valid batch shape
+    # before the parent derives its own layout from the nested instance.
+    class Child(Xtructurable, bitpack="off"):
+        value: FieldDescriptor.tensor(dtype=jnp.int32, shape=(2,))
+
+    class Parent(Xtructurable, bitpack="off"):
+        child: FieldDescriptor.scalar(dtype=Child)
+
+    parent = Parent(child=Child(value=jnp.ones(2, dtype=jnp.int32)))
+    parent.child.value = jnp.ones((3, 2), dtype=jnp.int32)
+    parent.check_invariants()
+    assert parent.child.shape == (3,)
+    assert parent.shape == (3,)
