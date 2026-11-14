@@ -5,6 +5,7 @@ import jax.numpy as jnp
 
 from xtructure.core.layout import get_type_layout
 from xtructure.core.layout.types import AdapterFieldPlan
+from xtructure.core.protocol import Xtructurable
 
 from ...xtructure_numpy.array_ops import _update_array_on_condition
 
@@ -157,7 +158,7 @@ class _AtIndexer:
 
 def add_indexing_methods(cls: Type[T]) -> Type[T]:
     """
-    Augments the class with an `__getitem__` method for indexing/slicing
+    Augments the class with indexing/slicing, finite batch iteration,
     and an `at` property that enables JAX-like out-of-place updates
     (e.g., `instance.at[index].set(value)`).
 
@@ -191,6 +192,7 @@ def add_indexing_methods(cls: Type[T]) -> Type[T]:
         return _AtIndexer(self, compiled_setter, compiled_condition_setter)
 
     setattr(cls, "__getitem__", getitem)
+    setattr(cls, "__iter__", Xtructurable.__iter__)
     setattr(cls, "at", property(at))
 
     return cls
