@@ -1,13 +1,16 @@
 # Structure Layout Flexibility
 
 Xtructure deliberately separates how data is stored from how you use it. Every
-`@xtructure_dataclass` is backed by **Structure of Arrays (SoA)** tensors for
+`Xtructurable` instance is backed by **Structure of Arrays (SoA)** tensors for
 JAX performance, while the public API presents **Array of Structures (AoS)**
 objects for clarity.
 
+Define data classes by inheriting from `Xtructurable`. The legacy decorator emits
+`FutureWarning`; see [Legacy Decorator Migration](migration.md).
+
 ## Backend: SoA arrays for JAX
 
-- Each field is declared with a `FieldDescriptor`, so the decorator stack can
+- Each field is declared with a `FieldDescriptor`, so the class transformation can
   materialise a dedicated JAX array for the field when you call
   `default`, `random`, or any helper.
 - Utilities such as `xnp.concat`, `HashTable.parallel_insert`, or
@@ -36,11 +39,10 @@ objects for clarity.
 import jax
 import jax.numpy as jnp
 
-from xtructure import FieldDescriptor, xtructure_dataclass
+from xtructure import FieldDescriptor, Xtructurable
 
 
-@xtructure_dataclass
-class AgentState:
+class AgentState(Xtructurable):
     pos: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))
     cost: FieldDescriptor.scalar(dtype=jnp.float32)
 

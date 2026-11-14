@@ -2,15 +2,17 @@
 
 A JAX-compatible batched Stack data structure, designed for LIFO (Last-In, First-Out) operations. It is optimized for parallel execution on hardware like GPUs.
 
+Define data classes by inheriting from `Xtructurable`. The legacy decorator emits
+`FutureWarning`; see [Legacy Decorator Migration](migration.md).
+
 ```python
 import jax
 import jax.numpy as jnp
-from xtructure import Stack, xtructure_dataclass, FieldDescriptor
+from xtructure import Stack, FieldDescriptor, Xtructurable
 
 
 # Define a data structure to store in the stack
-@xtructure_dataclass
-class Point:
+class Point(Xtructurable):
     x: FieldDescriptor.scalar(dtype=jnp.uint32)
     y: FieldDescriptor.scalar(dtype=jnp.uint32)
 

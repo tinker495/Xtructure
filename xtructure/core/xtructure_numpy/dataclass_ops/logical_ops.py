@@ -8,7 +8,7 @@ import jax
 import jax.numpy as jnp
 from jax.typing import ArrayLike
 
-from ...xtructure_decorators import Xtructurable
+from ...protocol import Xtructurable
 from ...xtructure_numpy.array_ops import _update_array_on_condition, _where_no_broadcast
 
 T = TypeVar("T", bound=Xtructurable)

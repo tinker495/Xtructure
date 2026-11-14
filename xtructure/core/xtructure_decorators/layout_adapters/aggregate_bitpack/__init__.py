@@ -1,15 +1,16 @@
 """Aggregate bitpacking across fields of a dataclass.
 
-This decorator adds a `.packed` property that returns a packed representation
+The class transformation adds a `.packed` property that returns a packed representation
 containing a word-aligned `uint32` stream plus an optional `uint8` tail, and a
 `.unpacked` property on the packed representation that reconstructs a logical view.
 
-Opt in via `@xtructure_dataclass(bitpack="aggregate")`.
+Opt in via `class State(Xtructurable, bitpack="aggregate"):`.
+The legacy `@xtructure_dataclass` path emits FutureWarning.
 
 Rules:
 - Only pack primitive array-like fields whose FieldDescriptor.bits is set.
 - `bits` can be 1..32.
-- Nested xtructure_dataclass fields are supported for scalar nested fields (intrinsic_shape == ()).
+- Nested Xtructurable fields are supported for scalar nested fields (intrinsic_shape == ()).
 """
 
 from __future__ import annotations
@@ -58,7 +59,7 @@ def add_aggregate_bitpack(
     # Build a Packed class with a uint32 word-stream plus optional uint8 tail.
     packed_name = f"{cls.__name__}Packed"
 
-    # Create class dynamically so user doesn't have to write it.
+    # TODO(#43): switch bases from () to (Xtructurable,) when removing is_xtructed.
     Packed = type(packed_name, (), {"__module__": cls.__module__})
 
     # Attach xtructure annotations: words + tail.

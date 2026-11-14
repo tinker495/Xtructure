@@ -1,7 +1,7 @@
 from typing import Type, TypeVar
 
 from xtructure.core.layout import get_type_layout
-from xtructure.core.protocol import StructuredType
+from xtructure.core.structuredtype import StructuredType
 
 T = TypeVar("T")
 

@@ -1,5 +1,6 @@
 import functools
 import importlib
+import warnings
 from typing import Callable, Optional, Type, TypeVar
 
 from typing_extensions import dataclass_transform
@@ -110,18 +111,75 @@ def _install_layout_cache_replace(cls: Type[X], *, validate: bool) -> Type[X]:
     return cls
 
 
+def install_xtructure_members(
+    target_cls: Type[T],
+    *,
+    validate: bool = False,
+    bitpack: str = "auto",
+) -> Type[T]:
+    """Apply the shared transformation for inherited and decorator-built classes."""
+    if bitpack not in ("auto", "aggregate", "field", "off"):
+        raise ValueError(
+            f"bitpack must be one of 'auto', 'aggregate', 'field', 'off', got {bitpack!r}"
+        )
+
+    target_cls = _inject_layout_cache_post_init(target_cls)
+    cls = base_dataclass(target_cls, static_fields=("_layout_cache",))
+    cls = _adapter(".layout_adapters.default", "add_default_method")(cls)
+    if not hasattr(cls, "default"):
+        raise RuntimeError("xtructureclass must have a default method.")
+
+    cls = _adapter(".layout_adapters.shape", "add_shape_dtype_len")(cls)
+    cls = _adapter(".layout_adapters.indexing", "add_indexing_methods")(cls)
+    cls = _adapter(".layout_adapters.structure_util", "add_structure_utilities")(cls)
+
+    type_layout = get_type_layout(cls)
+    auto_aggregate = (
+        bool(type_layout.fields) and bitpack == "auto" and type_layout.aggregate_bitpack.eligible
+    )
+    if bitpack == "aggregate" or auto_aggregate:
+        cls = _adapter(".layout_adapters.aggregate_bitpack", "add_aggregate_bitpack")(
+            cls,
+            install_xtructure_members,
+        )
+
+    if bitpack in ("auto", "aggregate", "field"):
+        cls = _adapter(".layout_adapters.bitpack_accessors", "add_bitpack_accessors")(cls)
+
+    cls = _adapter(".pytree_adapters.string_format", "add_string_representation_methods")(cls)
+    cls = _adapter(".pytree_adapters.hash", "hash_function_decorator")(cls)
+    cls = _adapter(".pytree_adapters.ops", "add_comparison_operators")(cls)
+    cls = _adapter(".pytree_adapters.io", "add_io_methods")(cls)
+    cls = _adapter(".layout_adapters.validation", "add_runtime_validation")(
+        cls,
+        enabled=validate,
+    )
+
+    # Reuse Layout Cache when replacement preserves primitive shape/dtype signatures.
+    cls = _install_layout_cache_replace(cls, validate=validate)
+
+    # TODO(#43): temporary — accepts decorator-built classes; delete with the decorator.
+    setattr(cls, "is_xtructed", True)
+    return cls
+
+
 @dataclass_transform()
 def xtructure_dataclass(
     cls: Optional[Type[T]] = None,
     *,
     validate: bool = False,
     bitpack: str = "auto",
-) -> Callable[[Type[T]], Type[Xtructurable[T]]] | Type[Xtructurable[T]]:
+) -> Callable[[Type[T]], Type[T]] | Type[T]:
     """
-    Decorator that ensures the input class is a `base_dataclass` (or converts
-    it to one) and then augments it with additional functionality related to its
-    structure, type, and operations like indexing, default instance creation,
-    random instance generation, and string representation.
+    Legacy compatibility decorator for Xtructure data structures.
+
+    .. warning::
+        Applying this decorator emits :class:`FutureWarning`. Define new classes
+        with ``class MyData(Xtructurable, validate=False, bitpack="auto"):``
+        instead, using ``from xtructure import Xtructurable``.
+        Move any decorator options into the class header and remove the decorator.
+        ``python -W error::FutureWarning`` rejects legacy decoration before the
+        class is transformed. The ``base_dataclass`` decorator is unaffected.
 
     It adds properties like `shape`, `dtype`, `default_shape`, `structured_type`,
     `batch_shape`, and methods like `__getitem__`, `__len__`, `reshape`,
@@ -139,80 +197,22 @@ def xtructure_dataclass(
         The decorated class with the aforementioned additional functionalities.
     """
 
-    def _decorate(target_cls: Type[T]) -> Type[Xtructurable[T]]:
-        if bitpack not in ("auto", "aggregate", "field", "off"):
-            raise ValueError(
-                f"bitpack must be one of 'auto', 'aggregate', 'field', 'off', got {bitpack!r}"
+    def _decorate(target_cls: Type[T]) -> Type[T]:
+        if Xtructurable in target_cls.__mro__ or getattr(target_cls, "is_xtructed", False):
+            raise TypeError(
+                f"{target_cls.__name__} is already xtructured; "
+                "do not mix Xtructurable inheritance with legacy @xtructure_dataclass "
+                "or decorate twice."
             )
-
-        target_cls = _inject_layout_cache_post_init(target_cls)
-        cls = base_dataclass(target_cls, static_fields=("_layout_cache",))
-
-        # Ensure class has a default method for initialization
-        cls = _adapter(".layout_adapters.default", "add_default_method")(cls)
-
-        # Ensure class has a default method for initialization
-        assert hasattr(cls, "default"), "xtructureclass must have a default method."
-
-        # add shape and dtype and len
-        cls = _adapter(".layout_adapters.shape", "add_shape_dtype_len")(cls)
-
-        # add indexing methods
-        cls = _adapter(".layout_adapters.indexing", "add_indexing_methods")(cls)
-
-        # add structure utilities and random
-        cls = _adapter(".layout_adapters.structure_util", "add_structure_utilities")(cls)
-
-        # Bitpacking policy:
-        # - off: no in-memory bitpack helpers
-        # - field: only packed_tensor accessors
-        # - aggregate: force aggregate packing for the whole dataclass
-        # - auto: enable aggregate if all primitive leaves declare bits (nested supported for scalar nesting)
-        type_layout = get_type_layout(cls)
-        auto_aggregate = (
-            bool(type_layout.fields)
-            and bitpack == "auto"
-            and type_layout.aggregate_bitpack.eligible
+        warnings.warn(
+            f"@xtructure_dataclass on {target_cls.__name__} is legacy and deprecated. "
+            f"Use class {target_cls.__name__}(Xtructurable, "
+            f"validate={validate!r}, bitpack={bitpack!r}): instead; "
+            "import it with 'from xtructure import Xtructurable'.",
+            FutureWarning,
+            stacklevel=2 if cls is None else 3,
         )
-
-        if bitpack == "aggregate" or auto_aggregate:
-            cls = _adapter(".layout_adapters.aggregate_bitpack", "add_aggregate_bitpack")(
-                cls,
-                xtructure_dataclass,
-            )
-
-        # add unpacked accessors / setters for in-memory packed fields
-        if bitpack in ("auto", "aggregate", "field"):
-            cls = _adapter(".layout_adapters.bitpack_accessors", "add_bitpack_accessors")(cls)
-
-        # add string representation methods
-        cls = _adapter(
-            ".pytree_adapters.string_format",
-            "add_string_representation_methods",
-        )(cls)
-
-        # add hash function
-        cls = _adapter(".pytree_adapters.hash", "hash_function_decorator")(cls)
-
-        # add comparison operators
-        cls = _adapter(".pytree_adapters.ops", "add_comparison_operators")(cls)
-
-        # add io methods
-        cls = _adapter(".pytree_adapters.io", "add_io_methods")(cls)
-
-        # add runtime validation if requested
-        cls = _adapter(".layout_adapters.validation", "add_runtime_validation")(
-            cls,
-            enabled=validate,
-        )
-
-        # Keep replace() from paying a fresh Layout Cache build when the
-        # replacement preserves primitive field shape/dtype signatures.
-        cls = _install_layout_cache_replace(cls, validate=validate)
-
-        setattr(cls, "is_xtructed", True)
-
-        return cls
+        return install_xtructure_members(target_cls, validate=validate, bitpack=bitpack)
 
     if cls is None:
         return _decorate
