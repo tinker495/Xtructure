@@ -39,7 +39,7 @@ class BatchedRenderer:
         title: str,
         **formatter_kwargs: Any,
     ) -> str:
-        batch_shape = instance.shape.batch
+        batch_shape = instance.shape
 
         if len(batch_shape) == 2:
             rows = self._build_2d_rows(instance, batch_shape, show_size, formatter_kwargs)

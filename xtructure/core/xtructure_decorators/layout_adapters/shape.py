@@ -14,9 +14,25 @@ def add_shape_dtype_len(cls: Type[T]) -> Type[T]:
     cls.default_dtype = type_layout.default_dtype
 
     def get_shape(self):
-        return self._layout_cache.shape_tuple
+        """Shared leading axes: () for SINGLE, (N, ...) for BATCHED.
+
+        UNSTRUCTURED raises TypeError, like ndim and len(); `layout` still
+        reports the mismatch.
+        """
+        layout = self._layout_cache
+        if layout.batch_shape == -1:
+            raise TypeError(
+                f"shape is not defined for UNSTRUCTURED {cls.__name__} instances. "
+                f"shape={layout.shape_tuple}, default_shape={self.default_shape}"
+            )
+        return layout.batch_shape
 
     setattr(cls, "shape", property(get_shape))
+
+    def get_layout(self):
+        return self._layout_cache
+
+    setattr(cls, "layout", property(get_layout))
 
     def get_type(self):
         return self._layout_cache.dtype_tuple
@@ -28,19 +44,11 @@ def add_shape_dtype_len(cls: Type[T]) -> Type[T]:
 
         Semantics:
         - SINGLE: returns 1
-        - BATCHED: returns the first batch dimension (shape.batch[0])
+        - BATCHED: returns the first batch dimension (shape[0])
         - UNSTRUCTURED: raises TypeError (batch size is ill-defined)
         """
-        layout = self._layout_cache
-        batch = layout.batch_shape
-        if batch == ():
-            return 1
-        if batch == -1:
-            raise TypeError(
-                f"len() is not defined for UNSTRUCTURED {cls.__name__} instances. "
-                f"shape={layout.shape_tuple}, default_shape={getattr(self, 'default_shape', None)}"
-            )
-        return int(batch[0])
+        batch = self.shape
+        return int(batch[0]) if batch else 1
 
     setattr(cls, "__len__", get_len)
 
@@ -56,16 +64,7 @@ def add_shape_dtype_len(cls: Type[T]) -> Type[T]:
 
     def get_ndim(self) -> int:
         """Return number of batch dimensions for structured instances."""
-        layout = self._layout_cache
-        batch = layout.batch_shape
-        if batch == ():
-            return 0
-        if batch == -1:
-            raise TypeError(
-                f"ndim is not defined for UNSTRUCTURED {cls.__name__} instances. "
-                f"shape={layout.shape_tuple}, default_shape={getattr(self, 'default_shape', None)}"
-            )
-        return len(batch)
+        return len(self.shape)
 
     setattr(cls, "ndim", property(get_ndim))
 

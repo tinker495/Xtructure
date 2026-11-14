@@ -14,7 +14,7 @@ def test_tile_single_dataclass():
     result = xnp.tile(data, 3)
 
     assert result.structured_type.name == "BATCHED"
-    assert result.shape.batch == (3,)
+    assert result.shape == (3,)
     assert jnp.array_equal(result.id, jnp.array([42, 42, 42], dtype=jnp.uint32))
     assert jnp.array_equal(result.value, jnp.array([3.14, 3.14, 3.14], dtype=jnp.float32))
 
@@ -30,7 +30,7 @@ def test_tile_batched_dataclass_1d():
     result = xnp.tile(data, 2)
 
     assert result.structured_type.name == "BATCHED"
-    assert result.shape.batch == (4,)
+    assert result.shape == (4,)
     assert jnp.array_equal(result.id, jnp.array([1, 2, 1, 2], dtype=jnp.uint32))
     assert jnp.array_equal(result.value, jnp.array([1.0, 2.0, 1.0, 2.0], dtype=jnp.float32))
 
@@ -46,7 +46,7 @@ def test_tile_batched_dataclass_2d():
     result = xnp.tile(data, (2, 3))
 
     assert result.structured_type.name == "BATCHED"
-    assert result.shape.batch == (4, 6)
+    assert result.shape == (4, 6)
     expected_id = jnp.array(
         [
             [1, 2, 1, 2, 1, 2],
@@ -100,7 +100,7 @@ def test_tile_complex_repetition_pattern():
     result = xnp.tile(data, (1, 2, 1))
 
     assert result.structured_type.name == "BATCHED"
-    assert result.shape.batch == (1, 4, 3)
+    assert result.shape == (1, 4, 3)
     expected_id = jnp.array(
         [
             [
@@ -168,7 +168,7 @@ def test_tile_single_repetition():
 
     result = xnp.tile(data, 3)
 
-    assert result.shape.batch == (6,)
+    assert result.shape == (6,)
     assert jnp.array_equal(result.id, jnp.array([1, 2, 1, 2, 1, 2], dtype=jnp.uint32))
     assert jnp.array_equal(
         result.value, jnp.array([1.0, 2.0, 1.0, 2.0, 1.0, 2.0], dtype=jnp.float32)
@@ -185,7 +185,7 @@ def test_tile_tuple_repetition():
 
     result = xnp.tile(data, (2, 3))
 
-    assert result.shape.batch == (2, 6)
+    assert result.shape == (2, 6)
     expected_id = jnp.array(
         [
             [1, 2, 1, 2, 1, 2],
@@ -204,7 +204,7 @@ def test_tile_empty_batch():
 
     result = xnp.tile(data, 3)
 
-    assert result.shape.batch == (0,)
+    assert result.shape == (0,)
     assert jnp.array_equal(result.id, jnp.array([], dtype=jnp.uint32))
     assert jnp.array_equal(result.value, jnp.array([], dtype=jnp.float32))
 
@@ -219,7 +219,7 @@ def test_tile_zero_repetition():
 
     result = xnp.tile(data, 0)
 
-    assert result.shape.batch == (0,)
+    assert result.shape == (0,)
     assert jnp.array_equal(result.id, jnp.array([], dtype=jnp.uint32))
     assert jnp.array_equal(result.value, jnp.array([], dtype=jnp.float32))
 
@@ -234,7 +234,7 @@ def test_tile_mixed_zero_repetition():
 
     result = xnp.tile(data, (2, 0))
 
-    assert result.shape.batch == (4, 0)
+    assert result.shape == (4, 0)
     assert jnp.array_equal(result.id, jnp.array([], dtype=jnp.uint32).reshape(4, 0))
     assert jnp.array_equal(result.value, jnp.array([], dtype=jnp.float32).reshape(4, 0))
 
@@ -248,15 +248,15 @@ def test_tile_integration_with_other_ops():
     )
 
     tiled = xnp.tile(data, 3)
-    assert tiled.shape.batch == (6,)
+    assert tiled.shape == (6,)
 
     taken = xnp.take(tiled, jnp.array([0, 2, 4]))
-    assert taken.shape.batch == (3,)
+    assert taken.shape == (3,)
     assert jnp.array_equal(taken.id, jnp.array([1, 1, 1], dtype=jnp.uint32))
 
     condition = jnp.array([True, False, True, False, True, False])
     fallback_value = jnp.array(999, dtype=jnp.uint32)
     filtered = xnp.where(condition, tiled, fallback_value)
-    assert filtered.shape.batch == (6,)
+    assert filtered.shape == (6,)
     expected_id = jnp.array([1, 999, 1, 999, 1, 999], dtype=jnp.uint32)
     assert jnp.array_equal(filtered.id, expected_id)

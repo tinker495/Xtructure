@@ -289,7 +289,7 @@ def unique_mask(
     """
     if batch_len is None:
         try:
-            batch_len = val.shape.batch[0]
+            batch_len = val.shape[0]
         except Exception as e:
             raise ValueError(f"key_fn failed to generate hashable keys: {e}")
 

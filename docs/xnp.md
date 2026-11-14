@@ -44,16 +44,16 @@ data3 = data3.replace(id=jnp.array(3), value=jnp.array(3.0))
 
 # Concatenate single dataclasses into a batch
 result = xnp.concatenate([data1, data2, data3])
-print(f"Concatenated batch shape: {result.shape.batch}")  # (3,)
+print(f"Concatenated batch shape: {result.shape}")  # (3,)
 print(f"IDs: {result.id}")  # [1, 2, 3]
 
 # 2. Stack dataclasses
 stacked = xnp.stack([data1, data2])
-print(f"Stacked batch shape: {stacked.shape.batch}")  # (2,)
+print(f"Stacked batch shape: {stacked.shape}")  # (2,)
 
 # 3. Pad dataclasses with specified padding
 padded = xnp.pad(result, (0, 2))
-print(f"Padded batch shape: {padded.shape.batch}")  # (5,)
+print(f"Padded batch shape: {padded.shape}")  # (5,)
 
 # 4. Conditional selection with where
 condition = jnp.array([True, False, True])
@@ -74,7 +74,7 @@ print(f"Taken IDs: {taken.id}")  # [0, 2, 4, 6, 8]
 
 # 7. Tile dataclasses (repeat data)
 tiled = xnp.tile(data1, 3)
-print(f"Tiled batch shape: {tiled.shape.batch}")  # (3,)
+print(f"Tiled batch shape: {tiled.shape}")  # (3,)
 
 # 8. Update values conditionally with "first True wins" semantics
 original = jnp.zeros(5)
@@ -105,7 +105,7 @@ flattened = xnp.flatten(reshaped)
 data = VectorData.default((3, 4))
 indices = jnp.zeros((3, 1), dtype=jnp.int32)
 taken_along = xnp.take_along_axis(data, indices, axis=1)
-print(f"Take along axis shape: {taken_along.shape.batch}")  # (3, 1)
+print(f"Take along axis shape: {taken_along.shape}")  # (3, 1)
 
 # 12. Expand dims and Squeeze
 expanded = xnp.expand_dims(reshaped, axis=0)  # (1, 2, 3)
@@ -175,7 +175,7 @@ splits = xnp.split(batched_data, 2)  # list of 2 dataclasses each with shape (3,
     *   `key`: Optional cost/priority array for tie-breaking. Lower costs are preferred. If `None`, returns first occurrence.
     *   `filled`: Optional boolean array marking valid entries. If provided, only filled entries can be selected.
     *   `key_fn`: Optional callable that produces hashable keys for uniqueness (vectorized via `jax.vmap`). Defaults to `lambda x: x.uint32ed`.
-    *   `batch_len`: Optional explicit batch length. If `None`, inferred from `val.shape.batch[0]`.
+    *   `batch_len`: Optional explicit batch length. If `None`, inferred from `val.shape[0]`.
     *   `return_index`: If `True`, also return indices of unique elements.
     *   `return_inverse`: If `True`, also return inverse indices for reconstructing original array.
 *   **Output**: Boolean mask array where `True` indicates the single, cheapest unique value to keep. If `return_index` or `return_inverse` is `True`, returns a tuple.

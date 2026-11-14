@@ -308,8 +308,8 @@ def _uint32ed(self):
     if st is StructuredType.SINGLE:
         return tree_to_uint32(self)
     if st is StructuredType.BATCHED:
-        return batched_tree_to_uint32_rows(self, self.shape.batch[0])
-    raise _unstructured_uint32ed_error(type(self).__name__, self.shape)
+        return batched_tree_to_uint32_rows(self, self.shape[0])
+    raise _unstructured_uint32ed_error(type(self).__name__, self.layout.shape_tuple)
 
 
 def _h(self, seed=0):
@@ -323,9 +323,9 @@ def _h(self, seed=0):
     if st is StructuredType.SINGLE:
         return hash_fast_uint32ed(tree_to_uint32(self), seed)
     if st is StructuredType.BATCHED:
-        rows = batched_tree_to_uint32_rows(self, self.shape.batch[0])
+        rows = batched_tree_to_uint32_rows(self, self.shape[0])
         return hash_fast_uint32ed_batched(rows, seed)
-    raise _unstructured_uint32ed_error(type(self).__name__, self.shape)
+    raise _unstructured_uint32ed_error(type(self).__name__, self.layout.shape_tuple)
 
 
 def _h_with_uint32ed(self, seed=0):
@@ -339,9 +339,9 @@ def _h_with_uint32ed(self, seed=0):
         u = tree_to_uint32(self)
         return hash_fast_uint32ed(u, seed), u
     if st is StructuredType.BATCHED:
-        u = batched_tree_to_uint32_rows(self, self.shape.batch[0])
+        u = batched_tree_to_uint32_rows(self, self.shape[0])
         return hash_fast_uint32ed_batched(u, seed), u
-    raise _unstructured_uint32ed_error(type(self).__name__, self.shape)
+    raise _unstructured_uint32ed_error(type(self).__name__, self.layout.shape_tuple)
 
 
 def hash_function_decorator(cls):

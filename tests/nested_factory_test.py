@@ -29,4 +29,4 @@ def test_nested_tensor_api():
     assert obj.inner_array.val.shape == (2,)
     assert isinstance(obj.inner_array, Inner)
     # Check if it behaves like a batched xtructure
-    assert obj.inner_array.shape.batch == (2,)
+    assert obj.inner_array.shape == (2,)

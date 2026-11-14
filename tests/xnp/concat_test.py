@@ -19,7 +19,7 @@ def test_concat_single_dataclasses():
     result = xnp.concatenate([data1, data2, data3])
 
     assert result.structured_type.name == "BATCHED"
-    assert result.shape.batch == (3,)
+    assert result.shape == (3,)
     assert jnp.array_equal(result.id, jnp.array([1, 2, 3]))
     assert jnp.array_equal(result.value, jnp.array([1.0, 2.0, 3.0]))
 
@@ -34,7 +34,7 @@ def test_concat_batched_dataclasses():
     result = xnp.concatenate([data1, data2])
 
     assert result.structured_type.name == "BATCHED"
-    assert result.shape.batch == (5,)
+    assert result.shape == (5,)
     assert jnp.array_equal(result.id, jnp.array([1, 2, 3, 4, 5]))
     assert jnp.array_equal(result.value, jnp.array([1.0, 2.0, 3.0, 4.0, 5.0]))
 
@@ -54,7 +54,7 @@ def test_concat_vector_dataclasses():
     result = xnp.concatenate([data1, data2])
 
     assert result.structured_type.name == "BATCHED"
-    assert result.shape.batch == (3,)
+    assert result.shape == (3,)
     expected_pos = jnp.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]])
     expected_vel = jnp.array([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6], [0.7, 0.8, 0.9]])
     assert jnp.allclose(result.position, expected_pos)

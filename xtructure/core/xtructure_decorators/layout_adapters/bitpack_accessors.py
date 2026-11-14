@@ -32,13 +32,7 @@ def add_bitpack_accessors(cls: Type[T]) -> Type[T]:
 
     def _make_unpacked_property(packed_layout: PackedFieldLayout):
         def _prop(self):
-            batch = getattr(self.shape, "batch", ())
-            if batch == -1:
-                raise TypeError(
-                    f"{cls.__name__} is UNSTRUCTURED (shape.batch == -1)."
-                    f" Cannot infer batch for unpacking '{packed_layout.name}'."
-                )
-            return unpack_field(getattr(self, packed_layout.name), packed_layout, batch)
+            return unpack_field(getattr(self, packed_layout.name), packed_layout, self.shape)
 
         return property(_prop)
 
@@ -51,12 +45,6 @@ def add_bitpack_accessors(cls: Type[T]) -> Type[T]:
 
     def set_unpacked(self, **kwargs):
         """Return a new instance with provided packed fields updated from unpacked arrays."""
-        batch = getattr(self.shape, "batch", ())
-        if batch == -1:
-            raise TypeError(
-                f"{cls.__name__} is UNSTRUCTURED (shape.batch == -1). Cannot call set_unpacked."
-            )
-
         updates = {}
         for name, value in kwargs.items():
             if not type_layout.has_field(name):
@@ -66,7 +54,7 @@ def add_bitpack_accessors(cls: Type[T]) -> Type[T]:
                 raise TypeError(
                     f"Field '{name}' is not a packed field (missing packed_bits/unpacked metadata)."
                 )
-            updates[name] = pack_field(value, packed_layout, batch)
+            updates[name] = pack_field(value, packed_layout, self.shape)
 
         return self.replace(**updates)
 

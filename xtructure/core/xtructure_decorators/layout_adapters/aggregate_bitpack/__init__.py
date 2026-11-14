@@ -81,10 +81,7 @@ def add_aggregate_bitpack(
     UnpackedView, _view_cache = build_unpacked_view_cls(cls, dataclass_factory)
 
     def _pack_instance(instance: Any) -> tuple[jax.Array, jax.Array]:
-        # Determine batch shape from the first field (xtructure invariant already implies consistent batching)
-        batch = getattr(instance.shape, "batch", ())
-        if batch == -1:
-            raise TypeError(f"{cls.__name__} is UNSTRUCTURED and cannot be aggregate-packed.")
+        batch = instance.shape
 
         # Flatten batch dims
         flat_n = int(np.prod(np.array(batch, dtype=np.int64))) if batch else 1
@@ -174,10 +171,7 @@ def add_aggregate_bitpack(
 
     def _words_all_from_packed(packed: Any) -> jax.Array:
         """Return (flat_n, words_all_len) uint32 words, reconstructing last word from tail if needed."""
-        batch = getattr(packed.shape, "batch", ())
-        if batch == -1:
-            raise TypeError(f"{packed_name} is UNSTRUCTURED and cannot be unpacked.")
-        flat_n = int(np.prod(np.array(batch, dtype=np.int64))) if batch else 1
+        flat_n = int(np.prod(np.array(packed.shape, dtype=np.int64))) if packed.shape else 1
         words = jnp.asarray(packed.words, dtype=jnp.uint32).reshape((flat_n, stored_words_len))
         if tail_bytes == 0:
             return words
@@ -213,9 +207,7 @@ def add_aggregate_bitpack(
 
     # Add unpacking on Packed (full unpack).
     def unpacked_prop(self):
-        batch = getattr(self.shape, "batch", ())
-        if batch == -1:
-            raise TypeError(f"{packed_name} is UNSTRUCTURED and cannot be unpacked.")
+        batch = self.shape
         words_all = _words_all_from_packed(self)
 
         # Decode each leaf spec in a memory-efficient way (one leaf at a time),
@@ -273,9 +265,7 @@ def add_aggregate_bitpack(
         if spec is None:
             raise KeyError(f"Unknown field '{name}' for {packed_name}.")
 
-        batch = getattr(self.shape, "batch", ())
-        if batch == -1:
-            raise TypeError(f"{packed_name} is UNSTRUCTURED and cannot unpack a single field.")
+        batch = self.shape
         words_all = _words_all_from_packed(self)
 
         decoded = jax.vmap(lambda row: _decode_field(row, spec, indices))(words_all)

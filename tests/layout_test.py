@@ -173,7 +173,7 @@ def test_layout_cache_populates_instance_and_survives_pytree_roundtrip():
     instance = LayoutPrimitive.default(shape=(2,))
 
     assert instance._layout_cache.shape_tuple == get_instance_layout(instance).shape_tuple
-    assert instance.shape is instance._layout_cache.shape_tuple
+    assert instance.layout is instance._layout_cache
     assert instance.dtype is instance._layout_cache.dtype_tuple
     assert instance.batch_shape == (2,)
     assert instance.structured_type == StructuredType.BATCHED
@@ -204,8 +204,8 @@ def test_layout_cache_is_transient_across_pickle_roundtrip():
 def test_instance_layout_accepts_python_primitive_values():
     instance = LayoutPrimitive(id=1, vector=[1.0, 2.0, 3.0])
 
-    assert instance.shape.id == ()
-    assert instance.shape.vector == (3,)
+    assert instance.layout.field_shape_for("id") == ()
+    assert instance.layout.field_shape_for("vector") == (3,)
     assert instance.structured_type == StructuredType.SINGLE
     assert instance.dtype.id == jnp.asarray(1).dtype
     assert instance.dtype.vector == jnp.asarray([1.0, 2.0, 3.0]).dtype
@@ -215,9 +215,11 @@ def test_layout_cache_populates_nested_instances_before_outer_cache():
     outer = LayoutNestedScalar.default(shape=(3,))
 
     assert hasattr(outer.inner, "_layout_cache")
-    assert outer.inner._layout_cache.shape_tuple == outer.inner.shape
+    assert outer.inner.layout is outer.inner._layout_cache
     assert outer._layout_cache.shape_tuple == get_instance_layout(outer).shape_tuple
-    assert outer.shape.inner == outer.inner._layout_cache.shape_tuple.__class__((), ())
+    assert outer.layout.field_shape_for("inner") == outer.inner._layout_cache.shape_tuple.__class__(
+        (), ()
+    )
 
 
 def test_layout_cache_refreshes_on_replace():
@@ -230,7 +232,7 @@ def test_layout_cache_refreshes_on_replace():
 
     assert single._layout_cache.batch_shape == ()
     assert replaced._layout_cache.batch_shape == (3,)
-    assert replaced.shape.batch == (3,)
+    assert replaced.shape == (3,)
 
 
 def test_layout_cache_replace_reuses_packed_storage_shape():
@@ -239,5 +241,5 @@ def test_layout_cache_replace_reuses_packed_storage_shape():
     replaced = state.replace(flags=jnp.zeros_like(state.flags))
 
     assert replaced._layout_cache is state._layout_cache
-    assert replaced.shape.flags == (3,)
-    assert replaced.shape.batch == (2,)
+    assert replaced.layout.field_shape_for("flags") == (3,)
+    assert replaced.shape == (2,)

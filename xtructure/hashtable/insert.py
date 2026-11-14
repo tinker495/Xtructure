@@ -32,7 +32,7 @@ def _check_probe_matches_inputs(probe: HashTableProbe, inputs: Xtructurable) -> 
     from a different batch / table, which would silently corrupt the table. We
     reject it at trace time rather than recomputing behind the caller's back.
     """
-    batch_shape = tuple(inputs.shape.batch)
+    batch_shape = inputs.shape
     expected = {
         "index": (batch_shape, SIZE_DTYPE),
         "step": (batch_shape, SIZE_DTYPE),
@@ -320,10 +320,10 @@ def _hashtable_parallel_insert_jit(
     assume_unique: bool = False,
 ):
     if filled is None:
-        filled = jnp.ones(inputs.shape.batch, dtype=jnp.bool_)
+        filled = jnp.ones(inputs.shape, dtype=jnp.bool_)
 
     filled = jnp.asarray(filled)
-    batch_len = inputs.shape.batch
+    batch_len = inputs.shape
     bucket_size_u32 = SIZE_DTYPE(table.bucket_size)
 
     if probe is not None:
