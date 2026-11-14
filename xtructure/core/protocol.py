@@ -1,4 +1,5 @@
 import builtins
+from collections.abc import Iterator
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol, Sequence
 from typing import Tuple as TypingTuple
 from typing import TypeVar
@@ -63,6 +64,12 @@ class Xtructurable(metaclass=_XtructurableMeta):
         from xtructure.core.xtructure_decorators import install_xtructure_members
 
         install_xtructure_members(cls, validate=validate, bitpack=bitpack)
+
+    def __iter__(self) -> Iterator[Self]:
+        """Iterate over the first batch axis; reject non-batched instances."""
+        if self.batch_shape == ():
+            raise TypeError(f"Cannot iterate over SINGLE {type(self).__name__} instances.")
+        return (self[index] for index in range(len(self)))
 
     if TYPE_CHECKING:
         is_xtructed: ClassVar[builtins.bool]

@@ -32,7 +32,12 @@ Inheriting from this base transforms a Python class into a JAX-compatible struct
 *   **`shape`** (property): Returns a namedtuple showing the JAX shapes of all fields.
 *   **`dtype`** (property): Returns a namedtuple showing the JAX dtypes of all fields.
 *   **`__getitem__(self, index)`**: Allows indexing or slicing an instance (e.g., `my_data_instance[0]`). The operation is applied to each field.
-*   **`__len__(self)`**: Returns the size of the first dimension of the *first* field, typically used for batch size.
+*   **`__len__(self)`**: Returns the first batch dimension for `BATCHED` instances and 1 for `SINGLE` instances. Raises `TypeError` for `UNSTRUCTURED` instances.
+*   **`__iter__(self)`**: Supports `for item in instance` and `list(instance)`, yielding instances of the same class.
+    *   `BATCHED`: Iterates exactly `len(instance)` times over the first batch axis. Remaining batch axes stay on each yielded item; an empty first batch axis yields no items.
+    *   `SINGLE`: Calling `iter(instance)` raises `TypeError`, even though `len(instance)` is 1.
+    *   `UNSTRUCTURED`: Calling `iter(instance)` raises `TypeError`, matching the `len()` contract.
+    *   Iteration stops at the batch boundary even when JAX array indexing would clamp an out-of-bounds index. The same behavior applies to legacy decorator-built classes and generated packed/unpacked classes.
 *   **`default(cls, shape=())`** (classmethod): Creates an instance with default values for all fields.
     *   The optional `shape` argument (e.g., `(10,)` or `(5, 2)`) creates a "batched" instance. This means the provided `shape` tuple is prepended to the `intrinsic_shape` of each field defined in the dataclass.
         *   For example, if a field is `data: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))` (intrinsic shape `(3,)`):
