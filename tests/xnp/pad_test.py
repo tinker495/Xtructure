@@ -179,3 +179,59 @@ def test_default_pad_rejects_invalid_completed_arrays(batched):
     data = AllPositive(value=jnp.array([1] if batched else 1, dtype=jnp.int32))
     with pytest.raises(ValueError, match="all values must be positive"):
         xnp.pad(data, 1)
+
+
+@pytest.mark.parametrize("batched", [False, True])
+@pytest.mark.parametrize("nested", [False, True])
+def test_default_pad_preserves_initialized_arrays(batched, nested):
+    # Author: tinker495. Padding must preserve initialized values and declared
+    # fill values without rerunning either the leaf or parent initialization.
+    hook_calls = []
+
+    class Incremented(Xtructurable):
+        value: FieldDescriptor.scalar(dtype=jnp.int32, default=0)
+
+        def __post_init__(self):
+            hook_calls.append("leaf")
+            self.value = self.value + 1
+
+    class Nested(Xtructurable):
+        child: FieldDescriptor.scalar(dtype=Incremented)
+
+        def __post_init__(self):
+            hook_calls.append("parent")
+
+    child = Incremented(value=jnp.array([1] if batched else 1, dtype=jnp.int32))
+    data = Nested(child=child) if nested else child
+    result = xnp.pad(data, 1)
+
+    assert result.shape == (3,)
+    assert jnp.array_equal(
+        result.child.value if nested else result.value,
+        jnp.array([0, 2, 0], dtype=jnp.int32),
+    )
+    assert hook_calls == (["leaf", "parent"] if nested else ["leaf"])
+    assert jnp.array_equal(child.value, jnp.array([2] if batched else 2, dtype=jnp.int32))
+
+
+@pytest.mark.parametrize("batched", [False, True])
+def test_default_pad_validates_without_initialization_rewriting_result(batched):
+    # Author: tinker495. A hook must not turn invalid padding zeros into positive
+    # values before validation; validate the completed arrays as produced.
+    hook_calls = []
+
+    def positive(value):
+        if jnp.any(value <= 0):
+            raise ValueError("values must stay positive")
+
+    class Incremented(Xtructurable):
+        value: FieldDescriptor.scalar(dtype=jnp.int32, default=0, validator=positive)
+
+        def __post_init__(self):
+            hook_calls.append("leaf")
+            self.value = self.value + 1
+
+    data = Incremented(value=jnp.array([1] if batched else 1, dtype=jnp.int32))
+    with pytest.raises(ValueError, match="values must stay positive"):
+        xnp.pad(data, 1)
+    assert hook_calls == ["leaf"]

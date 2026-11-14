@@ -7,6 +7,7 @@ from typing import Any, List, TypeVar, Union
 import jax
 import jax.numpy as jnp
 
+from xtructure.core.dataclass import _dataclass_unflatten
 from xtructure.core.indexing import _tuple_getter_values
 from xtructure.core.protocol import Xtructurable
 from xtructure.core.structuredtype import StructuredType
@@ -108,7 +109,7 @@ def _pad_with_defaults(
     target_shape: tuple[int, ...],
     insert_index: int | tuple[slice, ...],
 ) -> T:
-    """Complete padded field arrays before constructing validated data."""
+    """Reconstruct and validate padded arrays without rerunning initialization."""
     state = dataclass_instance._xtructure_state
     field_plans = state.type_layout.adapter_field_plans
     padded_values: dict[str, Any] = {}
@@ -130,7 +131,9 @@ def _pad_with_defaults(
             .at[insert_index]
             .set(value)
         )
-    return type(dataclass_instance)(**padded_values)
+    result = _dataclass_unflatten(type(dataclass_instance), padded_values, padded_values.values())
+    result.check_invariants()
+    return result
 
 
 def pad(
