@@ -1,17 +1,16 @@
-"""Public API for xtructure.
+"""Public API for xtructure."""
 
-Imports are resolved lazily so internal modules can depend on concrete owners
-without re-entering the top-level facade during package initialization.
-"""
-
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from .core.protocol import Xtructurable as Xtructurable
-
-from xtructure._lazy_imports import lazy_dir, load_lazy_export
+from . import io, numpy
+from .bgpq.bgpq import BGPQ
+from .core.dataclass import base_dataclass
+from .core.field_descriptor_utils import clone_field_descriptor
+from .core.field_descriptors import FieldDescriptor
+from .core.protocol import Xtructurable
+from .core.structuredtype import StructuredType
+from .hashtable.table import HashTable
+from .hashtable.types import HashIdx, HashTableProbe
+from .queue.queue import Queue
+from .stack.stack import Stack
 
 __all__ = [
     "BGPQ",
@@ -28,27 +27,3 @@ __all__ = [
     "numpy",
     "io",
 ]
-
-_EXPORTS: dict[str, tuple[str, str | None]] = {
-    "BGPQ": (".bgpq.bgpq", "BGPQ"),
-    "HashTable": (".hashtable.table", "HashTable"),
-    "HashIdx": (".hashtable.types", "HashIdx"),
-    "HashTableProbe": (".hashtable.types", "HashTableProbe"),
-    "Queue": (".queue.queue", "Queue"),
-    "Stack": (".stack.stack", "Stack"),
-    "Xtructurable": (".core.protocol", "Xtructurable"),
-    "base_dataclass": (".core.dataclass", "base_dataclass"),
-    "StructuredType": (".core.structuredtype", "StructuredType"),
-    "FieldDescriptor": (".core.field_descriptors", "FieldDescriptor"),
-    "clone_field_descriptor": (".core.field_descriptor_utils", "clone_field_descriptor"),
-    "numpy": (".numpy", None),
-    "io": (".io", None),
-}
-
-
-def __getattr__(name: str):
-    return load_lazy_export(name, __name__, _EXPORTS, globals())
-
-
-def __dir__() -> list[str]:
-    return lazy_dir(globals(), __all__)

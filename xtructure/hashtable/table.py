@@ -24,7 +24,7 @@ from .types import BucketIdx, HashIdx, HashTableProbe
 
 @partial(jax.jit, static_argnums=(0, 1, 2, 3, 4, 5))
 def _hashtable_build_jit(
-    dataclass: Xtructurable,
+    dataclass: type[Xtructurable],
     seed: int,
     capacity: int,
     bucket_size: int = 2,
@@ -80,7 +80,7 @@ class HashTable:
 
     @staticmethod
     def build(
-        dataclass: Xtructurable,
+        dataclass: type[Xtructurable],
         seed: int,
         capacity: int,
         bucket_size: int = 8,

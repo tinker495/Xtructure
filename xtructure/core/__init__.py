@@ -1,8 +1,11 @@
 """Core public facade for xtructure."""
 
-from __future__ import annotations
-
-from xtructure._lazy_imports import lazy_dir, load_lazy_export
+from . import xtructure_numpy
+from .dataclass import base_dataclass
+from .field_descriptor_utils import clone_field_descriptor
+from .field_descriptors import FieldDescriptor
+from .protocol import Xtructurable
+from .structuredtype import StructuredType
 
 __all__ = [
     "Xtructurable",
@@ -12,20 +15,3 @@ __all__ = [
     "clone_field_descriptor",
     "xtructure_numpy",
 ]
-
-_EXPORTS: dict[str, tuple[str, str | None]] = {
-    "Xtructurable": (".protocol", "Xtructurable"),
-    "StructuredType": (".structuredtype", "StructuredType"),
-    "base_dataclass": (".dataclass", "base_dataclass"),
-    "FieldDescriptor": (".field_descriptors", "FieldDescriptor"),
-    "clone_field_descriptor": (".field_descriptor_utils", "clone_field_descriptor"),
-    "xtructure_numpy": (".xtructure_numpy", None),
-}
-
-
-def __getattr__(name: str):
-    return load_lazy_export(name, __name__, _EXPORTS, globals())
-
-
-def __dir__() -> list[str]:
-    return lazy_dir(globals(), __all__)
