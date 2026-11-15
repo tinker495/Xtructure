@@ -104,7 +104,8 @@ def to_uint8(values: chex.Array, active_bits: int = 1) -> chex.Array:
 
     Args:
         values: Input array. For active_bits==1, can be bool or integer (0/!=0).
-            For active_bits>1, must be integer.
+            For active_bits>1, must be integer; only the low active_bits bits
+            are retained.
         active_bits: Bits per value in [1, 32].
 
     Returns:
@@ -145,7 +146,10 @@ def to_uint8(values: chex.Array, active_bits: int = 1) -> chex.Array:
         def pack_group(group):
             out = jnp.uint8(0)
             for i in range(values_per_byte):
-                out = out | (group[i].astype(jnp.uint8) << jnp.uint8(i * active_bits))
+                out = out | (
+                    (group[i].astype(jnp.uint8) & jnp.uint8((1 << active_bits) - 1))
+                    << jnp.uint8(i * active_bits)
+                )
             return out
 
         return jax.vmap(pack_group)(grouped)
@@ -166,7 +170,10 @@ def to_uint8(values: chex.Array, active_bits: int = 1) -> chex.Array:
         def pack_block(group):
             acc = jnp.uint32(0)
             for i in range(num_values_per_block):
-                acc = acc | (group[i].astype(jnp.uint32) << jnp.uint32(i * active_bits))
+                acc = acc | (
+                    (group[i].astype(jnp.uint32) & jnp.uint32((1 << active_bits) - 1))
+                    << jnp.uint32(i * active_bits)
+                )
             return jnp.array(
                 [(acc >> jnp.uint32(8 * j)) & jnp.uint32(0xFF) for j in range(num_bytes_per_block)],
                 dtype=jnp.uint8,
