@@ -89,12 +89,10 @@ def _allocate_initial_bucket_slots(
 ) -> tuple[jax.Array, jax.Array]:
     """Allocate every candidate that fits in its lookup-selected bucket.
 
-    Parallel lookup leaves each missing value at the first free slot of a
-    non-full bucket.  The legacy insert loop then elects one writer for that
-    slot, advances the losers by one slot, sorts the entire batch again, and
-    repeats.  When every bucket has enough remaining slots, those repeated
-    rounds are exactly equivalent to assigning candidates their stable rank
-    within the bucket in one sort.
+    Parallel lookup places each missing value at the first free slot of a
+    non-full bucket. When every bucket has enough remaining slots, assigning
+    candidates their stable rank within the bucket via a single sort is
+    equivalent to iterative winner-election and slot-advancement rounds.
 
     Returns the ranked slots (batch order, SIZE_DTYPE — may exceed
     bucket_size for overflowing candidates) and a scalar indicating whether

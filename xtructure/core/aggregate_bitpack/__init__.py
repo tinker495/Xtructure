@@ -53,7 +53,6 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
     stored_words_len = aggregate.stored_words_len
     tail_bytes = aggregate.tail_bytes
 
-    # Build a Packed class with a uint32 word-stream plus optional uint8 tail.
     packed_name = f"{cls.__name__}Packed"
 
     Packed = type(
@@ -72,8 +71,6 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
 
     register_generated_class(Packed, role=GENERATED_PACKED_ROLE)
 
-    # Build nested logical-view unpacked classes mirroring the original structure,
-    # using the decoded dtypes (bool/uint8/uint32).
     build_unpacked_view_cls = getattr(
         importlib.import_module(".view", __name__),
         "build_unpacked_view_cls",
@@ -83,10 +80,8 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
     def _pack_instance(instance: Any) -> tuple[jax.Array, jax.Array]:
         batch = instance.shape
 
-        # Flatten batch dims
         flat_n = int(np.prod(np.array(batch, dtype=np.int64))) if batch else 1
 
-        # Prepare per-leaf flattened arrays of shape (flat_n, nvalues)
         field_rows = []
         for s in specs:
             arr = jnp.asarray(get_path_value(instance, s.path))
@@ -94,7 +89,6 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
             field_rows.append(arr_flat)
 
         def _pack_row(*row_fields):
-            # Pack into full uint32 word stream of length words_all_len.
             words = jnp.zeros((words_all_len,), dtype=jnp.uint32)
 
             for s, values in zip(specs, row_fields):
@@ -112,7 +106,6 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
                 tail = jnp.zeros((0,), dtype=jnp.uint8)
                 return stored_words, tail
 
-            # Split last word into 1..2 byte tail.
             last = words[-1]
             tail = jnp.stack(
                 [
@@ -185,7 +178,6 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
         return last[:, None]
 
     def _normalize_indices(indices: Any, *, nvalues: int) -> jax.Array:
-        """Normalize indices to a 1D int32 JAX array."""
         if indices is None:
             return jnp.arange(nvalues, dtype=jnp.int32)
         if isinstance(indices, slice):
@@ -200,23 +192,17 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
     def _decode_field(row_words: jax.Array, s: AggregateLeafLayout, indices: Any) -> jax.Array:
         """Decode selected flattened indices for one field from a single row of words."""
         idxs = _normalize_indices(indices, nvalues=s.nvalues)
-        # Convert to bit positions and extract bits per index.
         bit_pos = jnp.uint32(s.bit_offset) + idxs.astype(jnp.uint32) * jnp.uint32(s.bits)
         vals = jax.vmap(lambda bp: _extract_bits(row_words, bp, s.bits))(bit_pos).astype(jnp.uint32)
         return vals.astype(s.unpack_dtype)
 
-    # Add unpacking on Packed (full unpack).
     def unpacked_prop(self):
         batch = self.shape
         words_all = _words_all_from_packed(self)
 
-        # Decode each leaf spec in a memory-efficient way (one leaf at a time),
-        # then reconstruct nested view instances.
         decoded_by_path: dict[tuple[str, ...], jax.Array] = {}
         for s in specs:
-            decoded = jax.vmap(lambda row: _decode_field(row, s, None))(
-                words_all
-            )  # (flat_n, nvalues)
+            decoded = jax.vmap(lambda row: _decode_field(row, s, None))(words_all)
             decoded = decoded.reshape(batch + s.unpacked_shape)
             decoded_by_path[s.path] = decoded
 
@@ -270,7 +256,6 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
 
         decoded = jax.vmap(lambda row: _decode_field(row, spec, indices))(words_all)
 
-        # Shape the output.
         flat_n = decoded.shape[0]
         batch_size = int(np.prod(np.array(batch, dtype=np.int64))) if batch else 1
         assert flat_n == batch_size
@@ -310,7 +295,7 @@ def add_aggregate_bitpack(cls: Type[T]) -> Type[T]:
         return build_instance_from_leaf_values(cls, view_values, cast_declared=True)
 
     def as_original(self):
-        """Backward-compatible alias for `unpack(dtype_policy="declared")`."""
+        """Alias for `unpack(dtype_policy="declared")`."""
         return self.unpack(dtype_policy="declared")
 
     setattr(Packed, "as_original", as_original)

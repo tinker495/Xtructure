@@ -127,7 +127,7 @@ def _compute_unique_mask_from_uint32eds(
         jnp.logical_and(jnp.logical_not(new_group[1:]), sorted_flag[1:] == jnp.uint32(0))
     )
 
-    # Smaller shapes lost the saved scans to branch overhead on the GPU gate.
+    # Below this size threshold, lax.cond branch overhead outweighs the skipped scans on GPU.
     use_singleton_shortcut = (
         unique_key is None
         and jax.default_backend() == "gpu"
@@ -217,21 +217,20 @@ def get_new_idx_byterized_batched(
 ) -> HashTableProbe:
     """Batched twin of :func:`get_new_idx_byterized`.
 
-    Consumes the **Instance Layout-aware** ``.hash_with_uint32ed`` BATCHED
-    surface (returns ``((n,), (n, lanes))``) and the row-wise hash reducer to
-    avoid the per-row ``jax.vmap(get_new_idx_byterized, in_axes=(0, None, None))``
-    wrapper that BATCHED parallel insert / lookup paths previously needed.
+    Consumes the batched ``.hash_with_uint32ed`` surface (returning
+    ``((n,), (n, lanes))``) and the row-wise hash reducer to avoid a per-row
+    ``jax.vmap`` wrapper.
 
     Returns a :class:`HashTableProbe` bundling ``(index, step, uint32ed,
     fingerprint)`` so parallel lookup and parallel insert can consume one shared
     hash pass. This is the single canonical producer of that probe.
     """
-    hash_value, uint32ed = inputs.hash_with_uint32ed(seed)  # ((n,), (n, lanes))
+    hash_value, uint32ed = inputs.hash_with_uint32ed(seed)
     seed_u32 = jnp.asarray(seed, dtype=jnp.uint32)
     secondary_seed = jnp.bitwise_xor(seed_u32, DOUBLE_HASH_SECONDARY_DELTA)
-    secondary_hash = hash_fast_uint32ed_batched(uint32ed, secondary_seed)  # (n,)
-    idx = _modulus_reduce(hash_value, modulus)  # (n,)
-    step = _normalize_probe_step(secondary_hash, modulus)  # (n,)
-    length = jnp.uint32(uint32ed.shape[1])  # scalar (per-row lane count)
-    fingerprint = _mix_fingerprint(hash_value, secondary_hash, length)  # (n,)
+    secondary_hash = hash_fast_uint32ed_batched(uint32ed, secondary_seed)
+    idx = _modulus_reduce(hash_value, modulus)
+    step = _normalize_probe_step(secondary_hash, modulus)
+    length = jnp.uint32(uint32ed.shape[1])
+    fingerprint = _mix_fingerprint(hash_value, secondary_hash, length)
     return HashTableProbe(index=idx, step=step, uint32ed=uint32ed, fingerprint=fingerprint)

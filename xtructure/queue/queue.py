@@ -12,7 +12,7 @@ from ..core.protocol import Xtructurable
 @partial(jax.jit, static_argnums=(0, 1))
 def _queue_build_jit(max_size: int, value_class: Xtructurable):
     # Packed default rows, not zeros: reads of never-written slots must keep
-    # returning value_class defaults (legacy val_store semantics).
+    # returning value_class defaults.
     val_store = packed_default_store(value_class, max_size)
     head = SIZE_DTYPE(0)
     tail = SIZE_DTYPE(0)

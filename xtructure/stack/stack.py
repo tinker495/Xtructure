@@ -38,9 +38,8 @@ def _stack_push_jit(stack, items: Xtructurable):
 
 @partial(jax.jit, static_argnums=(1,))
 def _stack_read_jit(stack, num_items: int):
-    # Gather with the legacy index arithmetic (uint32 underflow + clamp on
-    # partial pops) — JAxtar id_stars depends on that exact row placement,
-    # so a start-clamping dynamic_slice is NOT equivalent here.
+    # Gather using uint32 underflow + clamp indexing on partial pops; a
+    # start-clamping dynamic_slice places rows differently and is NOT equivalent.
     if num_items == 1:
         indices = (stack.size - 1)[None]
     else:

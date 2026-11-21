@@ -5,7 +5,6 @@ from xtructure.core.xtructure_numpy.array_ops import _where_no_broadcast
 
 
 def _get_sentinels(dtype):
-    """Returns the min and max sentinel values for a given dtype."""
     finfo = jnp.finfo(dtype)
     return finfo.min, finfo.max
 
@@ -37,12 +36,9 @@ def binary_search_partition(k, a, b):
     n = a.shape[0]
     m = b.shape[0]
 
-    # The number of elements from `a`, `i`, must be in the range [low, high].
     low = jnp.maximum(0, k - m)
     high = jnp.minimum(n, k)
 
-    # Binary search for the correct partition index `i`. We are looking for the
-    # largest `i` in `[low, high]` such that `a[i-1] <= b[k-i]`.
     def cond_fn(state):
         low_i, high_i = state
         return low_i < high_i
@@ -58,12 +54,9 @@ def binary_search_partition(k, a, b):
         is_a_safe = i > 0
         is_b_safe = j < m
 
-        # A more robust way to handle conditional loading in Pallas to avoid
-        # the `scf.yield` lowering error.
-        # 1. Select a safe index to load from (0 if out of bounds).
-        # 2. Perform the load unconditionally.
-        # 3. Use `where` to replace the loaded value with a sentinel if the
-        #    original index was out of bounds.
+        # Load unconditionally from a clamped index and mask with `where`
+        # afterward because conditional loads in Pallas trigger `scf.yield`
+        # lowering errors.
         cond_safe_a = jnp.asarray(is_a_safe, dtype=jnp.bool_)
         i_minus_one = jnp.asarray(i - 1)
         safe_a_idx = _where_no_broadcast(
@@ -86,10 +79,6 @@ def binary_search_partition(k, a, b):
         max_val_array = jnp.full_like(b_val_loaded, max_val)
         b_val = _where_no_broadcast(cond_safe_b, b_val_loaded, max_val_array)
 
-        # The condition for a valid partition from `a`'s perspective.
-        # If `a[i-1] <= b[j]`, then `i` is a valid candidate, and we can
-        # potentially take even more from `a`. So, we search in `[i, high]`.
-        # Otherwise, `i` is too high, and we must search in `[low, i-1]`.
         is_partition_valid = a_val <= b_val
         cond_partition = jnp.asarray(is_partition_valid, dtype=jnp.bool_)
         new_low = _where_no_broadcast(cond_partition, jnp.asarray(i), jnp.asarray(low_i))
@@ -100,6 +89,5 @@ def binary_search_partition(k, a, b):
         )
         return new_low, new_high
 
-    # The loop terminates when low == high, and `final_low` is our desired `i`.
     final_low, _ = lax.while_loop(cond_fn, body_fn, (low, high))
     return final_low, k - final_low

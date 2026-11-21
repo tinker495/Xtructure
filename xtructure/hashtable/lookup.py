@@ -127,7 +127,7 @@ def _hashtable_lookup_jit(table: Any, input: Xtructurable) -> tuple[HashIdx, jax
 # Probe rounds run unconditionally before the while_loop. Every while round
 # costs a host round-trip (the loop predicate is copied D2H), which dominates
 # lookup wall time on GPU; straight-line rounds cost only their (cheap)
-# kernels. 2 covers the typical probe depth at benchmark load factors.
+# kernels. 2 covers the typical probe depth at typical load factors.
 _PROLOGUE_PROBE_ROUNDS = 2
 
 
@@ -201,9 +201,8 @@ def _hashtable_lookup_parallel_internal(
         need_fallback = jnp.logical_and(~found_fast, jnp.any(other_fp_matches, axis=1))
 
         # Unconditional: when need_fallback is all-False the masking below
-        # yields exactly (all-False, 0) — same as the old lax.cond false
-        # branch — and skipping the cond avoids a per-round D2H sync of its
-        # scalar predicate, which costs far more than this gather.
+        # yields (all-False, 0), and skipping lax.cond avoids a per-round D2H
+        # sync of its scalar predicate, which costs far more than this gather.
         bucket_vals = table.table[flat_indices]
         value_equals = jax.vmap(lambda bv, inp: jax.vmap(lambda s: s == inp)(bv))(
             bucket_vals, inputs

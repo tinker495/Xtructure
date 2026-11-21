@@ -2,9 +2,8 @@
 
 ## Purpose
 
-This suite of benchmarks is designed to measure and compare the performance of `xtructure`'s JAX-based data structures against their equivalent counterparts in standard Python. The primary focus is on how performance scales with increasing batch sizes, highlighting the advantages of GPU-based parallel processing for large-scale data manipulation.
+This suite measures and compares the performance of `xtructure`'s JAX-based data structures against standard Python equivalents across batch sizes:
 
-The following data structures are benchmarked:
 - `xtructure.HashTable` vs. Python `dict`
 - `xtructure.BGPQ` (Heap) vs. Python `heapq`
 - `xtructure.Queue` vs. Python `collections.deque`
@@ -12,40 +11,30 @@ The following data structures are benchmarked:
 
 ## Prerequisites
 
-Ensure you have the necessary libraries installed with uv:
+Install benchmark dependencies in the workspace environment (or add `xtructure[benchmark]`):
 
 ```bash
-uv add "xtructure[benchmark] @ git+https://github.com/tinker495/xtructure.git" "jax[gpu]"
+uv sync --extra benchmark
 ```
-*Note: Please follow the official JAX documentation for detailed instructions on installing for your specific CUDA version.*
+
+*Note: Follow the official JAX documentation to install the CUDA or TPU extra matching your accelerator.*
 
 ## Usage
 
-The entire benchmark and visualization process can be run from a single script. From the root directory of the project, execute the following command:
+Run the full suite and plot generation from the `Xtructure` directory:
 
 ```bash
-python3 xtructure_benchmarks/run_all.py
+uv run python xtructure_benchmarks/run_all.py
 ```
 
-This will:
-1. Run the benchmarks for each data structure.
-2. Save the raw performance data into `.json` files.
-3. Generate performance comparison graphs from the data.
-4. Save the graphs as `.png` image files.
-
-Fairness controls:
-- `--mode kernel` measures just the kernel execution; `--mode e2e` also keeps data marshaling/device transfer costs inside the timed region for both xtructure and Python baselines.
-- Heap benchmarks now default to `--python-heap-insert-mode auto`, timing both bulk heapify and incremental pushes and choosing the faster path as the baseline.
+Run `uv run python xtructure_benchmarks/run_all.py --help` (or `--help` on any individual benchmark script) to inspect available CLI flags (`--mode`, `--trials`, `--batch-sizes`, etc.).
 
 ## Output
 
-All output files are saved in the `xtructure_benchmarks/results/` directory.
+All outputs are saved under `xtructure_benchmarks/results/`:
 
-- **JSON Files (`*_results.json`)**: These files contain the raw benchmark data, measuring "operations per second" for both the `xtructure` and standard Python implementations across different batch sizes.
-- **PNG Files (`*_performance.png`)**: These files are graphical visualizations of the performance data.
-  - **X-axis**: Batch Size (on a log base 2 scale)
-  - **Y-axis**: Operations per Second (on a log scale)
-  - **Interpretation**: Higher values on the y-axis indicate better performance. The graphs clearly illustrate the performance difference as the amount of data processed in parallel increases.
+- `*_results.json`: Raw median/IQR/P99 throughput measurements (`ops_per_sec`) and recorded environment metadata.
+- `*_performance.png`: Log-log scaling plots comparing `xtructure` against the Python baseline.
 
 ## Measurement caveats
 

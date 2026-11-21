@@ -22,7 +22,6 @@ def display_summary_table():
 
         data_structure = results_file.stem.split("_")[0].capitalize()
 
-        # Get the index for the largest batch size's results
         largest_batch_idx = -1
 
         xtructure_data = data["xtructure"]
@@ -35,7 +34,6 @@ def display_summary_table():
             xtructure_result = xtructure_data[op][largest_batch_idx]
             python_result = python_data[op][largest_batch_idx]
 
-            # Handle both old and new result formats
             if isinstance(xtructure_result, dict):
                 xtructure_perf = xtructure_result["median"]
             else:
@@ -85,7 +83,6 @@ def run_script(script_path: Path, extra_args: Optional[List[str]] = None):
     """
     print(f"--- Running {script_path.name} ---")
 
-    # Copy the current environment and add the project root to PYTHONPATH
     env = os.environ.copy()
     project_root = Path(__file__).parent.parent
     env["PYTHONPATH"] = str(project_root) + os.pathsep + env.get("PYTHONPATH", "")
@@ -93,8 +90,7 @@ def run_script(script_path: Path, extra_args: Optional[List[str]] = None):
     # Enforce deterministic hash seed for fair comparison
     env["PYTHONHASHSEED"] = "42"
 
-    # Check if we need to enable JAX 64-bit mode
-    # We pass this via environment variable so it's set before any JAX import in the subprocess
+    # Forward JAX_ENABLE_X64 via env so subprocesses configure x64 before importing JAX.
     if "JAX_ENABLE_X64" in os.environ:
         env["JAX_ENABLE_X64"] = os.environ["JAX_ENABLE_X64"]
 
@@ -115,7 +111,6 @@ def run_script(script_path: Path, extra_args: Optional[List[str]] = None):
         print(e.stdout)
         print("--- STDERR ---")
         print(e.stderr)
-        # Re-raise the exception to stop the main script
         raise
 
 
@@ -138,11 +133,9 @@ def main(
     """
     benchmarks_dir = Path(__file__).parent
 
-    # Ensure results directory exists
     results_dir = benchmarks_dir / "results"
     results_dir.mkdir(exist_ok=True)
 
-    # 1. Find and run all benchmark scripts
     benchmark_scripts = sorted(benchmarks_dir.glob("benchmark_*.py"))
     print(f"Found {len(benchmark_scripts)} benchmark scripts to run.")
 
@@ -151,7 +144,6 @@ def main(
         common_args += ["--batch-sizes", batch_sizes]
 
     if not use_float32:
-        # Set environment variable for this process and all subprocesses
         os.environ["JAX_ENABLE_X64"] = "True"
         print("🚀 Strict Fairness Mode (Default): JAX 64-bit floats ENABLED")
     else:
@@ -163,7 +155,6 @@ def main(
             extra += ["--python-heap-insert-mode", python_heap_insert_mode]
         run_script(script, extra_args=extra)
 
-    # 2. Run the visualization script
     visualize_script = benchmarks_dir / "visualize.py"
     if visualize_script.exists():
         run_script(visualize_script)

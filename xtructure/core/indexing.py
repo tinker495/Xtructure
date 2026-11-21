@@ -53,7 +53,6 @@ def _compile_field_setter(
     field_count = len(field_names)
 
     if field_count == 0:
-        # Empty dataclass: return a no-arg constructor wrapper directly.
         if mode == "set":
 
             def _compiled_set(obj_instance, indices, values_to_set):
@@ -133,7 +132,7 @@ class _Updater(Generic[T]):
                        It determines element-wise whether to use the new value
                        or the original value.
             value_to_conditionally_set: The value(s) to set if the condition is true.
-                                       - If it's an instance of the same dataclass type (`self.cls`),
+                                       - If it's an instance of the same dataclass type,
                                          the corresponding fields from this instance are used for updates.
                                        - Otherwise (e.g., a scalar or a JAX array), this value is used
                                          for updating all applicable fields (it must be broadcast-compatible

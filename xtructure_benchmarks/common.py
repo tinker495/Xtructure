@@ -55,7 +55,6 @@ def validate_results_schema(results: Dict[str, Any]) -> None:
         results["python"], dict
     ), "results must contain dict 'python'"
 
-    # Optional environment info
     if "environment" in results:
         assert isinstance(results["environment"], dict), "environment must be a dict"
 
@@ -120,7 +119,6 @@ def get_system_info() -> dict[str, str | float | list[str]]:
         info["jax_backend"] = jax.default_backend()
         devices = jax.devices()
         if devices:
-            # Simplify device list to avoid clutter
             device_types = [f"{d.platform}:{d.device_kind}" for d in devices]
             info["jax_devices"] = device_types
     except ImportError:
@@ -175,11 +173,9 @@ class PythonBenchmarkValue:
     embedding: Tuple[float, ...]
 
     def __hash__(self):
-        # Mimic structural hashing
         return hash((self.id, self.timestamp, self.position))
 
     def __lt__(self, other):
-        # For heap comparisons
         if not isinstance(other, PythonBenchmarkValue):
             return NotImplemented
         return self.id < other.id
@@ -226,7 +222,6 @@ def run_jax_trials(
 
     durations: List[float] = []
     for _ in range(trials):
-        # Ensure clean state before measurement
         gc.collect()
 
         start = time.perf_counter()
@@ -242,14 +237,12 @@ def run_python_trials(
 ) -> List[float]:
     """Run a Python function multiple times and return per-trial durations."""
 
-    # Warmup
     for _ in range(max(1, warmup)):
         func()
         gc.collect()
 
     durations: List[float] = []
 
-    # Phase 1: Latency Measurement (No tracemalloc overhead)
     gc_was_enabled = gc.isenabled()
     if disable_gc:
         gc.disable()
@@ -345,9 +338,8 @@ def run_linear_container_benchmarks(
 
         filled_container = getattr(container, add_method)(values_device)
         jax.block_until_ready(filled_container)
-        # The container must be a jit ARGUMENT: as a closure constant XLA
-        # can fold the whole remove into precomputed outputs (impossible
-        # 40M+ ops/s readings).
+        # Pass the container as a jit argument: as a closure constant, XLA can
+        # constant-fold the entire remove call into precomputed outputs.
         remove_durations = run_jax_trials(
             lambda container: getattr(container, remove_method)(batch_size),
             trials=trials,
@@ -397,7 +389,6 @@ def print_results_table(results: Dict[str, Any], title: str):
         for op in operations:
             op_name = op.replace("_ops_per_sec", "")
 
-            # Add row for xtructure
             xtructure_data = xtructure_results.get(op, [])[i]
             xtructure_p99 = "-"
             if isinstance(xtructure_data, dict):
@@ -420,7 +411,6 @@ def print_results_table(results: Dict[str, Any], title: str):
                 )
             )
 
-            # Add row for python
             python_data = python_results.get(op, [])[i]
             python_p99 = "-"
             if isinstance(python_data, dict):

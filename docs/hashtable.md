@@ -2,15 +2,14 @@
 
 A bucketed double hash table optimized for JAX.
 
-Define data classes by inheriting from `Xtructurable`.
+Define stored values by inheriting from `Xtructurable`.
 
 ```python
 import jax
 import jax.numpy as jnp
-from xtructure import HashTable, FieldDescriptor, Xtructurable
+from xtructure import FieldDescriptor, HashTable, Xtructurable
 
 
-# Define a data structure (as an example from core_concepts.md)
 class MyDataValue(Xtructurable):
     id: FieldDescriptor.scalar(dtype=jnp.uint32)
     position: FieldDescriptor.tensor(dtype=jnp.float32, shape=(3,))
@@ -18,87 +17,45 @@ class MyDataValue(Xtructurable):
 
 
 # 1. Build the HashTable
-#    HashTable.build(dataclass, seed, capacity)
 table_capacity = 1000
-hash_table = HashTable.build(MyDataValue, 123, table_capacity)
-# Note: MyDataValue (the class itself) is passed, not an instance, for build.
+hash_table = HashTable.build(MyDataValue, seed=123, capacity=table_capacity)
 
-# 3. Prepare data to insert
-#    Let's create some random data.
-num_items_to_insert = 100
-key = jax.random.PRNGKey(0)
-sample_data = MyDataValue.random(shape=(num_items_to_insert,), key=key)
+# 2. Prepare random batch data
+num_items = 100
+sample_data = MyDataValue.random(shape=(num_items,), key=jax.random.PRNGKey(0))
 
-# 4. Insert data
-#    HashTable.parallel_insert(table, samples, filled_mask)
-#    'filled_mask' indicates which items in 'sample_data' are valid.
-filled_mask = jnp.ones(num_items_to_insert, dtype=jnp.bool_)
-hash_table, inserted_mask, unique_mask, idxs = HashTable.parallel_insert(hash_table, sample_data, filled_mask)
+# 3. Parallel insert
+filled = jnp.ones(num_items, dtype=jnp.bool_)
+hash_table, inserted_mask, unique_mask, idxs = hash_table.parallel_insert(sample_data, filled)
+print(f"Inserted {jnp.sum(inserted_mask)} new items ({jnp.sum(unique_mask)} unique in batch).")
 
-print(f"HashTable: Inserted {jnp.sum(inserted_mask)} items.")
-print(f"HashTable: Unique items inserted: {jnp.sum(unique_mask)}")  # Number of items that were not already present
-print(f"HashTable size: {hash_table.size}")
-
-# inserted_mask: boolean array, true if the item at the corresponding input index was successfully inserted.
-# unique_mask: boolean array, true if the inserted item was unique (not a duplicate).
-# idxs: HashIdx object containing indices in the hash table where items were stored.
-
-# 5. Lookup data
-#    HashTable.lookup(table, item_to_lookup)
-item_to_check = sample_data[0]  # Let's check the first item we inserted
-idx, found = HashTable.lookup(hash_table, item_to_check)
-
+# 4. Single-item lookup
+idx, found = hash_table.lookup(sample_data[0])
 if found:
-    retrieved_item = hash_table[idx]  # Access using public __getitem__ with HashIdx
-    print(f"HashTable: Item found at index {idx.index}.")
-    # You can then compare retrieved_item with item_to_check
-else:
-    print("HashTable: Item not found.")
+    retrieved_item = hash_table[idx]
+    print(f"Found item at flat index {idx.index}: id={retrieved_item.id}")
 
-# 6. Parallel lookup (for multiple items)
-#    HashTable.lookup_parallel(table, items_to_lookup)
-items_to_lookup = sample_data[:5]  # Look up first 5 items
-idxs, founds = HashTable.lookup_parallel(hash_table, items_to_lookup)
-print(f"HashTable: Found {jnp.sum(founds)} out of {len(items_to_lookup)} items in parallel lookup.")
+# 5. Parallel lookup with probe reuse before inserting another batch
+candidates = MyDataValue.random(shape=(16,), key=jax.random.PRNGKey(1))
+lookup_idxs, founds, probe = hash_table.lookup_parallel_with_probe(candidates)
+hash_table, newly_inserted, _, _ = hash_table.parallel_insert(candidates, probe=probe)
 
-# 7. Single item insertion
-#    HashTable.insert(table, item_to_insert)
-single_item = MyDataValue.default()
-single_item = single_item.replace(
-    id=jnp.array(999), position=jnp.array([1.0, 2.0, 3.0]), flags=jnp.array([True, False, True, False])
+# 6. Single-item insertion
+single_item = MyDataValue.default().replace(
+    id=jnp.uint32(999),
+    position=jnp.array([1.0, 2.0, 3.0], dtype=jnp.float32),
+    flags=jnp.array([True, False, True, False], dtype=jnp.bool_),
 )
-hash_table, was_inserted, idx = HashTable.insert(hash_table, single_item)
-print(f"HashTable: Single item inserted? {was_inserted}")
+hash_table, was_inserted, single_idx = hash_table.insert(single_item)
 ```
 
-## Key `HashTable` Details
+## Key `HashTable` Contracts
 
-*   **Bucketed Double Hashing**: Uses `bucket_size` (an internal constant, typically small e.g. 2-4) slots per bucket to resolve collisions. If a bucket is full, double hashing determines the next bucket to probe.
-*   **Static config fields**: `HashTable` is a `@base_dataclass` with `static_fields` including `bucket_size` and `max_probes`, so internal JIT code can use `table.bucket_size` / `table.max_probes` directly (no need to pass them through every call). Keep them as Python `int` values (hashable), not JAX arrays.
-*   **`HashTable.build(dataclass, seed, capacity, bucket_size=2)`**:
-    *   `dataclass`: The *class* of your custom data structure (e.g., `MyDataValue`). An instance of this class (e.g., `MyDataValue.default()`) is used internally to define the table structure.
-    *   `seed`: Integer seed for hashing.
-    *   `capacity`: Desired user capacity. The internal capacity (`_capacity`) will be larger to accommodate collisions (specifically, `int(HASH_SIZE_MULTIPLIER * capacity / bucket_size)`).
-    *   `bucket_size`: Number of slots per bucket.
-*   **`HashTable.parallel_insert(table, inputs, filled_mask=None)`**:
-    *   `inputs`: A PyTree (or batch of PyTrees) of items to insert.
-    *   `filled_mask`: A boolean JAX array indicating which entries in `inputs` are valid. If `None`, all inputs are considered valid.
-    *   Returns a tuple of:
-        *   `updated_table`: The updated HashTable instance
-        *   `inserted_mask`: Boolean array for successful insertions for each input
-        *   `unique_mask`: Boolean array, true if the item was new and not a duplicate
-        *   `idxs`: A `HashIdx` object containing `.index` for where items were stored
-*   **`HashTable.lookup(table, item_to_lookup)`**:
-    *   Returns `idx` (a `HashIdx` object with `.index`) and `found` (boolean).
-    *   If `found` is true, the item can be retrieved from `table.table[idx.index]`.
-*   **`HashTable.lookup_parallel(table, items_to_lookup)`**:
-    *   Performs parallel lookup for multiple items.
-    *   `items_to_lookup`: A batch of items to look up.
-    *   Returns `idxs` (a `HashIdx` object with `.index` for each item) and `founds` (boolean array indicating which items were found).
-*   **`HashTable.insert(table, item_to_insert)`**:
-    *   Inserts a single item into the hash table.
-    *   `item_to_insert`: The item to insert.
-    *   Returns a tuple of:
-        *   `updated_table`: The updated HashTable instance
-        *   `was_inserted`: Boolean indicating if the item was actually inserted (not already present)
-        *   `idx`: A `HashIdx` object with `.index` for where the item was stored
+*   **Bucketed double hashing & over-provisioning**: `HashTable.build(dataclass, seed, capacity, bucket_size=8, hash_size_multiplier=2, max_probes=None)` packs `bucket_size` slots per bucket (default `8`) and rounds the internal bucket count up to a power of two based on `hash_size_multiplier * capacity / bucket_size`. Over-provisioning keeps open-addressed probe lengths short under GPU parallel insertion without resizing, and power-of-two sizing allows bitmask modulus reduction.
+*   **Static config fields**: `HashTable` is a `@base_dataclass` with `static_fields=("seed", "capacity", "_capacity", "bucket_size", "max_probes")` so JIT compiles bucket shapes and probe bounds directly. Keep these fields as hashable Python `int` values, not JAX arrays.
+*   **`inserted_mask` vs `unique_mask`**: In `parallel_insert(inputs, filled=None, unique_key=None, probe=None, *, assume_unique=False)`:
+    *   `unique_mask` marks the single chosen representative of each distinct key among `filled` inputs in the batch.
+    *   `inserted_mask` marks rows that were both `unique_mask` representatives and not already present in the table (actually written by this call).
+    *   Pass `assume_unique=True` only when every row selected by `filled` is guaranteed unique to skip intra-batch deduplication.
+*   **Single-hash-pass probe reuse**: `lookup_parallel_with_probe(inputs, filled=True)` returns `(idxs, founds, probe)` where `probe` (`HashTableProbe`) holds the uint32 hashing products computed during lookup. Passing `probe=probe` to `parallel_insert` for the exact same batch and table reuses that hash pass for bit-identical state without hashing twice; shape or dtype mismatches raise immediately rather than silently recomputing.
+*   **Element retrieval**: Both `lookup` and `lookup_parallel` return a `HashIdx`; index directly with `hash_table[idx]`.

@@ -33,12 +33,6 @@ class FieldDescriptor:
 
             # A nested Xtructurable field
             d: FieldDescriptor.scalar(dtype=AnotherDataClass)
-
-    The FieldDescriptor can be used with type annotation syntax using square brackets
-    or instantiated directly with the constructor for more explicit parameter naming.
-    Describes a field in an Xtructurable subclass, specifying its JAX dtype,
-    a default fill value, and its intrinsic (non-batched) shape.
-    This allows for auto-generation of the .default() classmethod.
     """
 
     def __init__(
@@ -74,8 +68,6 @@ class FieldDescriptor:
             raise ValueError("Provide only one of fill_value or fill_value_factory.")
 
         self.dtype: DType = dtype
-        # Optional: per-value active bits for compact serialization/bitpacking.
-        # This is intentionally limited to 1..32 for now.
         if bits is not None:
             if not isinstance(bits, int):
                 raise TypeError(f"bits must be an int or None, got {type(bits).__name__}")
@@ -198,9 +190,6 @@ class FieldDescriptor:
         stored byte-stream shape and default logical dtype are interpreted by
         Type Layout / Bitpack Layout.
         """
-        # API note:
-        # - Prefer `shape=...` (consistent with FieldDescriptor.tensor).
-        # - `unpacked_shape` is accepted for backward compatibility.
         if shape is None and unpacked_shape is None:
             raise TypeError("packed_tensor requires `shape` (preferred) or `unpacked_shape`.")
         if shape is None:

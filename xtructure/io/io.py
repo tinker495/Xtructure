@@ -49,14 +49,12 @@ def _flatten_leaf_for_save(
             }
         return {full_key: np.asarray(value)}
 
-    # For non-array-like fields, save as 0-dim array.
     return {full_key: np.array(value)}
 
 
 def _flatten_instance_for_save(
     instance: Xtructurable, *, packed: bool = True
 ) -> Dict[str, np.ndarray]:
-    """Flatten an xtructure instance into a dict for saving."""
     flat_data: Dict[str, np.ndarray] = {}
     for leaf, value in iter_leaf_values(instance):
         flat_data.update(_flatten_leaf_for_save(value, leaf, leaf.dotted_path, packed=packed))
@@ -110,7 +108,6 @@ def _load_leaf_value(leaf: LeafLayout, data: Dict[str, Any], owner_name: str) ->
 
 
 def _unflatten_data_for_load(cls: type, data: Dict[str, Any]) -> Xtructurable:
-    """Reconstruct an xtructure instance from flattened data."""
     type_layout = get_type_layout(cls)
     leaf_values = {
         leaf.path: _load_leaf_value(leaf, data, cls.__name__) for leaf in type_layout.leaves

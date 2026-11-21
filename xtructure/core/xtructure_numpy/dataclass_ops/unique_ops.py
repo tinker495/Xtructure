@@ -17,10 +17,9 @@ def _hash_to_wide(keys: jnp.ndarray) -> list[jnp.ndarray]:
     if k == 0:
         return [jnp.zeros((n,), dtype=jnp.uint32)]
 
-    # Check if x64 is enabled
     use_x64 = jax.config.read("jax_enable_x64")
 
-    # If k is small, no need to hash
+    # Keys that already fit within 128 bits need no hashing.
     max_direct_cols = 2 if use_x64 else 4
     if k <= max_direct_cols:
         return [keys[:, i] for i in range(k)]
@@ -310,13 +309,7 @@ def unique_mask(
             returns += (jnp.zeros((0,), dtype=jnp.int32),)
         return returns
 
-    # 1. Generate keys for uniqueness.
-    #
-    # The default key is each row's ``uint32ed`` representation.  ``.uint32ed``
-    # is Instance Layout-aware and returns ``(batch, lanes)`` for BATCHED
-    # instances, so the common path consumes one decorator-attached seam
-    # owned by the hash adapter.  Custom key functions keep the previous vmap
-    # contract.
+    # Use batched .uint32ed directly to avoid per-row vmap; custom key_fn operates per item.
     try:
         if key_fn is None:
             unique_keys = val.uint32ed

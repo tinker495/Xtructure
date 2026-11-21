@@ -1,75 +1,39 @@
 # `Stack` Usage
 
-A JAX-compatible batched Stack data structure, designed for LIFO (Last-In, First-Out) operations. It is optimized for parallel execution on hardware like GPUs.
+A JAX-compatible batched LIFO Stack optimized for parallel GPU execution.
 
-Define data classes by inheriting from `Xtructurable`.
+Define stored values by inheriting from `Xtructurable`.
 
 ```python
-import jax
 import jax.numpy as jnp
-from xtructure import Stack, FieldDescriptor, Xtructurable
+from xtructure import FieldDescriptor, Stack, Xtructurable
 
 
-# Define a data structure to store in the stack
 class Point(Xtructurable):
     x: FieldDescriptor.scalar(dtype=jnp.uint32)
     y: FieldDescriptor.scalar(dtype=jnp.uint32)
 
 
-# 1. Build the Stack
-#    Stack.build(max_size, value_class)
 stack = Stack.build(max_size=1000, value_class=Point)
 
-# 2. Push a single item
-p1 = Point(x=jnp.array(1, dtype=jnp.uint32), y=jnp.array(2, dtype=jnp.uint32))
+p1 = Point(x=jnp.uint32(1), y=jnp.uint32(2))
 stack = stack.push(p1)
-print(f"Stack size after pushing one item: {stack.size}")
 
-# 3. Push a batch of items
-batch_points = Point(x=jnp.arange(10, dtype=jnp.uint32), y=jnp.arange(10, 20, dtype=jnp.uint32))
+batch_points = Point(
+    x=jnp.arange(10, dtype=jnp.uint32),
+    y=jnp.arange(10, 20, dtype=jnp.uint32),
+)
 stack = stack.push(batch_points)
-print(f"Stack size after pushing a batch: {stack.size}")
 
-# 4. Peek at the top item
-#    Does not modify the stack
-peeked_item = stack.peek()
-print("Peeked item:", peeked_item)
-assert stack.size == 11  # Unchanged
+top = stack.peek()
+assert stack.size == 11
 
-# 5. Pop a batch of items
-#    Removes the top 5 items from the stack
-stack, popped_items = stack.pop(5)
-print(f"Stack size after popping 5 items: {stack.size}")
-print("Popped items (y-values):", popped_items.y)
-
-# 6. Pop a single item
-stack, popped_item = stack.pop()
-print(f"Stack size after popping one item: {stack.size}")
-print("Popped item:", popped_item)
+stack, popped_batch = stack.pop(5)
+stack, popped_one = stack.pop()
 ```
 
-## Key `Stack` Details
+## Key `Stack` Contracts
 
-*   **LIFO Principle**: The last element added to the stack will be the first one to be removed.
-*   **API Style**: The methods (`push`, `pop`) modify the stack's state and return the modified instance, allowing for a chained, functional-style usage pattern.
-*   **Static config fields**: `Stack` is a `@base_dataclass` with `static_fields=("max_size",)`, so `max_size` is treated as static metadata under JIT. Keep it as a Python `int` (hashable).
-
-*   **`Stack.build(max_size, value_class)`**:
-    *   `max_size` (int): The maximum number of elements the stack can hold.
-    *   `value_class` (Xtructurable): The class of the data structure to be stored (e.g., `Point`). This defines the structure of the internal value store.
-
-*   **`stack.push(items)`**:
-    *   `items` (Xtructurable): An instance or a batch of instances to push onto the stack. If a batch is provided, its first dimension is treated as the batch dimension.
-    *   Returns the updated `Stack` instance.
-
-*   **`stack.pop(num_items=1)`**:
-    *   `num_items` (int): The number of items to pop from the top of the stack.
-    *   Returns a tuple containing:
-        1.  The updated `Stack` instance with the items removed.
-        2.  The `Xtructurable` containing the popped items.
-
-*   **`stack.peek(num_items=1)`**:
-    *   `num_items` (int): The number of items to view from the top of the stack.
-    *   Returns the `Xtructurable` containing the top items without modifying the stack.
-
-```
+*   **Pure functional return contract**: `Stack` is immutable under JAX transformations. Methods (`push`, `pop`) return the updated `Stack` (or `(updated_stack, items)` tuple) rather than mutating in place.
+*   **Static config fields**: `Stack` is a `@base_dataclass` with `static_fields=("max_size", "value_class")`, so `max_size` is treated as static compile-time metadata under JIT. Keep `max_size` as a hashable Python `int` rather than a JAX array.
+*   **Single packed buffer**: Values are stored as a fixed-shape `uint8[max_size, row_bytes]` buffer initialized with `value_class` default rows so every push executes as one contiguous slice write regardless of PyTree leaf count.

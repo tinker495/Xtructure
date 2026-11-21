@@ -9,7 +9,7 @@ import jax.numpy as jnp
 import numpy as np
 
 # Cell text may carry ANSI SGR colors (e.g. PuXle boards); they take no columns.
-# ponytail: width counts code points, so wide (CJK/emoji) glyphs misalign; use wcwidth if needed.
+# Caveat: width counts code points, so wide (CJK/emoji) glyphs misalign; use wcwidth if needed.
 _SGR_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 

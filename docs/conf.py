@@ -8,23 +8,20 @@ copyright = "2024, tinker495"
 author = "tinker495"
 release = "0.1.2"
 
-# Extensions
 extensions = [
-    "sphinx.ext.autodoc",  # Core library for html generation from docstrings
-    "sphinx.ext.napoleon",  # Support for NumPy and Google style docstrings
-    "sphinx.ext.viewcode",  # Add links to highlighted source code
-    "myst_parser",  # Parse Markdown files
+    "sphinx.ext.autodoc",
+    "sphinx.ext.napoleon",
+    "sphinx.ext.viewcode",
+    "myst_parser",
 ]
 
 templates_path = ["_templates"]
 exclude_patterns = ["_build", "AGENTS.md", "Thumbs.db", ".DS_Store"]
 
-# Theme
 html_theme = "sphinx_rtd_theme"
 _static_dir = os.path.join(os.path.dirname(__file__), "_static")
 html_static_path = ["_static"] if os.path.isdir(_static_dir) else []
 
-# Napoleon settings (optional, defaults are usually fine)
 napoleon_google_docstring = True
 napoleon_numpy_docstring = True
 

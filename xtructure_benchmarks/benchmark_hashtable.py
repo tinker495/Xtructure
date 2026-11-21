@@ -27,7 +27,6 @@ def benchmark_dict_lookup(
 ):
     """Benchmarks lookup from a standard Python dict using Python objects."""
 
-    # Precompute Python objects for kernel mode
     precomputed_keys = to_python_values(keys)
 
     def lookup_op():
@@ -44,7 +43,6 @@ def benchmark_dict_lookup(
 
 def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional[List[int]] = None):
     """Runs the full suite of HashTable benchmarks and saves the results."""
-    # Using smaller batch sizes to ensure completion within a reasonable time
     if batch_sizes is None:
         batch_sizes = [2**10, 2**12, 2**14]
 
@@ -70,14 +68,11 @@ def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional
         keys_device = BenchmarkValue.random(shape=(batch_size,), key=key)
         keys_host = jax.device_get(keys_device)
 
-        # Keep table size proportional to batch size for constant load factor
         table_size = int(batch_size * load_factor_inverse)
 
-        # --- xtructure.HashTable Benchmark ---
         xtructure_table = HashTable.build(BenchmarkValue, 1, table_size)
 
         def insert_op(batch):
-            # The key and value are the same in this benchmark
             return xtructure_table.parallel_insert(batch)[0]
 
         def insert_args_supplier():
@@ -90,7 +85,6 @@ def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional
         )
         xtructure_insert_stats = throughput_stats(batch_size, insert_durations)
 
-        # Re-build and insert for a fair lookup comparison
         table_with_data, _, _, _ = xtructure_table.parallel_insert(keys_device)
         jax.block_until_ready(table_with_data)
 
@@ -111,12 +105,10 @@ def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional
         results["xtructure"].setdefault("insert_ops_per_sec", []).append(xtructure_insert_stats)
         results["xtructure"].setdefault("lookup_ops_per_sec", []).append(xtructure_lookup_stats)
 
-        # --- Python dict Benchmark ---
         # Test both incremental and bulk modes, report the better one
         python_insert_candidates = []
 
         def _python_insert_trial(bulk_mode: bool):
-            # Precompute Python objects
             precomputed = to_python_values(keys_device)
 
             def key_supplier():
@@ -152,7 +144,6 @@ def run_benchmarks(mode: str = "kernel", trials: int = 10, batch_sizes: Optional
         results["python"].setdefault("insert_ops_per_sec", []).append(best_python_insert_stats)
         results["python"].setdefault("lookup_ops_per_sec", []).append(python_lookup_stats)
 
-    # Validate and save results to the correct directory
     validate_results_schema(results)
     output_path = "xtructure_benchmarks/results/hashtable_results.json"
     with open(output_path, "w") as f:

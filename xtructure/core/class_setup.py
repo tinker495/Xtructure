@@ -76,7 +76,7 @@ def install_xtructure_members(target_cls: type, *, bitpack: str = "auto") -> Non
         ),
         _custom_pretty_formatter,
     )
-    # These two extension hooks retain their wrapping contract.
+    # Reinstall Xtructurable wrappers so subclass overrides run through the captured hooks.
     target_cls.__post_init__ = Xtructurable.__post_init__
     target_cls.__str__ = Xtructurable.str
     cls = target_cls

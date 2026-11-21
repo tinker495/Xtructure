@@ -1,4 +1,4 @@
-"""A JAX/dm-tree friendly dataclass implementation based on chex's dataclass, with unnecessary features removed."""
+"""JAX PyTree-compatible dataclass wrapper with optional static metadata fields."""
 
 import dataclasses
 import functools
@@ -54,9 +54,6 @@ def base_dataclass(
     static_fields = tuple(static_fields)
 
     def make_dataclass(cls):
-        """Forwards class to dataclasses's wrapper and registers it with JAX."""
-
-        # Remove once https://github.com/python/cpython/pull/24484 is merged.
         for base in cls.__bases__:
             if (
                 dataclasses.is_dataclass(base)
@@ -100,28 +97,14 @@ def base_dataclass(
                 if key not in _TRANSIENT_STATIC_FIELDS
             }
 
-        # Register the dataclass at definition. As long as the dataclass is defined
-        # outside __main__, this is sufficient to make JAX's PyTree registry
-        # recognize the dataclass and the dataclass' custom PyTreeDef, especially
-        # when unpickling either the dataclass object, its type, or its PyTreeDef,
-        # in a different process, because the defining module will be imported.
-        #
-        # However, if the dataclass is defined in __main__, unpickling in a
-        # subprocess does not trigger re-registration. Therefore we also need to
-        # register when deserializing the object, or construction (e.g. when the
-        # dataclass type is being unpickled). Unfortunately, there is not yet a way
-        # to trigger re-registration when the treedef is unpickled as that's handled
-        # by JAX.
-        #
-        # See internal dataclass_test for unit tests demonstrating the problems.
-        # The registration below may result in pickling failures of the sort
-        # _pickle.PicklingError: Can't pickle <functools._lru_cache_wrapper object>:
-        # it's not the same object as register_dataclass_type_with_jax_tree_util
-        # for modules defined in __main__ so we disable registration in this case.
+        # Register at definition so importing the defining module in another
+        # process restores the PyTree registration before unpickling. Classes
+        # defined in __main__ skip definition-time registration (the lru_cache
+        # wrapper fails to pickle under __main__) and rely on __init__ /
+        # __setstate__ to register on construction or unpickling.
         if dcls.__module__ != "__main__":
             register_dataclass_type_with_jax_tree_util(dcls, static_fields)
 
-        # Patch __setstate__ to register the dataclass on deserialization.
         def _setstate(self, state):
             register_dataclass_type_with_jax_tree_util(dcls, static_fields)
             self.__dict__.update(
@@ -136,8 +119,6 @@ def base_dataclass(
 
         orig_init = dcls.__init__
 
-        # Patch __init__ such that the dataclass is registered on creation if it is
-        # not registered on deserialization.
         @functools.wraps(orig_init)
         def _init(self, *args, **kwargs):
             register_dataclass_type_with_jax_tree_util(dcls, static_fields)
@@ -161,7 +142,6 @@ def base_dataclass(
 
 
 def _dataclass_unflatten(dcls, keys, values):
-    """Creates a chex dataclass from a flatten jax.tree_util representation."""
     from xtructure.core.protocol import Xtructurable
 
     dcls_object = dcls.__new__(dcls)
@@ -183,10 +163,9 @@ def _declared_field_names(data_class) -> tuple[str, ...]:
 def _ordered_attribute_keys(dcls) -> tuple[dict, tuple[str, ...]]:
     """Return deterministic PyTree keys without treating transient cache as data.
 
-    Common xtructure instances only contain declared dataclass fields plus the
-    transient `_layout_cache`. Avoid the previous set construction and full
-    extra-key scan for that hot path; still preserve deterministic sorted extras
-    when callers attach dynamic attributes.
+    Avoids set construction and scanning for dynamic attributes on the common
+    path where instances only hold declared fields plus `_layout_cache`, while
+    preserving sorted extra keys when dynamic attributes are attached.
     """
     dct = getattr(dcls, "__dict__", {})
     if not dct:
@@ -215,7 +194,6 @@ def _ordered_attribute_keys(dcls) -> tuple[dict, tuple[str, ...]]:
 
 
 def _flatten_with_path(dcls):
-    """Flatten dataclass to (path, aux_keys) with deterministic field order."""
     dct, ordered_keys = _ordered_attribute_keys(dcls)
     if not ordered_keys:
         return [], ()

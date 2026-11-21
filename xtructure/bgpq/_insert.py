@@ -41,12 +41,10 @@ def _next(current, target):
 @jax.jit
 def _bgpq_merge_buffer_jit(heap: Any, blockk: jax.Array, blockv: Xtructurable):
     n = int(heap.batch_size)
-    # Concatenate block and buffer
     sorted_key, sorted_idx = merge_array_backend(blockk, heap.key_buffer)
     val = xnp_concatenate([blockv, heap.val_buffer], axis=0)
     val = val[sorted_idx]
 
-    # Check for active elements (non-infinity)
     n_filled = jnp.sum(jnp.isfinite(sorted_key), dtype=SIZE_DTYPE)
     buffer_overflow = n_filled >= n
 
@@ -67,7 +65,6 @@ def _bgpq_merge_buffer_jit(heap: Any, blockk: jax.Array, blockv: Xtructurable):
 @partial(jax.jit, static_argnums=(2))
 def _bgpq_make_batched_jit(key: chex.Array, val: Xtructurable, batch_size: int):
     n = key.shape[0]
-    # Pad arrays to match batch size
     key = jnp.pad(key, (0, batch_size - n), mode="constant", constant_values=jnp.inf)
     val = pad(val, (0, batch_size - n))
     return key, val
@@ -94,9 +91,9 @@ def _bgpq_insert_heapify_internal(
     """Sink `block` down the heap when `active`; an exact no-op otherwise.
 
     Callers pass the buffer-overflow flag as `active` instead of guarding this
-    function with lax.cond: on GPU the conditional costs a host predicate
-    readback per insert, while the masked rounds below are ~16us of merge work
-    each inside one command buffer.
+    function with `lax.cond`, because on GPU a conditional adds a host
+    predicate readback per insert while masked rounds stay inside one command
+    buffer.
     """
     is_full = heap.heap_size >= (heap.branch_size - 1)
 
@@ -108,11 +105,10 @@ def _bgpq_insert_heapify_internal(
     def insert_heapify(var):
         """One masked step down the root->last_node path.
 
-        The path length is data dependent (log2 of the live branch count), but a
-        data-dependent while_loop pays a host predicate readback per level (~100us
-        of idle GPU for ~16us of merge work). The static bound is the deepest
-        possible path for this heap's branch_size; rounds past the real path write
-        every row/carry back to itself, so the result is bit-identical to the loop.
+        Although path length varies with the live branch count, iterating up to
+        the static worst-case depth for `branch_size` avoids a per-level GPU
+        host predicate readback. Rounds past the real path write every row and
+        carry back to themselves, remaining bit-identical to early exit.
         """
         heap, keys, values, n = var
         active = jnp.logical_and(active_insert, n < last_node)
@@ -128,10 +124,8 @@ def _bgpq_insert_heapify_internal(
         return heap, keys, values, jnp.where(active, _next(n, last_node), n)
 
     active_insert = active
-    # Static trip count: lowers to an XLA while with a known trip count, which the
-    # GPU runtime executes without host predicate readbacks; keeps the HLO small
-    # (a Python unroll of the same rounds compiled ~45% slower at the benchmark
-    # scale for no runtime gain).
+    # Static trip count lowers to a bounded XLA loop without host predicate
+    # readbacks and keeps HLO compact compared to Python-side unrolling.
     var = (heap, block_key, block_val, _next(SIZE_DTYPE(0), last_node))
     heap, keys, values, _ = jax.lax.fori_loop(
         0, _heapify_rounds(heap.branch_size), lambda _, v: insert_heapify(v), var
@@ -147,19 +141,16 @@ def _bgpq_insert_heapify_internal(
         return heap.replace(key_store=new_key_store, val_store=new_val_store)
 
     # last_node < branch_size always holds: is_full picks an argmax leaf
-    # (< branch_size) and otherwise heap_size <= branch_size - 2 makes
-    # heap_size + 1 <= branch_size - 1. The old lax.cond guard was a pure
-    # host-sync tax on an invariantly-true predicate.
+    # (< branch_size), and otherwise heap_size <= branch_size - 2 makes
+    # heap_size + 1 <= branch_size - 1, so no conditional guard is needed.
     heap = _update_node(heap, keys, values)
 
-    # Only increment size if we filled a NEW node (not full)
     added = jnp.logical_and(active_insert, ~is_full)
     return heap, added
 
 
 @jax.jit
 def _bgpq_insert_sorted_jit(heap: Any, block_key: jax.Array, block_val: Xtructurable):
-    # Merge with root node
     root_key, root_val, block_key, block_val = merge_sort_split(
         heap.key_store[0], heap.val_store[0], block_key, block_val
     )
@@ -167,7 +158,6 @@ def _bgpq_insert_sorted_jit(heap: Any, block_key: jax.Array, block_val: Xtructur
         key_store=heap.key_store.at[0].set(root_key), val_store=heap.val_store.at[0].set(root_val)
     )
 
-    # Handle buffer overflow
     heap, block_key, block_val, buffer_overflow = _bgpq_merge_buffer_jit(heap, block_key, block_val)
 
     # Heapify only when the buffer overflowed; masked instead of lax.cond so the
@@ -293,8 +283,8 @@ def _bgpq_insert_sorted_rows_jit(
     # Rows only see a full heap if heap_size can reach branch_size - 1 during the call;
     # those calls take the sequential row loop instead.
     fits = heap.heap_size + n_rows.astype(SIZE_DTYPE) < heap.branch_size
-    # Both paths always run, the unused one with zero trips: a lax.cond here makes XLA
-    # copy the whole store into and out of its branches (~1 ms per call measured).
+    # Run both paths with zero trips on the unused one so XLA avoids copying
+    # the whole store across `lax.cond` branches.
     heap = _insert_rows_wavefront(heap, block_keys, block_vals, jnp.where(fits, n_rows, 0))
     return jax.lax.fori_loop(
         0,

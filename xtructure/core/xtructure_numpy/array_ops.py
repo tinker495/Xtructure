@@ -12,20 +12,14 @@ def _update_array_on_condition(
     *,
     unique_indices: bool = False,
 ) -> jnp.ndarray:
-    """
-    Sets values in an array based on a condition, ensuring "first True wins"
+    """Sets values in an array based on a condition, ensuring "first True wins"
     for duplicate indices.
 
-    This is an internal utility function for array-level conditional updates.
-
-    ``unique_indices=True`` is the caller's promise that no index is selected
-    twice by ``condition``; the update is then a single masked scatter and skips
-    the first-true-wins resolution, which materialises a
-    ``(len(original_array) + 1,)`` index array per call (80 MB per update on a
-    20M-entry table).
+    ``unique_indices=True`` promises that no index is selected twice by
+    ``condition``; the update then uses a single masked scatter and skips
+    allocating the ``(len(original_array) + 1,)`` index array required for
+    first-True-wins conflict resolution.
     """
-    # For advanced indexing, reshape the array to flatten the batch dimensions
-    # and compute on the flattened version, then reshape back.
     if isinstance(indices, tuple) and hasattr(original_array, "shape"):
         batch_rank = len(indices)
         batch_shape = original_array.shape[:batch_rank]

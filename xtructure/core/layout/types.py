@@ -57,10 +57,9 @@ class FieldLayout:
 class AdapterFieldPlan:
     """Shared per-field execution facts consumed by first-party Layout Adapters.
 
-    ``logical_intrinsic_shape`` is the Xtructure Schema shape. For packed fields,
-    ``storage_intrinsic_shape`` is the byte-stream shape interpreted by Packed
-    Field Layout. ``intrinsic_shape`` is kept as the adapter execution/storage
-    shape for compatibility with existing Layout Adapters.
+    ``logical_intrinsic_shape`` is the declared schema shape; for packed fields,
+    ``storage_intrinsic_shape`` (and ``intrinsic_shape``) is the byte-stream
+    shape interpreted by Packed Field Layout.
     """
 
     name: str

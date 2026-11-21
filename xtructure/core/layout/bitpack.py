@@ -296,11 +296,7 @@ def pack_field(
     packed_layout: PackedFieldLayout,
     batch_shape: tuple[int, ...],
 ):
-    """Pack one field's unpacked array into its **PackedFieldLayout** byte stream.
-
-    Used by both the in-memory bitpack accessor adapter and the IO save adapter
-    so the two paths cannot diverge.
-    """
+    """Pack one field's unpacked array into its **PackedFieldLayout** byte stream."""
     packed_bits = packed_layout.packed_bits
     unpacked_shape = packed_layout.unpacked_intrinsic_shape
 
@@ -324,11 +320,11 @@ def pack_field(
 
 @functools.partial(jax.jit, static_argnames=("packed_bits",))
 def _pack_rows_device(flat: chex.Array, packed_bits: int) -> chex.Array:
-    """Pack `(rows, *unpacked_shape)` with one dispatch.
+    """Pack `(rows, *unpacked_shape)` in one JIT dispatch.
 
-    `to_uint8` is a Python-unrolled chain of shifts/ors; called eagerly (e.g. by
-    `State.from_unpacked` while a benchmark builds its samples) every op was its own
-    dispatch — ~30-40 ms per Rubik state. Inside an outer jit this is inlined.
+    `to_uint8` builds a Python-unrolled chain of shifts and bitwise ORs, so
+    JIT-compiling the batched vmap avoids per-op eager dispatch overhead while
+    still inlining cleanly inside outer jitted callers.
     """
     return jax.vmap(lambda row: to_uint8(row, active_bits=packed_bits))(flat)
 
@@ -420,7 +416,7 @@ def build_aggregate_bitpack_layout(
     fields: tuple[FieldLayout, ...],
     get_type_layout_fn: Callable[[type], Any] | None = None,
 ) -> AggregateBitpackLayout:
-    """Compute current aggregate bitpack eligibility without changing constraints."""
+    """Compute aggregate bitpack eligibility and storage layout for a dataclass."""
     if get_type_layout_fn is None:
         get_type_layout_fn = importlib.import_module(
             "xtructure.core.layout.type_layout"

@@ -28,7 +28,7 @@ def merge_sort_split(
             - Second half of merged and sorted keys
             - Second half of corresponding values
     """
-    n = ak.shape[-1]  # size of group
+    n = ak.shape[-1]
     val = concat([av, bv], axis=0)
     sorted_key, sorted_idx = merge_array_backend(ak, bk)
     sorted_val = val[sorted_idx]

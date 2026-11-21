@@ -20,18 +20,16 @@ def _sift_rounds(branch_size: int) -> int:
 def _bgpq_delete_heapify_internal(heap: Any, empty: chex.Array):
     """Pop the root row and restore the heap property.
 
-    `empty` (heap_size == 0) used to select a separate lax.cond branch that
-    refilled the root from the buffer; on GPU that conditional is a host
-    predicate readback plus pass-through copies of the whole store. Instead
-    the empty case merges an all-inf "last node" with the buffer, which yields
-    the same root keys / cleared buffer, and the sift-down rounds stay masked.
+    Rather than branching on `empty` (`heap_size == 0`) with `lax.cond` —
+    which triggers a GPU host predicate readback and copies the whole store —
+    merge an all-inf "last node" with the buffer to produce the same root keys
+    and cleared buffer while keeping sift-down rounds masked.
     """
     last = jnp.where(empty, SIZE_DTYPE(0), heap.heap_size)
     heap = heap.replace(
         heap_size=jnp.where(empty, SIZE_DTYPE(0), SIZE_DTYPE(heap.heap_size - 1)),
     )
 
-    # Move last node to root and clear last position
     inf_row = jnp.full_like(heap.key_store[0], jnp.inf)
     last_key = jnp.where(empty, inf_row, heap.key_store[last])
     last_val = heap.val_store[last]
@@ -57,13 +55,11 @@ def _bgpq_delete_heapify_internal(heap: Any, empty: chex.Array):
     )
 
     def _lr(n):
-        """Get left and right child indices"""
         left_child = n * 2 + 1
         right_child = n * 2 + 2
         return left_child, right_child
 
     def _violated(heap, c, left, r):
-        """Heap property broken between node c and its smaller child?"""
         max_c = heap.key_store[c][-1]
         min_lr = jnp.minimum(heap.key_store[left][0], heap.key_store[r][0])
         return max_c > min_lr
@@ -71,23 +67,21 @@ def _bgpq_delete_heapify_internal(heap: Any, empty: chex.Array):
     def _round(var):
         """One masked sift-down step.
 
-        The loop exits as soon as the heap property holds, which is data dependent,
-        so it ran as a while_loop with one host predicate readback per level. The
-        static bound is the deepest path for this branch_size; once `active` drops
-        the rows are written back to themselves and the node index stays put, so
-        the result is bit-identical to the early-exit loop.
+        Although actual sift depth is data-dependent, iterating up to the static
+        worst-case depth for `branch_size` with `fori_loop` avoids a per-level
+        GPU host predicate readback. Once `active` becomes False, rows write back
+        to themselves and the node index stays fixed, producing bit-identical
+        results.
         """
         heap, current_node, left_child, right_child, active = var
         active = jnp.logical_and(active, _violated(heap, current_node, left_child, right_child))
         max_left_child = heap.key_store[left_child][-1]
         max_right_child = heap.key_store[right_child][-1]
 
-        # Choose child with smaller key
         swap = max_left_child > max_right_child
         x = jnp.where(swap, left_child, right_child)
         y = jnp.where(swap, right_child, left_child)
 
-        # Merge and swap nodes
         ky, vy, kx, vx = merge_sort_split(
             heap.key_store[left_child],
             heap.val_store[left_child],

@@ -21,12 +21,10 @@ from xtructure_benchmarks.common import (
 )
 
 
-# Key generation function adapted from tests/heap_test.py
-# Improved to reduce ties by using full hash range
 @jax.jit
 def key_gen(x: Xtructurable) -> jax.Array:
     uint32_hash = x.hash()
-    # Map to [0,1) with much fewer ties
+    # Divide by 2**32 to map the full uint32 hash range to [0, 1) and minimize key ties.
     key = uint32_hash / jnp.float32(2**32)
     return key.astype(jnp.float32)
 
@@ -76,7 +74,6 @@ def benchmark_heapq_insert(
     include_preprocessing: bool = False,
 ):
     """Benchmarks insertion into Python's heapq."""
-    # Precompute equivalent Python objects
     cached_values = to_python_values(values)
     cached_keys = jax.device_get(keys).tolist()
 
@@ -97,7 +94,7 @@ def benchmark_heapq_insert(
 
     def incremental_op():
         nk, vals = payload_supplier()
-        data_heap = []  # Fresh heap per trial
+        data_heap = []
         for i in range(len(nk)):
             heapq.heappush(data_heap, (nk[i], i, vals[i]))
         return data_heap
@@ -111,7 +108,7 @@ def benchmark_heapq_delete(prototype_heap: List, count: int, trials: int = 10):
     """Benchmarks deletion from Python's heapq."""
 
     def delete_op():
-        data_heap = prototype_heap.copy()  # Fresh copy per trial
+        data_heap = prototype_heap.copy()
         results = []
         for _ in range(count):
             if data_heap:
@@ -129,7 +126,6 @@ def run_benchmarks(
     python_heap_insert_mode: str = "auto",
 ):
     """Runs the full suite of Heap benchmarks and saves the results."""
-    # Using smaller batch sizes to ensure completion within a reasonable time
     if batch_sizes is None:
         batch_sizes = [2**10, 2**12, 2**14]
 
@@ -155,10 +151,8 @@ def run_benchmarks(
         values_device = BenchmarkValue.random(shape=(batch_size,), key=key)
         keys_device = vmapped_key_gen(values_device)
 
-        # --- xtructure.BGPQ Benchmark ---
         bgpq_heap = BGPQ.build(max_size, batch_size, BenchmarkValue, jnp.float32)
 
-        # We need to make the keys/values batched to the BGPQ batch_size
         padded_keys, padded_values = BGPQ.make_batched(keys_device, values_device, batch_size)
         padded_keys_host = jax.device_get(padded_keys)
         padded_values_host = jax.device_get(padded_values)
@@ -180,7 +174,6 @@ def run_benchmarks(
         )
         xtructure_insert_stats = throughput_stats(batch_size, insert_durations)
 
-        # Create a filled heap for deletion benchmark
         heap_with_data = bgpq_heap.insert(padded_keys, padded_values)
         jax.block_until_ready(heap_with_data)
         delete_durations = benchmark_bgpq_delete(
@@ -191,7 +184,6 @@ def run_benchmarks(
         results["xtructure"].setdefault("insert_ops_per_sec", []).append(xtructure_insert_stats)
         results["xtructure"].setdefault("delete_ops_per_sec", []).append(xtructure_delete_stats)
 
-        # --- Python heapq Benchmark --- (fixed algorithm for fairness)
         insert_candidates = []
         modes_to_try = (
             [python_heap_insert_mode]
@@ -218,7 +210,6 @@ def run_benchmarks(
         results["python"].setdefault("insert_ops_per_sec", []).append(best_insert_stats)
         results["python"].setdefault("delete_ops_per_sec", []).append(python_delete_stats)
 
-    # Validate and save results
     validate_results_schema(results)
     output_path = "xtructure_benchmarks/results/heap_results.json"
     with open(output_path, "w") as f:

@@ -27,10 +27,6 @@ import jax.numpy as jnp
 from xtructure.core.dtype_facts import DTypeKind, dtype_kind
 from xtructure.core.structuredtype import StructuredType
 
-# ---------------------------------------------------------------------------
-# Low-level lane packers
-# ---------------------------------------------------------------------------
-
 
 def split_uint64_to_uint32(u64: Any) -> jnp.ndarray:
     """Split a ``uint64`` array into interleaved ``uint32`` words."""
@@ -142,7 +138,6 @@ def _scalar_pack(staged: jnp.ndarray, mode: str) -> jnp.ndarray:
         return bytes_to_uint32(staged)
     if mode == "u16_pack":
         return pack_uint16_to_uint32(staged)
-    # u64_split
     return split_uint64_to_uint32(staged)
 
 
@@ -154,7 +149,6 @@ def _row_pack(staged: jnp.ndarray, mode: str, batch_len: int) -> jnp.ndarray:
         return pack_uint8_rows_to_uint32(staged.reshape(batch_len, -1))
     if mode == "u16_pack":
         return pack_uint16_rows_to_uint32(staged.reshape(batch_len, -1))
-    # u64_split
     return split_uint64_rows_to_uint32(staged.reshape(batch_len, -1))
 
 
@@ -238,13 +232,7 @@ def batched_tree_to_uint32_rows(value: Any, batch_len: int) -> jnp.ndarray:
     return jnp.concatenate(uint32_leaves, axis=1)
 
 
-# ---------------------------------------------------------------------------
-# Hash reducers
-# ---------------------------------------------------------------------------
-
-
 def _avalanche32(h):
-    """Avalanche mixer for 32-bit words."""
     h = jnp.uint32(h)
     h = h ^ (h >> 16)
     h = h * jnp.uint32(0x85EBCA77)
@@ -294,11 +282,6 @@ def hash_fast_uint32ed_batched(rows, seed=jnp.uint32(0)):
     combined ^= jnp.uint32(k << 2)
     combined ^= seed
     return _avalanche32(combined)
-
-
-# ---------------------------------------------------------------------------
-# Polymorphic per-instance dispatch
-# ---------------------------------------------------------------------------
 
 
 def _uint32ed(self) -> jax.Array:

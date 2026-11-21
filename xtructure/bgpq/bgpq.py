@@ -32,7 +32,6 @@ from ._insert import (
 
 @partial(jax.jit, static_argnums=(0, 1, 2, 3))
 def _bgpq_build_jit(total_size, batch_size, value_class=Xtructurable, key_dtype=jnp.float16):
-    # Calculate branch size, rounding up if total_size not divisible by batch_size
     branch_size = (
         total_size // batch_size if total_size % batch_size == 0 else total_size // batch_size + 1
     )
@@ -40,7 +39,6 @@ def _bgpq_build_jit(total_size, batch_size, value_class=Xtructurable, key_dtype=
     heap_size = SIZE_DTYPE(0)
     buffer_size = SIZE_DTYPE(0)
 
-    # Initialize storage arrays with infinity for unused slots
     key_store = jnp.full((branch_size, batch_size), jnp.inf, dtype=key_dtype)
     val_store = value_class.default((branch_size, batch_size))
     key_buffer = jnp.full((batch_size - 1,), jnp.inf, dtype=key_dtype)
@@ -81,8 +79,8 @@ class BGPQ:
     buffer_size: int
     branch_size: int
     batch_size: int
-    key_store: jax.Array  # shape = (total_size, batch_size)
-    val_store: Xtructurable  # shape = (total_size, batch_size, ...)
+    key_store: jax.Array  # shape = (branch_size, batch_size)
+    val_store: Xtructurable  # shape = (branch_size, batch_size, ...)
     key_buffer: jax.Array  # shape = (batch_size - 1,)
     val_buffer: Xtructurable  # shape = (batch_size - 1, ...)
 
@@ -114,25 +112,15 @@ class BGPQ:
         )
 
     def merge_buffer(self, blockk: chex.Array, blockv: Xtructurable):
-        """
-        Merge buffer contents with block contents, handling overflow conditions.
-
-        This method is crucial for maintaining the heap property when inserting new elements.
-        It handles the case where the buffer might overflow into the main storage.
+        """Merge incoming block contents with the staging buffer.
 
         Args:
-            blockk: Block keys array
-            blockv: Block values
-            bufferk: Buffer keys array
-            bufferv: Buffer values
+            blockk: Incoming sorted block keys.
+            blockv: Incoming block values.
 
         Returns:
-            tuple containing:
-                - Updated block keys
-                - Updated block values
-                - Updated buffer keys
-                - Updated buffer values
-                - Boolean indicating if buffer overflow occurred
+            Tuple `(heap, blockk, blockv, buffer_overflow)` with the updated
+            staging buffer, selected block keys/values, and overflow flag.
         """
         return _bgpq_merge_buffer_jit(self, blockk, blockv)
 
@@ -165,7 +153,6 @@ class BGPQ:
         Args:
             block_key: Keys to insert
             block_val: Values to insert
-            added_size: Optional size of insertion (calculated if None)
 
         Returns:
             Updated heap instance

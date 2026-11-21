@@ -60,8 +60,6 @@ def _field_layout(name: str, descriptor: FieldDescriptor, path: tuple[str, ...])
 
 
 def _layout_fill_value(descriptor: FieldDescriptor, *, is_nested: bool) -> object | None:
-    """Resolve the FieldLayout-authoritative fill value."""
-
     if descriptor.fill_value_factory is not None:
         return None
     if descriptor.fill_value is not None:

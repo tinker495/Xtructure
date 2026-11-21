@@ -166,15 +166,12 @@ class Xtructurable:
         if self.structured_type == StructuredType.BATCHED:
             total_length = int(np.prod(self.shape))
 
-            # Handle -1 in new_shape by calculating the missing dimension
             new_shape_list = list(new_shape)
             if -1 in new_shape_list:
-                # Count how many -1s are in the shape
                 minus_one_count = new_shape_list.count(-1)
                 if minus_one_count > 1:
                     raise ValueError("Only one -1 is allowed in new_shape")
 
-                # Calculate the product of all non-negative values in new_shape
                 non_negative_product = 1
                 for dim in new_shape_list:
                     if isinstance(dim, (tuple, list)):
@@ -182,7 +179,6 @@ class Xtructurable:
                     if dim != -1:
                         non_negative_product *= dim
 
-                # Calculate what the -1 should be
                 if non_negative_product == 0:
                     raise ValueError("Cannot infer -1 dimension when other dimensions are 0")
 
@@ -193,7 +189,6 @@ class Xtructurable:
                         f"other dimensions {non_negative_product}"
                     )
 
-                # Replace -1 with the calculated dimension
                 minus_one_index = new_shape_list.index(-1)
                 new_shape_list[minus_one_index] = inferred_dim
                 new_shape = tuple(new_shape_list)
@@ -219,14 +214,10 @@ class Xtructurable:
             )
 
         current_batch_shape = self.shape
-        # np.prod of an empty tuple array is 1, which is correct for total_length
-        # if current_batch_shape is ().
         total_length = np.prod(np.array(current_batch_shape))
         len_current_batch_shape = len(current_batch_shape)
 
         return self._map_data(
-            # Reshape each leaf: flatten batch dims, keep core dims.
-            # core_dims are obtained by stripping batch_dims from the start of x.shape.
             lambda x: jnp.reshape(x, (total_length,) + x.shape[len_current_batch_shape:]),
         )
 
@@ -275,7 +266,6 @@ class Xtructurable:
             if field_plan.random_kind == "nested":
                 nested_class = field_plan.nested_type
                 assert nested_class is not None
-                # Recursively call random for the nested xtructure_data class.
                 data[field_name] = nested_class.random(shape=target_shape, key=field_key)
             elif field_plan.random_kind == "bits_int":
                 generated_bits = jax.random.bits(

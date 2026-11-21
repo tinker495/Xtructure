@@ -24,17 +24,15 @@ def plot_performance(results_path: Path):
 
     data_structure_name = results_path.stem.split("_")[0].capitalize()
 
-    # Determine the operations (e.g., insert, lookup, push, pop)
     operations = list(xtructure_data.keys())
 
     for op in operations:
         plt.figure(figsize=(10, 6))
-        ax = plt.gca()  # Get current axes
+        ax = plt.gca()
 
         op_name = op.replace("_ops_per_sec", "").capitalize()
         title = f"{data_structure_name} {op_name} Performance"
 
-        # Extract median values and error bars from new format
         xtructure_values = []
         xtructure_errors = []
         python_values = []
@@ -43,18 +41,16 @@ def plot_performance(results_path: Path):
         for result in xtructure_data[op]:
             if isinstance(result, dict):
                 xtructure_values.append(result["median"])
-                xtructure_errors.append(result["iqr"] / 2)  # Half IQR for error bars
+                xtructure_errors.append(result["iqr"] / 2)
             else:
-                # Backward compatibility
                 xtructure_values.append(result)
                 xtructure_errors.append(0)
 
         for result in python_data[op]:
             if isinstance(result, dict):
                 python_values.append(result["median"])
-                python_errors.append(result["iqr"] / 2)  # Half IQR for error bars
+                python_errors.append(result["iqr"] / 2)
             else:
-                # Backward compatibility
                 python_values.append(result)
                 python_errors.append(0)
 
@@ -78,7 +74,6 @@ def plot_performance(results_path: Path):
         plt.xscale("log", base=2)
         plt.yscale("log")
 
-        # Apply human-readable format to the y-axis
         ax.yaxis.set_major_formatter(FuncFormatter(human_format))
 
         plt.xlabel("Batch Size (log scale)")
@@ -87,7 +82,6 @@ def plot_performance(results_path: Path):
         plt.legend()
         plt.grid(True, which="both", ls="--")
 
-        # Save the plot
         output_filename = (
             results_path.parent / f"{data_structure_name.lower()}_{op_name.lower()}_performance.png"
         )
