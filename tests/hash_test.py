@@ -37,7 +37,7 @@ def test_hash_table_lookup():
 
     assert idx.shape == (count,)
     assert found.shape == (count,)
-    assert not jnp.any(found)  # Initially all should be not found
+    assert not jnp.any(found)
 
 
 def test_hash_table_insert():
@@ -47,19 +47,16 @@ def test_hash_table_insert():
 
     sample = HashValueAB.random((count,))
 
-    # Check initial state
     _, old_found = table.lookup_parallel(sample)
     assert not jnp.any(old_found)
 
-    # Insert states
     batched_sample = sample.padding_as_batch((batch,))
     filled = jnp.zeros((batch,), dtype=jnp.bool_).at[:count].set(True)
     table, inserted, _, _ = table.parallel_insert(batched_sample, filled)
 
-    # Verify insertion
     _, found = table.lookup_parallel(sample)
-    assert jnp.all(found)  # All states should be found after insertion
-    assert jnp.mean(inserted) > 0  # Some states should have been inserted
+    assert jnp.all(found)
+    assert jnp.mean(inserted) > 0
 
 
 def test_same_state_insert_at_batch():
@@ -77,17 +74,14 @@ def test_same_state_insert_at_batch():
         cloned_sample_idx = jnp.sort(cloned_sample_idx)
         new_clone_idx = jax.random.randint(key, (cloned_sample_num,), 0, batch)
 
-        # Create deliberate duplicates within the batch
         samples = samples.at[new_clone_idx].set(samples[cloned_sample_idx])
         bytesed = jax.vmap(lambda x: x.bytes)(samples)
         unique_count = jnp.unique(bytesed, axis=0).shape[0]
-        # after this, some states are duplicated
         all_samples.append(samples)
 
         table, updatable, unique, idxs = table.parallel_insert(samples)
         counts += jnp.sum(updatable)
 
-        # Verify uniqueness tracking
         bytesed = jax.vmap(lambda x: x.bytes)(idxs)
         unique_idxs = jnp.unique(bytesed, axis=0)
         assert (
@@ -98,7 +92,6 @@ def test_same_state_insert_at_batch():
             jnp.unique(unique_idxs, axis=0) == unique_idxs
         ), "Duplicate indices in unique set"
 
-        # Verify inserted states exist in table
         _, found = table.lookup_parallel(samples)
         assert jnp.all(found), (
             "Inserted states not found in table\n",
@@ -109,10 +102,8 @@ def test_same_state_insert_at_batch():
             f"cloned_sample_idx: {cloned_sample_idx}\n",
         )
 
-    # Final validation
     assert table.size == counts, f"Size mismatch: {table.size} vs {counts}"
 
-    # Verify cross-batch duplicates
     for samples in all_samples:
         idx, found = table.lookup_parallel(samples)
         assert jnp.all(found), "Cross-batch state missing"
@@ -135,7 +126,6 @@ def test_large_hash_table():
     unique_hash_len = unique_hash.shape[0]
     print(f"unique_bytes_len: {unique_bytes_len}, unique_hash_len: {unique_hash_len}")
 
-    # Insert in batches
     inserted_count = 0
     for i in range(0, count, batch):
         batch_sample = sample[i : i + batch]
@@ -148,50 +138,37 @@ def test_large_hash_table():
         inserted_count == unique_bytes_len
     ), f"inserted_count: {inserted_count}, unique_bytes_len: {unique_bytes_len}, unique_hash_len: {unique_hash_len}"
 
-    # Verify all states can be found
     _, found = table.lookup_parallel(sample)
-    assert jnp.mean(found) == 1.0  # All states should be found
+    assert jnp.mean(found) == 1.0
 
 
 def test_default_value_insertion():
-    """Test that default values can be inserted and found correctly."""
     table: HashTable = HashTable.build(HashValueAB, 1, int(1e4))
 
-    # Create a default value instance
     default_value = HashValueAB.default()
 
-    # Insert the default value
     table, inserted, idx = table.insert(default_value)
 
-    # Assert that the insertion was successful
     assert inserted, "Default value should be inserted successfully"
 
-    # Look up the inserted default value
     lookup_idx, found = table.lookup(default_value)
 
-    # Assert that the lookup is successful
     assert found, "Default value should be found after insertion"
 
-    # Verify the retrieved value matches the inserted value
     retrieved_value = table[lookup_idx]
     assert (
         retrieved_value == default_value
     ), "Retrieved value should match the inserted default value"
 
-    # Test with parallel operations as well - use a fresh table
     fresh_table: HashTable = HashTable.build(HashValueAB, 1, int(1e4))
-    default_batch = HashValueAB.default((5,))  # Create a batch of default values
+    default_batch = HashValueAB.default((5,))
 
-    # Insert batch of default values
     fresh_table, updatable, unique_filled, batch_idx = fresh_table.parallel_insert(default_batch)
 
-    # At least one should be updatable (the first unique default value)
     assert jnp.any(updatable), "At least one default value should be updatable in batch"
 
-    # Look up the batch
     batch_lookup_idx, batch_found = fresh_table.lookup_parallel(default_batch)
 
-    # All should be found
     assert jnp.all(batch_found), "All default values should be found after batch insertion"
 
 
@@ -260,7 +237,7 @@ def test_tree_to_bytes_rejects_invalid_structured_nodes(wrap):
 
 
 def test_uint32ed_is_instance_layout_aware():
-    expected_words = (47 + 3) // 4  # 12
+    expected_words = (47 + 3) // 4
 
     single = OddBytesValue47(payload=jnp.arange(47, dtype=jnp.uint8))
     assert single.uint32ed.shape == (expected_words,)
@@ -285,7 +262,6 @@ def test_hash_is_instance_layout_aware():
 
 
 def test_uint32ed_unstructured_raises():
-    # TODO: Construct an UNSTRUCTURED instance once the construction path is known.
     pytest.skip("UNSTRUCTURED construction path TBD")
 
 

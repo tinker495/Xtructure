@@ -1,5 +1,3 @@
-"""GPU singleton-group deduplication and representative selection."""
-
 import jax
 import jax.numpy as jnp
 import pytest
@@ -12,7 +10,7 @@ from xtructure.hashtable.hash_utils import (
 
 
 def _reference(uint32eds, filled, unique_key):
-    """The pre-fastpath implementation: exact grouping + representative pick."""
+    """Exact grouping and representative-selection oracle for fast-path equivalence."""
     inverse = _unique_groups_exact(uint32eds, filled)
     return _unique_mask_from_group_ids(inverse, filled, unique_key)
 

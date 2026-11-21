@@ -1,5 +1,3 @@
-"""Tests for saving and loading xtructure dataclasses."""
-
 import os
 
 import chex
@@ -13,18 +11,11 @@ from xtructure import FieldDescriptor, Xtructurable
 from xtructure.core.layout.types import LeafLayout
 from xtructure.io import io as io_module
 
-# --- Test Fixtures ---
-
 
 @pytest.fixture
 def temp_file(tmp_path):
-    """Provides a temporary file path for saving and loading."""
     file_path = tmp_path / "test_data.npz"
     yield str(file_path)
-    # Cleanup is handled by pytest's tmp_path fixture
-
-
-# --- Test Cases ---
 
 
 @pytest.mark.parametrize(
@@ -37,7 +28,6 @@ def temp_file(tmp_path):
     ],
 )
 def test_save_and_load_roundtrip(temp_file, cls, shape, seed):
-    """Generic save/load roundtrip over multiple dataclass types and batch shapes."""
     key = jax.random.PRNGKey(seed)
     original_instance = cls.random(shape=shape, key=key)
 
@@ -49,15 +39,12 @@ def test_save_and_load_roundtrip(temp_file, cls, shape, seed):
 
 
 def test_load_nonexistent_file():
-    """Tests that loading a non-existent file raises FileNotFoundError."""
     with pytest.raises(FileNotFoundError):
         SimpleData.load("non_existent_file_12345.npz")
 
 
 def test_load_invalid_file(tmp_path):
-    """Tests that loading a file without proper metadata raises ValueError."""
     invalid_file = tmp_path / "invalid.npz"
-    # Save a numpy file without the required metadata keys
     import numpy as np
 
     np.savez_compressed(invalid_file, data=np.array([1, 2, 3]))
@@ -67,7 +54,6 @@ def test_load_invalid_file(tmp_path):
 
 
 def test_save_to_new_directory(tmp_path):
-    """Tests that save function can create a new directory."""
     dir_path = tmp_path / "new_dir"
     file_path = dir_path / "test.npz"
 
@@ -80,8 +66,6 @@ def test_save_to_new_directory(tmp_path):
 
 
 def test_load_leaf_value_cast_failure_includes_leaf_context(monkeypatch):
-    """Packed leaf restore must fail loudly when declared dtype casting fails."""
-
     import jax.numpy as jnp
     import numpy as np
 

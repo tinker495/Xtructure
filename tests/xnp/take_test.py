@@ -1,5 +1,3 @@
-"""Tests for the xnp.take helpers."""
-
 import jax.numpy as jnp
 
 from tests.xnp.shared_data import SimpleData, VectorData
@@ -7,7 +5,6 @@ from xtructure import numpy as xnp
 
 
 def test_take_basic():
-    """Test basic take functionality."""
     data = SimpleData.default((5,))
     data = data.replace(
         id=jnp.array([1, 2, 3, 4, 5], dtype=jnp.uint32),
@@ -24,7 +21,6 @@ def test_take_basic():
 
 
 def test_take_with_negative_indices():
-    """Test take with negative indices."""
     data = SimpleData.default((4,))
     data = data.replace(
         id=jnp.array([1, 2, 3, 4], dtype=jnp.uint32),
@@ -41,7 +37,6 @@ def test_take_with_negative_indices():
 
 
 def test_take_2d_axis_0():
-    """Test take on 2D dataclass along axis 0."""
     data = VectorData.default((3, 2))
     data = data.replace(
         position=jnp.array(
@@ -79,7 +74,6 @@ def test_take_2d_axis_0():
 
 
 def test_take_2d_axis_1():
-    """Test take on 2D dataclass along axis 1."""
     data = VectorData.default((2, 3))
     data = data.replace(
         position=jnp.array(
@@ -115,7 +109,6 @@ def test_take_2d_axis_1():
 
 
 def test_take_single_element():
-    """Test take with single element."""
     data = SimpleData.default((3,))
     data = data.replace(
         id=jnp.array([1, 2, 3], dtype=jnp.uint32),
@@ -132,7 +125,6 @@ def test_take_single_element():
 
 
 def test_take_empty_indices():
-    """Test take with empty indices."""
     data = SimpleData.default((3,))
     data = data.replace(
         id=jnp.array([1, 2, 3], dtype=jnp.uint32),
@@ -149,7 +141,6 @@ def test_take_empty_indices():
 
 
 def test_take_equivalent_to_jnp_take():
-    """Test that xnp.take produces same result as manual jnp.take."""
     data = SimpleData.default((4,))
     data = data.replace(
         id=jnp.array([1, 2, 3, 4], dtype=jnp.uint32),
@@ -166,7 +157,6 @@ def test_take_equivalent_to_jnp_take():
 
 
 def test_take_along_axis_axis1():
-    """Test take_along_axis along axis 1 matches jnp.take_along_axis."""
     data = SimpleData.default((2, 3))
     data = data.replace(
         id=jnp.array([[1, 2, 3], [4, 5, 6]], dtype=jnp.uint32),
@@ -184,7 +174,6 @@ def test_take_along_axis_axis1():
 
 
 def test_take_along_axis_axis0():
-    """Test take_along_axis along axis 0 with non-trivial index pattern."""
     data = SimpleData.default((3, 2))
     data = data.replace(
         id=jnp.array([[1, 2], [3, 4], [5, 6]], dtype=jnp.uint32),
@@ -202,7 +191,6 @@ def test_take_along_axis_axis0():
 
 
 def test_take_along_axis_broadcasts_field_dims_axis1():
-    """Indices without field dims should broadcast across each leaf."""
     data = VectorData.default((2, 4))
     position = jnp.arange(2 * 4 * 3, dtype=jnp.float32).reshape(2, 4, 3)
     velocity = position + 0.5
@@ -221,7 +209,6 @@ def test_take_along_axis_broadcasts_field_dims_axis1():
 
 
 def test_take_along_axis_broadcasts_field_dims_axis0():
-    """Broadcast indices for fields when gathering along axis 0."""
     data = VectorData.default((3, 2))
     position = jnp.arange(3 * 2 * 3, dtype=jnp.float32).reshape(3, 2, 3)
     velocity = position - 1.0

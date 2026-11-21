@@ -1,5 +1,3 @@
-"""Tests for newer helper operations like expand_dims, repeat, split, and zeros_like."""
-
 import jax.numpy as jnp
 
 from tests.xnp.shared_data import SimpleData, VectorData
@@ -7,7 +5,6 @@ from xtructure import numpy as xnp
 
 
 def test_expand_dims_single_dataclass():
-    """Expand dims should add a new leading axis."""
     data = SimpleData.default()
     data = data.replace(id=jnp.array(7, dtype=jnp.uint32), value=jnp.array(3.14, dtype=jnp.float32))
 
@@ -20,7 +17,6 @@ def test_expand_dims_single_dataclass():
 
 
 def test_expand_dims_batched_axis():
-    """Expand dims on batched dataclass should insert axis at requested position."""
     data = SimpleData.default(shape=(2,))
     data = data.replace(id=jnp.array([1, 2], dtype=jnp.uint32), value=jnp.array([1.0, 2.0]))
 
@@ -32,7 +28,6 @@ def test_expand_dims_batched_axis():
 
 
 def test_squeeze_removes_unit_axes():
-    """Squeeze should remove axes of size 1."""
     data = SimpleData.default(shape=(1, 3, 1))
     data = data.replace(
         id=jnp.arange(3, dtype=jnp.uint32).reshape(1, 3, 1),
@@ -47,7 +42,6 @@ def test_squeeze_removes_unit_axes():
 
 
 def test_repeat_matches_jnp_repeat():
-    """Repeat should match jnp.repeat behaviour on each field."""
     data = SimpleData.default(shape=(2,))
     data = data.replace(
         id=jnp.array([1, 2], dtype=jnp.uint32),
@@ -64,7 +58,6 @@ def test_repeat_matches_jnp_repeat():
 
 
 def test_repeat_no_axis_defaults_flattened():
-    """Repeat without axis should behave like jnp.repeat on flattened entries."""
     data = SimpleData.default(shape=(2, 2))
     data = data.replace(
         id=jnp.array([[1, 2], [3, 4]], dtype=jnp.uint32),
@@ -79,7 +72,6 @@ def test_repeat_no_axis_defaults_flattened():
 
 
 def test_split_even_sections():
-    """Split should divide the dataclass into even sections."""
     data = SimpleData.default(shape=(4,))
     data = data.replace(
         id=jnp.array([1, 2, 3, 4], dtype=jnp.uint32),
@@ -95,7 +87,6 @@ def test_split_even_sections():
 
 
 def test_split_by_indices():
-    """Split with explicit indices should respect split points."""
     data = SimpleData.default(shape=(5,))
     data = data.replace(id=jnp.arange(5, dtype=jnp.uint32), value=jnp.arange(5, dtype=jnp.float32))
 
@@ -109,7 +100,6 @@ def test_split_by_indices():
 
 
 def test_zeros_ones_full_like_helpers():
-    """zeros_like / ones_like / full_like should mirror jnp helpers."""
     data = VectorData.default(shape=(2,))
     data = data.replace(
         position=jnp.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]),

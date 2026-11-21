@@ -1,5 +1,3 @@
-"""Packed storage byte counts across supported widths and invalid inputs."""
-
 import numpy as np
 import pytest
 
@@ -9,10 +7,10 @@ from xtructure.core.layout.bitpack import packed_num_bytes
 @pytest.mark.parametrize("active_bits", range(1, 33))
 @pytest.mark.parametrize("num_values", [0, 1, 2, 7, 8, 9, 15, 16, 31, 54, 100, 4096])
 def test_packed_num_bytes_matches_block_formula(num_values, active_bits):
-    """Byte count is block_count * bytes_per_block at every supported width.
+    """Prevent width-specific specializations from changing packed byte counts.
 
-    The historical special cases for 1 / 8 / 2 / 4 bits were exactly this
-    formula; the guard keeps a re-specialisation from changing stored shapes.
+    Every supported width (1..32 bits) must match ``block_count * bytes_per_block``
+    so stored packed shapes remain identical across generic and fast paths.
     """
     block_bits = int(np.lcm(active_bits, 8))
     expected = -(-num_values // (block_bits // active_bits)) * (block_bits // 8)

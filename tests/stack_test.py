@@ -6,36 +6,30 @@ import pytest
 from tests.testdata import PointU32x2
 from xtructure import Stack
 
-# Use a much larger max_size for more robust testing
 LARGE_MAX_SIZE = 100_000
 
 
 @pytest.fixture
 def stack():
-    """Provides a fresh stack for each test."""
     return Stack.build(max_size=LARGE_MAX_SIZE, value_class=PointU32x2)
 
 
 def test_build(stack):
-    """Tests the initial state of a newly built stack."""
     assert stack.size == 0
     assert stack.max_size == LARGE_MAX_SIZE
 
 
 def test_push_single_item(stack):
-    """Tests pushing a single item onto the stack."""
     p1 = PointU32x2(x=jnp.array(1, dtype=jnp.uint32), y=jnp.array(2, dtype=jnp.uint32))
 
     stack = stack.push(p1)
 
     assert stack.size == 1
     peeked = stack.peek()
-    # peek returns a batch of 1
     chex.assert_trees_all_equal(peeked, p1)
 
 
 def test_push_batch(stack):
-    """Tests pushing a batch of items onto the stack."""
     batch_size = 5000
     points = PointU32x2(
         x=jnp.arange(batch_size, dtype=jnp.uint32),
@@ -50,7 +44,6 @@ def test_push_batch(stack):
 
 
 def test_pop_single(stack):
-    """Tests popping items one by one."""
     p1 = PointU32x2(x=jnp.array(1, dtype=jnp.uint32), y=jnp.array(2, dtype=jnp.uint32))
     p2 = PointU32x2(x=jnp.array(3, dtype=jnp.uint32), y=jnp.array(4, dtype=jnp.uint32))
 
@@ -61,7 +54,6 @@ def test_pop_single(stack):
 
     stack, popped = stack.pop()
     assert stack.size == 1
-    # pop returns a batch of 1
     chex.assert_trees_all_equal(popped, p2)
 
     stack, popped = stack.pop()
@@ -70,7 +62,6 @@ def test_pop_single(stack):
 
 
 def test_pop_batch(stack):
-    """Tests popping a batch of items."""
     batch_size = 5000
     points = PointU32x2(
         x=jnp.arange(batch_size, dtype=jnp.uint32),
@@ -92,7 +83,6 @@ def test_pop_batch(stack):
 
 
 def test_peek(stack):
-    """Tests peeking without modifying the stack."""
     batch_size = 5000
     points = PointU32x2(
         x=jnp.arange(batch_size, dtype=jnp.uint32),

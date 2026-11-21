@@ -1,5 +1,3 @@
-"""Tests covering the `xnp.update_on_condition` helper."""
-
 import jax.numpy as jnp
 import pytest
 
@@ -16,7 +14,6 @@ def _make_simple_default(shape):
 
 
 def test_update_on_condition_basic():
-    """Test update_on_condition with a simple dataclass."""
     original = _make_simple_default((5,))
     indices = jnp.array([0, 2, 4])
     condition = jnp.array([True, True, True])
@@ -31,7 +28,6 @@ def test_update_on_condition_basic():
 
 
 def test_update_on_condition_duplicate_indices_first_wins():
-    """Test update_on_condition with duplicate indices - first True wins."""
     original = _make_simple_default((5,))
     indices = jnp.array([0, 2, 0])
     condition = jnp.array([True, True, True])
@@ -46,7 +42,6 @@ def test_update_on_condition_duplicate_indices_first_wins():
 
 
 def test_update_on_condition_advanced_indexing():
-    """Test update_on_condition with advanced indexing."""
     original = VectorData.default((2, 3))
     original = original.replace(
         position=jnp.zeros((2, 3, 3), dtype=jnp.float32),
@@ -72,7 +67,6 @@ def test_update_on_condition_advanced_indexing():
 
 
 def test_update_on_condition_all_false():
-    """Test update_on_condition when all conditions are False."""
     original = SimpleData.default((5,))
     original = original.replace(
         id=jnp.arange(5, dtype=jnp.uint32), value=jnp.arange(5, dtype=jnp.float32)
@@ -88,7 +82,6 @@ def test_update_on_condition_all_false():
 
 
 def test_update_on_condition_scalar_value():
-    """Test update_on_condition with scalar values."""
     original = SimpleData.default((4,))
     original = original.replace(
         id=jnp.ones(4, dtype=jnp.uint32), value=jnp.ones(4, dtype=jnp.float32)
@@ -106,7 +99,6 @@ def test_update_on_condition_scalar_value():
 
 
 def test_update_on_condition_array_values():
-    """Test update_on_condition with array values."""
     original = _make_simple_default((5,))
     indices = jnp.array([0, 2, 4, 0])
     condition = jnp.array([True, True, False, True])
@@ -121,7 +113,6 @@ def test_update_on_condition_array_values():
 
 
 def test_update_on_condition_dataclass_values_first_true_wins():
-    """Dataclass values respect first-true-wins semantics across fields."""
     original = _make_simple_default((4,))
     indices = jnp.array([2, 2, 1, 2], dtype=jnp.int32)
     condition = jnp.array([False, True, True, True])
@@ -141,7 +132,6 @@ def test_update_on_condition_dataclass_values_first_true_wins():
 
 
 def test_update_on_condition_advanced_indices_duplicate_first_true():
-    """Advanced tuple indices still enforce first true wins after flattening."""
     original = VectorData.default((2, 2))
     original = original.replace(
         position=jnp.zeros((2, 2, 3), dtype=jnp.float32),
@@ -171,7 +161,6 @@ def test_update_on_condition_advanced_indices_duplicate_first_true():
 
 
 def test_update_on_condition_nested_dataclass_first_true_wins_everywhere():
-    """Nested dataclasses update every leaf with the same first-true policy."""
     base_simple = SimpleData.default((3,))
     base_simple = base_simple.replace(
         id=jnp.zeros(3, dtype=jnp.uint32), value=jnp.zeros(3, dtype=jnp.float32)
@@ -216,7 +205,6 @@ def test_update_on_condition_nested_dataclass_first_true_wins_everywhere():
 
 
 def test_update_on_condition_array_basic():
-    """Array inputs follow the same first-true-wins semantics."""
     original = jnp.zeros(5, dtype=jnp.float32)
     indices = jnp.array([0, 2, 4])
     condition = jnp.array([True, True, True])
@@ -229,7 +217,6 @@ def test_update_on_condition_array_basic():
 
 
 def test_update_on_condition_array_duplicate_indices_first_true():
-    """Array inputs with duplicate indices keep the first True update."""
     original = jnp.zeros(3, dtype=jnp.float32)
     indices = jnp.array([1, 1, 1], dtype=jnp.int32)
     condition = jnp.array([True, True, True])
@@ -242,7 +229,6 @@ def test_update_on_condition_array_duplicate_indices_first_true():
 
 
 def test_update_on_condition_array_advanced_indices():
-    """Tuple indices work for array inputs too."""
     original = jnp.zeros((2, 2), dtype=jnp.float32)
     row = jnp.array([0, 1, 1], dtype=jnp.int32)
     col = jnp.array([1, 0, 1], dtype=jnp.int32)
@@ -258,7 +244,6 @@ def test_update_on_condition_array_advanced_indices():
 
 
 def test_update_on_condition_structure_mismatch_raises():
-    """Different dataclass structures should raise before attempting updates."""
     original = SimpleData.default((2,))
     indices = jnp.array([0, 1], dtype=jnp.int32)
     condition = jnp.array([True, True])
@@ -282,7 +267,6 @@ def test_update_on_condition_condition_shape_mismatch_raises():
 
 
 def test_update_on_condition_non_broadcastable_values_raise():
-    """Values that cannot broadcast to the update shape should fail loudly."""
     original = _make_simple_default((2,))
     indices = jnp.array([0, 1], dtype=jnp.int32)
     condition = jnp.array([True, True])
@@ -293,7 +277,6 @@ def test_update_on_condition_non_broadcastable_values_raise():
 
 
 def test_update_on_condition_empty_condition_noop():
-    """Empty update requests should leave the dataclass untouched."""
     original = SimpleData.default((2,))
     original = original.replace(
         id=jnp.array([5, 6], dtype=jnp.uint32), value=jnp.array([1.5, 2.5], dtype=jnp.float32)

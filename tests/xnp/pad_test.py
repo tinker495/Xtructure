@@ -1,5 +1,3 @@
-"""Tests for xnp.pad behavior across padding scenarios."""
-
 import jax.numpy as jnp
 import pytest
 
@@ -9,7 +7,6 @@ from xtructure import numpy as xnp
 
 
 def test_pad_single_to_batched():
-    """Test padding a SINGLE dataclass to create a batched version."""
     data = SimpleData.default()
     data = data.replace(id=jnp.array(42, dtype=jnp.uint32), value=jnp.array(3.14))
 
@@ -24,7 +21,6 @@ def test_pad_single_to_batched():
 
 
 def test_pad_batched_axis_0():
-    """Test padding a BATCHED dataclass along axis 0."""
     data = SimpleData.default((3,))
     data = data.replace(id=jnp.array([1, 2, 3], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 3.0]))
 
@@ -39,7 +35,6 @@ def test_pad_batched_axis_0():
 
 
 def test_pad_single_before_after_inserts_correctly():
-    """SINGLE padding with (before, after) inserts at the correct offset."""
     data = SimpleData.default()
     data = data.replace(
         id=jnp.array(42, dtype=jnp.uint32), value=jnp.array(3.14, dtype=jnp.float32)
@@ -56,7 +51,6 @@ def test_pad_single_before_after_inserts_correctly():
 
 
 def test_pad_batched_before_after_inserts_correctly():
-    """BATCHED padding with (before, after) inserts at the correct offset."""
     data = SimpleData.default((3,))
     data = data.replace(id=jnp.array([1, 2, 3], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 3.0]))
 
@@ -71,7 +65,6 @@ def test_pad_batched_before_after_inserts_correctly():
 
 
 def test_pad_uses_existing_padding_as_batch():
-    """Test that pad function uses the existing padding_as_batch method when appropriate."""
     data = SimpleData.default((2,))
     data = data.replace(id=jnp.array([1, 2], dtype=jnp.uint32), value=jnp.array([1.0, 2.0]))
 
@@ -84,7 +77,6 @@ def test_pad_uses_existing_padding_as_batch():
 
 
 def test_pad_batched_with_constant_values():
-    """Test padding with custom constant values."""
     data = SimpleData.default((2,))
     data = data.replace(id=jnp.array([1, 2], dtype=jnp.uint32), value=jnp.array([1.0, 2.0]))
 
@@ -96,7 +88,6 @@ def test_pad_batched_with_constant_values():
 
 
 def test_pad_batched_target_shape():
-    """Test padding to a target batch shape."""
     data = SimpleData.default((2, 3))
 
     result = xnp.pad(data, [(0, 2), (0, 2)])
@@ -105,7 +96,6 @@ def test_pad_batched_target_shape():
 
 
 def test_pad_tensor_fields_multidim_batch_default_constant():
-    """Default constant padding should work for tensor fields with batch_ndim > 1."""
     data = VectorData.default((2, 3))
     position = jnp.arange(18, dtype=jnp.float32).reshape(2, 3, 3)
     velocity = position + 0.5
@@ -123,14 +113,12 @@ def test_pad_tensor_fields_multidim_batch_default_constant():
 
 
 def test_pad_no_change_needed():
-    """Test that padding with zero padding returns the same instance."""
     data = SimpleData.default((3,))
     result = xnp.pad(data, (0, 0))
     assert result is data
 
 
 def test_pad_invalid_pad_width():
-    """Test that invalid pad_width raises ValueError."""
     data = SimpleData.default((3,))
 
     with pytest.raises(

@@ -1,5 +1,3 @@
-"""Tests for xnp.concatenate behavior."""
-
 import jax.numpy as jnp
 import pytest
 
@@ -8,7 +6,6 @@ from xtructure import numpy as xnp
 
 
 def test_concat_single_dataclasses():
-    """Test concatenating SINGLE structured dataclasses."""
     data1 = SimpleData.default()
     data1 = data1.replace(id=jnp.array(1, dtype=jnp.uint32), value=jnp.array(1.0))
     data2 = SimpleData.default()
@@ -25,7 +22,6 @@ def test_concat_single_dataclasses():
 
 
 def test_concat_batched_dataclasses():
-    """Test concatenating BATCHED structured dataclasses."""
     data1 = SimpleData.default(shape=(2,))
     data1 = data1.replace(id=jnp.array([1, 2], dtype=jnp.uint32), value=jnp.array([1.0, 2.0]))
     data2 = SimpleData.default(shape=(3,))
@@ -42,7 +38,6 @@ def test_concat_batched_dataclasses():
 
 
 def test_concat_vector_dataclasses():
-    """Test concatenating dataclasses with vector fields."""
     data1 = VectorData.default(shape=(2,))
     data1 = data1.replace(
         position=jnp.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]),
@@ -64,20 +59,17 @@ def test_concat_vector_dataclasses():
 
 
 def test_concat_empty_list():
-    """Test that concatenating empty list raises ValueError."""
     with pytest.raises(ValueError, match="Cannot concatenate empty list"):
         xnp.concatenate([])
 
 
 def test_concat_single_item():
-    """Test that concatenating single item returns the item itself."""
     data = SimpleData.default()
     result = xnp.concatenate([data])
     assert result is data
 
 
 def test_concat_incompatible_types():
-    """Test that concatenating different types raises ValueError."""
     simple_data = SimpleData.default()
     vector_data = VectorData.default()
 

@@ -1,5 +1,3 @@
-"""Tests for reshape and flatten helpers."""
-
 import jax.numpy as jnp
 import pytest
 
@@ -8,7 +6,6 @@ from xtructure import numpy as xnp
 
 
 def test_reshape_wrapper():
-    """Test that the reshape wrapper function works like the built-in method."""
     data = SimpleData.default(shape=(6,))
     data = data.replace(id=jnp.arange(6, dtype=jnp.uint32), value=jnp.arange(6, dtype=jnp.float32))
 
@@ -21,7 +18,6 @@ def test_reshape_wrapper():
 
 
 def test_reshape_with_minus_one():
-    """Test reshape with -1 to automatically calculate dimensions."""
     data = SimpleData.default(shape=(12,))
     data = data.replace(
         id=jnp.arange(12, dtype=jnp.uint32), value=jnp.arange(12, dtype=jnp.float32)
@@ -44,7 +40,6 @@ def test_reshape_with_minus_one():
 
 
 def test_reshape_with_minus_one_2d():
-    """Test reshape with -1 on 2D data."""
     data = SimpleData.default(shape=(8, 3))
     data = data.replace(
         id=jnp.arange(24, dtype=jnp.uint32).reshape(8, 3),
@@ -67,7 +62,6 @@ def test_reshape_with_minus_one_2d():
 
 
 def test_reshape_with_minus_one_errors():
-    """Test that reshape with invalid -1 usage raises appropriate errors."""
     data = SimpleData.default(shape=(10,))
     data = data.replace(
         id=jnp.arange(10, dtype=jnp.uint32), value=jnp.arange(10, dtype=jnp.float32)
@@ -86,7 +80,6 @@ def test_reshape_with_minus_one_errors():
 
 
 def test_reshape_with_minus_one_vector_data():
-    """Test reshape with -1 on vector data."""
     data = VectorData.default(shape=(12,))
     data = data.replace(
         position=jnp.arange(36, dtype=jnp.float32).reshape(12, 3),
@@ -105,7 +98,6 @@ def test_reshape_with_minus_one_vector_data():
 
 
 def test_flatten_wrapper():
-    """Test that xnp.flatten calls the existing dataclass flatten method."""
     dc = SimpleData.default(shape=(2, 3))
     dc = dc.replace(
         id=jnp.arange(6, dtype=jnp.uint32).reshape(2, 3),

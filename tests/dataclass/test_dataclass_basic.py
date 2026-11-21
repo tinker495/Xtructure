@@ -93,7 +93,7 @@ def test_batch_shape():
     batched = SimpleData.default(shape=(5, 10))
     assert batched.shape == (5, 10)
 
-    # Author: tinker495. Mismatched batches are rejected at construction (#53).
+    # Author: tinker495. Mismatched batches are rejected at construction.
     with pytest.raises(ValueError, match="field batch shapes disagree"):
         SimpleData(id=jnp.array(1, dtype=jnp.uint32), value=jnp.array([2.0, 3.0, 4.0]))
 

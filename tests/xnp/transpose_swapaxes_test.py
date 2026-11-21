@@ -1,5 +1,3 @@
-"""Tests for xnp.transpose and xnp.swapaxes helpers."""
-
 import jax.numpy as jnp
 import pytest
 
@@ -8,7 +6,6 @@ from xtructure import numpy as xnp
 
 
 def test_transpose_2d_basic():
-    """Test basic transpose on 2D dataclass."""
     data = SimpleData.default(shape=(2, 3))
     data = data.replace(
         id=jnp.array([[1, 2, 3], [4, 5, 6]], dtype=jnp.uint32),
@@ -25,7 +22,6 @@ def test_transpose_2d_basic():
 
 
 def test_transpose_3d_basic():
-    """Test basic transpose on 3D dataclass."""
     data = SimpleData.default(shape=(2, 3, 4))
     data = data.replace(
         id=jnp.arange(24, dtype=jnp.uint32).reshape(2, 3, 4),
@@ -43,7 +39,6 @@ def test_transpose_3d_basic():
 
 
 def test_transpose_with_custom_axes():
-    """Test transpose with custom axes order."""
     data = SimpleData.default(shape=(2, 3, 4))
     data = data.replace(
         id=jnp.arange(24, dtype=jnp.uint32).reshape(2, 3, 4),
@@ -63,7 +58,6 @@ def test_transpose_with_custom_axes():
 
 
 def test_transpose_vector_dataclass():
-    """Test transpose on dataclass with vector fields."""
     data = VectorData.default(shape=(2, 3))
     data = data.replace(
         position=jnp.array(
@@ -91,7 +85,6 @@ def test_transpose_vector_dataclass():
 
 
 def test_transpose_1d_no_change():
-    """Test transpose on 1D dataclass (should be no-op)."""
     data = SimpleData.default(shape=(3,))
     data = data.replace(
         id=jnp.array([1, 2, 3], dtype=jnp.uint32),
@@ -106,7 +99,6 @@ def test_transpose_1d_no_change():
 
 
 def test_transpose_equivalent_to_jnp_transpose():
-    """Test that xnp.transpose produces same result as manual jnp.transpose."""
     data = SimpleData.default(shape=(2, 3))
     data = data.replace(
         id=jnp.array([[1, 2, 3], [4, 5, 6]], dtype=jnp.uint32),
@@ -121,7 +113,6 @@ def test_transpose_equivalent_to_jnp_transpose():
 
 
 def test_transpose_with_axes_equivalent_to_jnp():
-    """Test that xnp.transpose with axes produces same result as manual jnp.transpose."""
     data = SimpleData.default(shape=(2, 3, 4))
     data = data.replace(
         id=jnp.arange(24, dtype=jnp.uint32).reshape(2, 3, 4),
@@ -140,7 +131,6 @@ def test_transpose_with_axes_equivalent_to_jnp():
 
 
 def test_transpose_nested_dataclass():
-    """Test transpose on nested dataclass."""
     simple = SimpleData.default(shape=(2, 2))
     simple = simple.replace(
         id=jnp.array([[1, 2], [3, 4]], dtype=jnp.uint32),
@@ -186,7 +176,6 @@ def test_transpose_unstructured_raises():
 
 
 def test_swap_axes_2d_basic():
-    """Test basic swapaxes on 2D dataclass."""
     data = SimpleData.default(shape=(2, 3))
     data = data.replace(
         id=jnp.array([[1, 2, 3], [4, 5, 6]], dtype=jnp.uint32),
@@ -203,7 +192,6 @@ def test_swap_axes_2d_basic():
 
 
 def test_swap_axes_3d_basic():
-    """Test basic swapaxes on 3D dataclass."""
     data = SimpleData.default(shape=(2, 3, 4))
     data = data.replace(
         id=jnp.arange(24, dtype=jnp.uint32).reshape(2, 3, 4),
@@ -221,7 +209,6 @@ def test_swap_axes_3d_basic():
 
 
 def test_swap_axes_with_negative_indices():
-    """Test swapaxes with negative indices."""
     data = SimpleData.default(shape=(2, 3, 4))
     data = data.replace(
         id=jnp.arange(24, dtype=jnp.uint32).reshape(2, 3, 4),
@@ -239,7 +226,6 @@ def test_swap_axes_with_negative_indices():
 
 
 def test_swap_axes_mixed_positive_negative():
-    """Test swapaxes with mixed positive and negative indices."""
     data = SimpleData.default(shape=(2, 3, 4))
     data = data.replace(
         id=jnp.arange(24, dtype=jnp.uint32).reshape(2, 3, 4),
@@ -257,7 +243,6 @@ def test_swap_axes_mixed_positive_negative():
 
 
 def test_swap_axes_vector_dataclass():
-    """Test swapaxes on dataclass with vector fields."""
     data = VectorData.default(shape=(2, 3))
     data = data.replace(
         position=jnp.array(
@@ -300,7 +285,6 @@ def test_swap_axes_vector_dataclass():
 
 
 def test_swap_axes_1d_no_change():
-    """Test swapaxes on 1D dataclass (should be no-op)."""
     data = SimpleData.default(shape=(3,))
     data = data.replace(
         id=jnp.array([1, 2, 3], dtype=jnp.uint32),
@@ -315,7 +299,6 @@ def test_swap_axes_1d_no_change():
 
 
 def test_swap_axes_equivalent_to_jnp_swapaxes():
-    """Test that xnp.swapaxes produces same result as manual jnp.swapaxes."""
     data = SimpleData.default(shape=(2, 3))
     data = data.replace(
         id=jnp.array([[1, 2, 3], [4, 5, 6]], dtype=jnp.uint32),
@@ -330,7 +313,6 @@ def test_swap_axes_equivalent_to_jnp_swapaxes():
 
 
 def test_swap_axes_nested_dataclass():
-    """Test swapaxes on nested dataclass."""
     simple = SimpleData.default(shape=(2, 2))
     simple = simple.replace(
         id=jnp.array([[1, 2], [3, 4]], dtype=jnp.uint32),
@@ -372,7 +354,6 @@ def test_swapaxes_unstructured_raises():
 
 
 def test_swap_axes_integration_with_other_ops():
-    """Test swapaxes integration with other xnp operations."""
     data = SimpleData.default(shape=(2, 3))
     data = data.replace(
         id=jnp.array([[1, 2, 3], [4, 5, 6]], dtype=jnp.uint32),
@@ -396,7 +377,6 @@ def test_swap_axes_integration_with_other_ops():
 
 
 def test_transpose_integration_with_other_ops():
-    """Test transpose integration with other xnp operations."""
     data = SimpleData.default(shape=(2, 3))
     data = data.replace(
         id=jnp.array([[1, 2, 3], [4, 5, 6]], dtype=jnp.uint32),
@@ -420,7 +400,6 @@ def test_transpose_integration_with_other_ops():
 
 
 def test_transpose_swap_axes_equivalence():
-    """Test that transpose and swapaxes produce equivalent results for 2D arrays."""
     data = SimpleData.default(shape=(2, 3))
     data = data.replace(
         id=jnp.array([[1, 2, 3], [4, 5, 6]], dtype=jnp.uint32),

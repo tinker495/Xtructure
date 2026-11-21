@@ -11,12 +11,10 @@ LARGE_MAX_SIZE = 100_000
 
 @pytest.fixture
 def queue():
-    """Provides a fresh queue for each test."""
     return Queue.build(max_size=LARGE_MAX_SIZE, value_class=PointU32x2)
 
 
 def test_build(queue):
-    """Tests the initial state of a newly built queue."""
     assert queue.size == 0
     assert queue.max_size == LARGE_MAX_SIZE
     assert queue.head == 0
@@ -24,7 +22,6 @@ def test_build(queue):
 
 
 def test_enqueue_single_item(queue):
-    """Tests enqueuing a single item."""
     p1 = PointU32x2(x=jnp.array(1, dtype=jnp.uint32), y=jnp.array(2, dtype=jnp.uint32))
     queue = queue.enqueue(p1)
     assert queue.size == 1
@@ -34,7 +31,6 @@ def test_enqueue_single_item(queue):
 
 
 def test_enqueue_batch(queue):
-    """Tests enqueuing a batch of items."""
     batch_size = 5000
     points = PointU32x2(
         x=jnp.arange(batch_size, dtype=jnp.uint32),
@@ -48,7 +44,6 @@ def test_enqueue_batch(queue):
 
 
 def test_dequeue_single(queue):
-    """Tests dequeuing items one by one."""
     p1 = PointU32x2(x=jnp.array(1, dtype=jnp.uint32), y=jnp.array(2, dtype=jnp.uint32))
     p2 = PointU32x2(x=jnp.array(3, dtype=jnp.uint32), y=jnp.array(4, dtype=jnp.uint32))
 
@@ -68,7 +63,6 @@ def test_dequeue_single(queue):
 
 
 def test_dequeue_batch(queue):
-    """Tests dequeuing a batch of items."""
     batch_size = 5000
     points = PointU32x2(
         x=jnp.arange(batch_size, dtype=jnp.uint32),
@@ -86,7 +80,6 @@ def test_dequeue_batch(queue):
 
 
 def test_peek(queue):
-    """Tests peeking without modifying the queue."""
     batch_size = 5000
     points = PointU32x2(
         x=jnp.arange(batch_size, dtype=jnp.uint32),
@@ -107,7 +100,6 @@ def test_peek(queue):
 
 
 def test_clear(queue):
-    """Tests clearing the queue."""
     points = PointU32x2(x=jnp.arange(5, dtype=jnp.uint32), y=jnp.arange(5, 10, dtype=jnp.uint32))
     queue = queue.enqueue(points)
     assert queue.size == 5

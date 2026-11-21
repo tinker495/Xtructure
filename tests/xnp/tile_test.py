@@ -1,5 +1,3 @@
-"""Tests ensuring xnp.tile behaves like numpy.tile across dataclasses."""
-
 import jax.numpy as jnp
 import pytest
 
@@ -8,7 +6,6 @@ from xtructure import numpy as xnp
 
 
 def test_tile_single_dataclass():
-    """Test tiling a single dataclass to create a batch."""
     data = SimpleData.default()
     data = data.replace(id=jnp.array(42, dtype=jnp.uint32), value=jnp.array(3.14))
 
@@ -21,7 +18,6 @@ def test_tile_single_dataclass():
 
 
 def test_tile_batched_dataclass_1d():
-    """Test tiling a 1D batched dataclass."""
     data = SimpleData.default((2,))
     data = data.replace(
         id=jnp.array([1, 2], dtype=jnp.uint32),
@@ -37,7 +33,6 @@ def test_tile_batched_dataclass_1d():
 
 
 def test_tile_batched_dataclass_2d():
-    """Test tiling a 2D batched dataclass."""
     data = SimpleData.default((2, 2))
     data = data.replace(
         id=jnp.array([[1, 2], [3, 4]], dtype=jnp.uint32),
@@ -63,7 +58,6 @@ def test_tile_batched_dataclass_2d():
 
 
 def test_tile_vector_dataclass():
-    """Test tiling a dataclass with vector fields."""
     data = VectorData.default((2,))
     data = data.replace(
         position=jnp.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]),
@@ -76,7 +70,6 @@ def test_tile_vector_dataclass():
 
 
 def test_tile_complex_repetition_pattern():
-    """Test tiling with complex repetition patterns."""
     data = SimpleData.default((2, 3))
     data = data.replace(
         id=jnp.array([[1, 2, 3], [4, 5, 6]], dtype=jnp.uint32),
@@ -104,7 +97,6 @@ def test_tile_complex_repetition_pattern():
 
 
 def test_tile_nested_dataclass():
-    """Test tiling a nested dataclass."""
     simple = SimpleData.default()
     simple = simple.replace(id=jnp.array(1, dtype=jnp.uint32), value=jnp.array(1.0))
     vector = VectorData.default()
@@ -120,7 +112,6 @@ def test_tile_nested_dataclass():
 
 
 def test_tile_equivalent_to_jnp_tile():
-    """Test that xnp.tile produces same result as manual jnp.tile."""
     data = SimpleData.default((2, 2))
     data = data.replace(
         id=jnp.array([[1, 2], [3, 4]], dtype=jnp.uint32),
@@ -137,7 +128,6 @@ def test_tile_equivalent_to_jnp_tile():
 
 
 def test_tile_single_repetition():
-    """Test tiling with single integer repetition."""
     data = SimpleData.default((2,))
     data = data.replace(
         id=jnp.array([1, 2], dtype=jnp.uint32),
@@ -154,7 +144,6 @@ def test_tile_single_repetition():
 
 
 def test_tile_tuple_repetition():
-    """Test tiling with tuple repetition."""
     data = SimpleData.default((2,))
     data = data.replace(
         id=jnp.array([1, 2], dtype=jnp.uint32),
@@ -177,7 +166,6 @@ def test_tile_tuple_repetition():
 
 
 def test_tile_empty_batch():
-    """Test tiling with empty batch."""
     data = SimpleData.default((0,))
 
     result = xnp.tile(data, 3)
@@ -188,7 +176,6 @@ def test_tile_empty_batch():
 
 
 def test_tile_zero_repetition():
-    """Test tiling with zero repetition."""
     data = SimpleData.default((2,))
     data = data.replace(
         id=jnp.array([1, 2], dtype=jnp.uint32),
@@ -203,7 +190,6 @@ def test_tile_zero_repetition():
 
 
 def test_tile_mixed_zero_repetition():
-    """Test tiling with mixed zero and non-zero repetition."""
     data = SimpleData.default((2, 2))
     data = data.replace(
         id=jnp.array([[1, 2], [3, 4]], dtype=jnp.uint32),
@@ -218,7 +204,6 @@ def test_tile_mixed_zero_repetition():
 
 
 def test_tile_integration_with_other_ops():
-    """Test tile integration with other xnp operations."""
     data = SimpleData.default((2,))
     data = data.replace(
         id=jnp.array([1, 2], dtype=jnp.uint32),

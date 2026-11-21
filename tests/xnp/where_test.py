@@ -1,5 +1,3 @@
-"""Tests for xnp.where and xnp.where_no_broadcast helpers."""
-
 import jax
 import jax.numpy as jnp
 import pytest
@@ -16,7 +14,6 @@ class SignedData(Xtructurable, bitpack="off"):
 
 
 def test_where_with_dataclasses():
-    """Test xnp.where with two dataclasses"""
     dc1 = SimpleData.default(shape=(3,))
     dc1 = dc1.replace(id=jnp.array([1, 2, 3], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 3.0]))
     dc2 = SimpleData.default(shape=(3,))
@@ -35,7 +32,6 @@ def test_where_with_dataclasses():
 
 
 def test_where_with_scalar():
-    """Test xnp.where with dataclass and scalar fallback"""
     dc = SignedData.default(shape=(3,))
     dc = dc.replace(id=jnp.array([1, 2, 3]), value=jnp.array([1.0, 2.0, 3.0]))
     condition = jnp.array([True, False, True])
@@ -51,7 +47,6 @@ def test_where_with_scalar():
 
 
 def test_where_batched_dataclasses():
-    """Test xnp.where with batched dataclasses"""
     dc1 = SimpleData.default(shape=(2,))
     dc1 = dc1.replace(id=jnp.array([1, 2], dtype=jnp.uint32), value=jnp.array([1.0, 2.0]))
     dc2 = SimpleData.default(shape=(2,))
@@ -68,7 +63,6 @@ def test_where_batched_dataclasses():
 
 
 def test_where_scalar_condition():
-    """Test xnp.where with scalar boolean condition"""
     dc1 = SimpleData.default(shape=(3,))
     dc1 = dc1.replace(id=jnp.array([1, 2, 3], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 3.0]))
     dc2 = SimpleData.default(shape=(3,))
@@ -86,7 +80,6 @@ def test_where_scalar_condition():
 
 
 def test_where_equivalent_to_tree_map():
-    """Test that xnp.where produces same result as manual tree_map"""
     dc1 = SimpleData.default(shape=(3,))
     dc1 = dc1.replace(id=jnp.array([1, 2, 3], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 3.0]))
     dc2 = SimpleData.default(shape=(3,))
@@ -103,7 +96,6 @@ def test_where_equivalent_to_tree_map():
 
 
 def test_where_scalar_equivalent_to_tree_map():
-    """Test that xnp.where with scalar produces same result as manual tree_map"""
     dc = SignedData.default(shape=(3,))
     dc = dc.replace(id=jnp.array([1, 2, 3]), value=jnp.array([1.0, 2.0, 3.0]))
     condition = jnp.array([True, False, True])
@@ -117,7 +109,6 @@ def test_where_scalar_equivalent_to_tree_map():
 
 
 def test_where_no_broadcast_basic():
-    """where_no_broadcast succeeds when shapes and dtypes match exactly."""
     dc1 = SimpleData.default(shape=(3,))
     dc1 = dc1.replace(id=jnp.array([1, 2, 3], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 3.0]))
     dc2 = SimpleData.default(shape=(3,))
@@ -146,7 +137,6 @@ def test_where_no_broadcast_rejects_type_mismatch():
 
 
 def test_where_no_broadcast_rejects_shape_mismatch():
-    """where_no_broadcast raises when mask shape differs from field shape."""
     dc1 = SimpleData.default(shape=(3,))
     dc1 = dc1.replace(id=jnp.array([1, 2, 3], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 3.0]))
     dc2 = SimpleData.default(shape=(3,))

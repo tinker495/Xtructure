@@ -127,7 +127,6 @@ def test_decorator_str_and_dunder_str_are_same_callable():
 
 
 def test_decorator_caller_can_override_truncation_thresholds(monkeypatch):
-    """``instance.str(max_size=..., show_size=...)`` flows into the renderer."""
     captured = []
     real_render = _BatchedRendererCls.render
 

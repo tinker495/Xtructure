@@ -7,11 +7,8 @@ from xtructure.core import aggregate_bitpack as aggregate_bitpack_module
 
 
 class AggState(Xtructurable, bitpack="aggregate"):
-    # 1-bit flags
     flags: FieldDescriptor.tensor(dtype=jnp.bool_, shape=(17,), bits=1, fill_value=False)
-    # 3-bit values in [0,7]
     faces: FieldDescriptor.tensor(dtype=jnp.uint8, shape=(6, 9), bits=3, fill_value=0)
-    # 12-bit values -> should unpack to uint32 by default
     codes: FieldDescriptor.tensor(dtype=jnp.uint16, shape=(5,), bits=12, fill_value=0)
 
 
@@ -34,7 +31,6 @@ def test_aggregate_pack_roundtrip_single():
     assert u.codes.dtype == jnp.uint32
     chex.assert_trees_all_equal(u.codes, s.codes.astype(jnp.uint32))
 
-    # Reconstruction to original declared dtypes should pass validation.
     o = p.as_original()
     assert o.codes.dtype == jnp.uint16
     chex.assert_trees_all_equal(o, s)
@@ -148,16 +144,13 @@ def test_aggregate_unpack_field_partial():
     )
     p = s.packed
 
-    # Decode only one field (full), without materializing all fields.
     faces = p.unpack_field("faces")
     chex.assert_trees_all_equal(faces, s.faces.astype(jnp.uint8))
 
-    # Decode a subset of flattened indices for one field.
     idxs = jnp.array([0, 2, 4], dtype=jnp.int32)
     codes_subset = p.unpack_field("codes", indices=idxs)
     chex.assert_trees_all_equal(codes_subset, s.codes.astype(jnp.uint32)[:, [0, 2, 4]])
 
-    # Works on batch-sliced packed objects too.
     p0 = p[0]
     faces0 = p0.unpack_field("faces")
     chex.assert_trees_all_equal(faces0, s.faces.astype(jnp.uint8)[0])
@@ -185,9 +178,7 @@ def test_aggregate_unpack_field_declared_dtype_uses_layout_cast_policy(monkeypat
 
 
 class InnerState(Xtructurable):
-    # 4-bit values
     a: FieldDescriptor.tensor(dtype=jnp.uint8, shape=(6,), bits=4, fill_value=0)
-    # 12-bit values
     codes: FieldDescriptor.tensor(dtype=jnp.uint16, shape=(5,), bits=12, fill_value=0)
 
 
@@ -209,16 +200,13 @@ def test_aggregate_nested_roundtrip_and_partial():
     p = s.packed
     u = p.unpacked
 
-    # Nested view should preserve structure.
     assert hasattr(u, "inner")
     chex.assert_trees_all_equal(u.flags, s.flags)
     chex.assert_trees_all_equal(u.inner.a, s.inner.a.astype(jnp.uint8))
     chex.assert_trees_all_equal(u.inner.codes, s.inner.codes.astype(jnp.uint32))
 
-    # Declared reconstruction should match exactly (and pass validation).
     o = p.unpack(dtype_policy="declared")
     chex.assert_trees_all_equal(o, s)
 
-    # Partial decode for nested leaf via dotted path.
     codes_subset = p.unpack_field("inner.codes", indices=[0, 2, 4])
     chex.assert_trees_all_equal(codes_subset, s.inner.codes.astype(jnp.uint32)[:, [0, 2, 4]])

@@ -1,5 +1,3 @@
-"""Tests for xnp.unique_mask helper."""
-
 import jax
 import jax.numpy as jnp
 import pytest
@@ -19,7 +17,6 @@ class MixedWidthHashData(Xtructurable):
 
 
 def test_unique_mask_basic_uniqueness():
-    """Test basic uniqueness without cost consideration."""
     data = HashableData.default(shape=(5,))
     data = data.replace(
         id=jnp.array([1, 2, 1, 3, 2], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 1.0, 3.0, 2.0])
@@ -32,7 +29,6 @@ def test_unique_mask_basic_uniqueness():
 
 
 def test_unique_mask_with_costs():
-    """Test unique filtering with cost-based selection."""
     data = HashableData.default(shape=(6,))
     data = data.replace(
         id=jnp.array([1, 2, 1, 3, 2, 1], dtype=jnp.uint32),
@@ -48,7 +44,6 @@ def test_unique_mask_with_costs():
 
 
 def test_unique_mask_tie_breaking():
-    """Test tie-breaking when costs are equal."""
     data = HashableData.default(shape=(4,))
     data = data.replace(
         id=jnp.array([1, 2, 1, 2], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 1.0, 2.0])
@@ -62,7 +57,6 @@ def test_unique_mask_tie_breaking():
 
 
 def test_unique_mask_infinite_costs():
-    """Test that entries with infinite cost are excluded."""
     data = HashableData.default(shape=(4,))
     data = data.replace(
         id=jnp.array([1, 2, 1, 2], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 1.0, 2.0])
@@ -76,7 +70,6 @@ def test_unique_mask_infinite_costs():
 
 
 def test_unique_mask_all_same():
-    """Test when all elements are the same."""
     data = HashableData.default(shape=(3,))
     data = data.replace(id=jnp.array([1, 1, 1], dtype=jnp.uint32), value=jnp.array([1.0, 1.0, 1.0]))
     costs = jnp.array([3.0, 1.0, 2.0])
@@ -88,7 +81,6 @@ def test_unique_mask_all_same():
 
 
 def test_unique_mask_all_unique():
-    """Test when all elements are unique."""
     data = HashableData.default(shape=(3,))
     data = data.replace(id=jnp.array([1, 2, 3], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 3.0]))
     costs = jnp.array([3.0, 1.0, 2.0])
@@ -100,7 +92,6 @@ def test_unique_mask_all_unique():
 
 
 def test_unique_mask_explicit_batch_len():
-    """Test with explicitly provided batch_len."""
     data = HashableData.default(shape=(4,))
     data = data.replace(
         id=jnp.array([1, 2, 1, 3], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 1.0, 3.0])
@@ -114,7 +105,6 @@ def test_unique_mask_explicit_batch_len():
 
 
 def test_unique_mask_no_key():
-    """Test unique_mask without key returns first occurrence."""
     data = HashableData.default(shape=(5,))
     data = data.replace(
         id=jnp.array([1, 2, 1, 3, 2], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 1.0, 3.0, 2.0])
@@ -127,7 +117,6 @@ def test_unique_mask_no_key():
 
 
 def test_unique_mask_single_element():
-    """Test with single element."""
     data = HashableData.default(shape=(1,))
     data = data.replace(id=jnp.array([1], dtype=jnp.uint32), value=jnp.array([1.0]))
 
@@ -138,7 +127,6 @@ def test_unique_mask_single_element():
 
 
 def test_unique_mask_empty_batch():
-    """Test with empty batch."""
     data = HashableData.default(shape=(0,))
 
     mask = xnp.unique_mask(data, batch_len=0)
@@ -148,7 +136,6 @@ def test_unique_mask_empty_batch():
 
 
 def test_unique_mask_error_no_uint32ed():
-    """Test that error is raised when val doesn't have uint32ed attribute."""
     invalid_data = jnp.array([1, 2, 3])
 
     with pytest.raises(ValueError, match="key_fn failed to generate hashable keys"):
@@ -156,7 +143,6 @@ def test_unique_mask_error_no_uint32ed():
 
 
 def test_unique_mask_error_key_length_mismatch():
-    """Test that error is raised when key length doesn't match batch_len."""
     data = HashableData.default(shape=(3,))
     data = data.replace(id=jnp.array([1, 2, 3], dtype=jnp.uint32), value=jnp.array([1.0, 2.0, 3.0]))
     wrong_key = jnp.array([1.0, 2.0])
@@ -166,7 +152,6 @@ def test_unique_mask_error_key_length_mismatch():
 
 
 def test_unique_mask_complex_scenario():
-    """Test a more complex scenario with multiple duplicates and costs."""
     data = HashableData.default(shape=(8,))
     data = data.replace(
         id=jnp.array([1, 2, 3, 1, 2, 3, 1, 4], dtype=jnp.uint32),
@@ -181,7 +166,6 @@ def test_unique_mask_complex_scenario():
 
 
 def test_unique_mask_integration_with_other_ops():
-    """Test unique_mask integration with other xnp operations."""
     data = HashableData.default(shape=(6,))
     data = data.replace(
         id=jnp.array([1, 2, 1, 3, 2, 1], dtype=jnp.uint32),
@@ -201,7 +185,6 @@ def test_unique_mask_integration_with_other_ops():
 
 
 def test_unique_mask_with_custom_key_fn():
-    """Test unique_mask with custom key function."""
     data = HashableData.default(shape=(6,))
     data = data.replace(
         id=jnp.array([1, 2, 1, 3, 2, 1], dtype=jnp.uint32),
@@ -284,7 +267,6 @@ def test_unique_mask_return_index_with_cost_is_jit_static():
 
 
 def test_unique_mask_default_key_uses_polymorphic_uint32ed():
-    """Default key uses the batched polymorphic .uint32ed property directly."""
     data = MixedWidthHashData.default(shape=(4,))
     data = data.replace(
         flag=jnp.array([True, False, True, False]),

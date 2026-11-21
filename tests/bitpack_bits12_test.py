@@ -64,9 +64,9 @@ def test_wide_bitpack_ignores_inactive_high_bits(active_bits):
 @pytest.mark.parametrize("compiled", [False, True], ids=["eager", "jit"])
 def test_narrow_bitpack_ignores_inactive_high_bits(active_bits, negative, compiled):
     # Author: tinker495.
-    # Narrow fast paths used to OR inactive high bits into the next value's slot.
-    # An overflowing or negative value followed by zero must retain only its
-    # declared-width low bits, including under JIT and with block padding.
+    # Narrow packing paths must mask inactive high bits so they cannot bleed into
+    # the next value's slot; an overflowing or negative value followed by zero
+    # must retain only its declared-width low bits under JIT and with block padding.
     max_value = (1 << active_bits) - 1
     values = jnp.array(
         [-1, 0, -2, 0] if negative else [max_value + 1, 0, max_value, 0],

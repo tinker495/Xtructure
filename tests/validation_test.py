@@ -10,11 +10,9 @@ def test_check_invariants_manual_call():
     class MyData(Xtructurable):
         x: FieldDescriptor.scalar(dtype=jnp.int32)
 
-    # Correct type
     obj = MyData(x=jnp.array(10, dtype=jnp.int32))
-    obj.check_invariants()  # Should not raise
+    obj.check_invariants()
 
-    # Incorrect type (float instead of int)
     # Author: tinker495. Structural maps may change dtype until data validation.
     obj_bad = jax.tree_util.tree_map(lambda _: jnp.array(10.5, dtype=jnp.float32), obj)
     with pytest.raises(TypeError, match="expected dtype"):
@@ -25,10 +23,8 @@ def test_check_invariants_auto_validation_enabled():
     class MyDataAuto(Xtructurable):
         x: FieldDescriptor.tensor(dtype=jnp.float32, shape=(2,))
 
-    # Correct shape/dtype
     MyDataAuto(x=jnp.array([1.0, 2.0], dtype=jnp.float32))
 
-    # Incorrect shape
     with pytest.raises(ValueError, match="expected trailing shape"):
         MyDataAuto(x=jnp.array([1.0], dtype=jnp.float32))
 
@@ -41,10 +37,8 @@ def test_check_invariants_custom_validator():
     class ValidatedData(Xtructurable):
         val: FieldDescriptor.scalar(dtype=jnp.int32, validator=non_negative)
 
-    # Valid
     ValidatedData(val=jnp.array(5, dtype=jnp.int32))
 
-    # Invalid via custom validator
     with pytest.raises(ValueError, match="Must be non-negative"):
         ValidatedData(val=jnp.array(-1, dtype=jnp.int32))
 
@@ -68,7 +62,7 @@ def test_check_invariants_custom_validator_manual():
 
 def test_data_operations_validate_custom_constraints_before_returning():
     # Author: tinker495. A valid batch can yield an invalid slice or update; every
-    # data result must satisfy the same validator as ordinary construction (#53).
+    # data result must satisfy the same validator as ordinary construction.
     def nonnegative_total(value):
         if jnp.sum(value) < 0:
             raise ValueError("negative total")
