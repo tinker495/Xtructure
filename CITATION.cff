@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+type: software
+message: "If you use this software, please cite the version you used."
+title: "Xtructure: JAX-Optimized Data Structures"
+authors:
+  - family-names: Jung
+    given-names: Kyuseok
+abstract: "JAX data structures for batched operations, including a GPU priority queue and a hash table."
+version: "0.1.3"
+doi: "10.5281/zenodo.24442931"
+commit: "581597696f84cdf349b1da3ac1e5dd2021ca9158"
+date-released: "2026-11-22"
+license: MIT
+repository-code: "https://github.com/tinker495/Xtructure"
+url: "https://github.com/tinker495/Xtructure"
