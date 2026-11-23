@@ -111,8 +111,12 @@ def _compute_unique_mask_from_uint32eds(
     unfilled_flag = jnp.where(filled, jnp.uint32(0), jnp.uint32(1))
     indices = jnp.arange(batch_len, dtype=jnp.int32)
 
+    # Stability preserves ascending input index within each (flag, hash) group.
     sorted_flag, sorted_hash, sorted_idx = jax.lax.sort(
-        (unfilled_flag, row_hash, indices.astype(jnp.uint32)), dimension=0, num_keys=3
+        (unfilled_flag, row_hash, indices.astype(jnp.uint32)),
+        dimension=0,
+        num_keys=2,
+        is_stable=True,
     )
     new_group = jnp.concatenate(
         [
