@@ -101,8 +101,8 @@ def _compute_unique_mask_from_uint32eds(
         uint32eds = uint32eds[:, None]
 
     # Fast path: group by one 32-bit row hash (u32 keys sort ~L× cheaper than
-    # the full-row lexsort), then verify each row equals its group's first
-    # member. Row-equal rows always hash equal, so groups can only be too
+    # the full-row lexsort), then verify adjacent rows in each filled group.
+    # Row-equal rows always hash equal, so groups can only be too
     # coarse — and any coarseness is caught by the verification and routed to
     # the exact full-row unique. Dedup stays EXACT for adversarial inputs.
     if row_hash is None:
@@ -123,9 +123,13 @@ def _compute_unique_mask_from_uint32eds(
         ],
         axis=0,
     )
-    has_multi_filled_group = jnp.any(
-        jnp.logical_and(jnp.logical_not(new_group[1:]), sorted_flag[1:] == jnp.uint32(0))
-    )
+    same_filled_group = ~new_group[1:] & (sorted_flag[1:] == jnp.uint32(0))
+    has_multi_filled_group = jnp.any(same_filled_group)
+
+    def _has_collision() -> jax.Array:
+        sorted_rows = uint32eds[sorted_idx]
+        different_rows = jnp.any(sorted_rows[1:] != sorted_rows[:-1], axis=1)
+        return jnp.any(same_filled_group & different_rows)
 
     # Smaller shapes lost the saved scans to branch overhead on the GPU gate.
     use_singleton_shortcut = (
@@ -138,14 +142,8 @@ def _compute_unique_mask_from_uint32eds(
         def _grouped_result() -> tuple[jax.Array, jax.Array]:
             gid_sorted = jnp.cumsum(new_group.astype(jnp.int32)) - 1
             inverse_fast = jnp.zeros((batch_len,), dtype=jnp.int32).at[sorted_idx].set(gid_sorted)
-            first_member = (
-                jnp.full((batch_len,), batch_len, dtype=jnp.int32).at[inverse_fast].min(indices)
-            )
-            rep_rows = uint32eds[first_member[inverse_fast]]
-            row_matches_rep = jnp.all(uint32eds == rep_rows, axis=1)
-            hash_collision = jnp.any(jnp.logical_and(filled, jnp.logical_not(row_matches_rep)))
             inverse = jax.lax.cond(
-                hash_collision,
+                _has_collision(),
                 lambda: _unique_groups_exact(uint32eds, filled),
                 lambda: inverse_fast,
             )
@@ -161,14 +159,8 @@ def _compute_unique_mask_from_uint32eds(
     inverse_fast = jnp.zeros((batch_len,), dtype=jnp.int32).at[sorted_idx].set(gid_sorted)
 
     def _verified_inverse() -> jax.Array:
-        first_member = (
-            jnp.full((batch_len,), batch_len, dtype=jnp.int32).at[inverse_fast].min(indices)
-        )
-        rep_rows = uint32eds[first_member[inverse_fast]]
-        row_matches_rep = jnp.all(uint32eds == rep_rows, axis=1)
-        hash_collision = jnp.any(jnp.logical_and(filled, jnp.logical_not(row_matches_rep)))
         return jax.lax.cond(
-            hash_collision,
+            _has_collision(),
             lambda: _unique_groups_exact(uint32eds, filled),
             lambda: inverse_fast,
         )
