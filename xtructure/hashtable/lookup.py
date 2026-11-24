@@ -179,44 +179,15 @@ def _hashtable_lookup_parallel_internal(
             step_active[:, None],
         )
 
-        has_fp_match_row = jnp.any(fp_matches, axis=1)
-        first_match_slot = jnp.argmax(fp_matches, axis=1).astype(SLOT_IDX_DTYPE)
-        candidate_flat = bucket_indices * bucket_size_u32 + first_match_slot.astype(SIZE_DTYPE)
-
-        def _maybe_compare(has_match: jax.Array, flat: jax.Array, inp: Xtructurable) -> jax.Array:
-            return jax.lax.cond(
-                has_match,
-                lambda: jnp.asarray(table.table[flat] == inp, dtype=jnp.bool_),
-                lambda: jnp.bool_(False),
-            )
-
-        found_fast = jax.vmap(_maybe_compare)(
-            jnp.logical_and(step_active, has_fp_match_row), candidate_flat, inputs
-        )
-
-        other_fp_matches = jnp.logical_and(
-            fp_matches,
-            slot_offsets[None, :] != first_match_slot[:, None],
-        )
-        need_fallback = jnp.logical_and(~found_fast, jnp.any(other_fp_matches, axis=1))
-
-        # Unconditional: when need_fallback is all-False the masking below
-        # yields exactly (all-False, 0) — same as the old lax.cond false
-        # branch — and skipping the cond avoids a per-round D2H sync of its
-        # scalar predicate, which costs far more than this gather.
+        # Among occupied fingerprint matches, the first equal state owns the slot.
         bucket_vals = table.table[flat_indices]
         value_equals = jax.vmap(lambda bv, inp: jax.vmap(lambda s: s == inp)(bv))(
             bucket_vals, inputs
         )
-        match_found = jnp.logical_and(value_equals, other_fp_matches)
-        match_found = jnp.logical_and(match_found, need_fallback[:, None])
-        found_fb = jnp.any(match_found, axis=1)
-        idx_fb = jnp.argmax(match_found, axis=1).astype(SLOT_IDX_DTYPE)
-
-        new_founds_in_bucket = jnp.logical_or(found_fast, found_fb)
+        matches = jnp.logical_and(fp_matches, value_equals)
+        new_founds_in_bucket = jnp.any(matches, axis=1)
+        match_slot = jnp.argmax(matches, axis=1).astype(SLOT_IDX_DTYPE)
         founds = jnp.logical_or(founds, new_founds_in_bucket)
-
-        match_slot = jnp.where(found_fast, first_match_slot, idx_fb).astype(SLOT_IDX_DTYPE)
 
         bucket_full = filled_limits_u32 == bucket_size_u32
 
