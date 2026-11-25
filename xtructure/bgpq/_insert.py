@@ -193,7 +193,7 @@ def _insert_rows_wavefront(heap: Any, block_keys: jax.Array, block_vals: Xtructu
     on step j, so live rows sit at distinct depths (never the same node) and every
     node sees rows in order. A row sinks on steps [j, j + rounds], so at most
     ``rounds + 1`` rows are live at once: each step merges only that lane window,
-    and both loops stop at the last inserted / overflowing row.
+    and the final step is set by the depth of the last overflowing row's destination.
     """
     k = block_keys.shape[0]
 
@@ -263,11 +263,14 @@ def _insert_rows_wavefront(heap: Any, block_keys: jax.Array, block_vals: Xtructu
         )
 
     last_active = jnp.max(jnp.where(active, jnp.arange(k, dtype=jnp.int32), -1))
-    steps = jnp.where(last_active >= 0, last_active + 1 + rounds, 0)
-    added = jnp.sum(active, dtype=SIZE_DTYPE)
+    # Active destinations increase with lane. The last active lane starts last
+    # and travels deepest, one level per step starting at depth one.
+    last_1based = last[-1] + SIZE_DTYPE(1)
+    depth = (jnp.iinfo(SIZE_DTYPE).bits - 1 - jax.lax.clz(last_1based)).astype(jnp.int32)
+    steps = jnp.where(last_active >= 0, last_active + depth, 0)
     carry = (heap, keys, vals, _next(jnp.zeros((k,), SIZE_DTYPE), last), active)
     heap = jax.lax.fori_loop(0, steps, sink, carry)[0]
-    return heap.replace(heap_size=SIZE_DTYPE(heap.heap_size + added))
+    return heap.replace(heap_size=last[-1])
 
 
 @jax.jit
