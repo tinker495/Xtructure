@@ -290,13 +290,17 @@ def _hashtable_parallel_insert_internal(
     successful = jnp.logical_and(successful, index.slot_index < table.bucket_size)
     flat_indices = index.index * SIZE_DTYPE(table.bucket_size) + index.slot_index.astype(SIZE_DTYPE)
 
-    new_table = table.table.at[flat_indices].set_as_condition(successful, inputs)
+    # Both allocators assign distinct slots to successful writers.
+    new_table = table.table.at[flat_indices].set_as_condition(
+        successful, inputs, unique_indices=True
+    )
 
     new_fingerprints = _update_array_on_condition(
         table.fingerprints,
         flat_indices,
         successful,
         fingerprints.astype(jnp.uint32),
+        unique_indices=True,
     )
     new_bucket_fill_levels = table.bucket_fill_levels.at[index.index].add(successful)
     new_size = table.size + jnp.sum(successful, dtype=SIZE_DTYPE)
