@@ -12,11 +12,6 @@ from ..core.xtructure_numpy import where as xnp_where
 from ._merge import merge_sort_split
 
 
-def _sift_rounds(branch_size: int) -> int:
-    """Levels below the root on the deepest possible path for this heap."""
-    return max(int(branch_size).bit_length() - 1, 0)
-
-
 def _bgpq_delete_heapify_internal(heap: Any, empty: chex.Array):
     """Pop the root row and restore the heap property.
 
@@ -69,14 +64,7 @@ def _bgpq_delete_heapify_internal(heap: Any, empty: chex.Array):
         return max_c > min_lr
 
     def _round(var):
-        """One masked sift-down step.
-
-        The loop exits as soon as the heap property holds, which is data dependent,
-        so it ran as a while_loop with one host predicate readback per level. The
-        static bound is the deepest path for this branch_size; once `active` drops
-        the rows are written back to themselves and the node index stays put, so
-        the result is bit-identical to the early-exit loop.
-        """
+        """Sift one level while a child still violates the heap property."""
         heap, current_node, left_child, right_child, active = var
         active = jnp.logical_and(active, _violated(heap, current_node, left_child, right_child))
         max_left_child = heap.key_store[left_child][-1]
@@ -116,8 +104,10 @@ def _bgpq_delete_heapify_internal(heap: Any, empty: chex.Array):
     c = SIZE_DTYPE(0)
     left, right = _lr(c)
     var = (heap, c, left, right, jnp.logical_not(empty))
-    # Static trip count -> XLA while with a known trip count (no host readback).
-    var = jax.lax.fori_loop(0, _sift_rounds(heap.branch_size), lambda _, v: _round(v), var)
+    # After removing the tail, heap_size is the last live zero-based row index.
+    live_rows = jnp.asarray(heap.heap_size + 1, dtype=SIZE_DTYPE)
+    levels = (jnp.iinfo(SIZE_DTYPE).bits - 1 - jax.lax.clz(live_rows)).astype(jnp.int32)
+    var = jax.lax.fori_loop(0, levels, lambda _, v: _round(v), var)
     heap = var[0]
     return heap
 
