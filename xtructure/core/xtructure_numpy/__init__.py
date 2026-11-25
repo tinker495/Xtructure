@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import inspect
-from typing import Any, Iterable, Sequence, TypeVar, overload
+from typing import Any, Iterable, Sequence, SupportsIndex, TypeVar, overload
 
 import jax
 import jax.numpy as jnp
@@ -368,19 +368,20 @@ def take_along_axis(
 
 
 @overload
-def tile(A: _XtructureT, reps: int | Sequence[int]) -> _XtructureT:
+def tile(A: _XtructureT, reps: SupportsIndex | Sequence[SupportsIndex]) -> _XtructureT:
     ...
 
 
 @overload
-def tile(A: ArrayLike, reps: int | Sequence[int]) -> jax.Array:
+def tile(A: ArrayLike, reps: SupportsIndex | Sequence[SupportsIndex]) -> jax.Array:
     ...
 
 
-def tile(A: _XtructureT | ArrayLike, reps: int | Sequence[int]) -> _XtructureT | jax.Array:
+def tile(
+    A: _XtructureT | ArrayLike, reps: SupportsIndex | Sequence[SupportsIndex]
+) -> _XtructureT | jax.Array:
     if isinstance(A, Xtructurable):
-        reps_arg = reps if isinstance(reps, int) else tuple(reps)
-        return _dc.tile(A, reps_arg)
+        return _dc.tile(A, reps)
     return jnp.tile(A, reps)
 
 
