@@ -41,7 +41,7 @@ def _compile_field_setter(
         fn_name = "_compiled_condition_set"
         signature = (
             "def _compiled_condition_set("
-            "obj_instance, indices, condition, value_to_conditionally_set):"
+            "obj_instance, indices, condition, value_to_conditionally_set, unique_indices=False):"
         )
         value_var = "value_to_conditionally_set"
     else:
@@ -61,7 +61,9 @@ def _compile_field_setter(
 
             return _compiled_set
 
-        def _compiled_condition_set(obj_instance, indices, condition, value_to_conditionally_set):
+        def _compiled_condition_set(
+            obj_instance, indices, condition, value_to_conditionally_set, unique_indices=False
+        ):
             return cls()
 
         return _compiled_condition_set
@@ -72,8 +74,8 @@ def _compile_field_setter(
         if mode == "set":
             return f"current_{i}.at[indices].set(value_{i})"
         if plan.field_kind == "nested":
-            return f"current_{i}.at[indices].set_as_condition(condition, value_{i})"
-        return f"_UOC(current_{i}, indices, condition, value_{i})"
+            return f"current_{i}.at[indices].set_as_condition(condition, value_{i}, unique_indices=unique_indices)"
+        return f"_UOC(current_{i}, indices, condition, value_{i}, unique_indices=unique_indices)"
 
     lines = [
         signature,
@@ -112,7 +114,7 @@ class _Updater(Generic[T]):
         obj_instance: T,
         index: Any,
         compiled_set: Callable[[T, Any, Any], T],
-        compiled_set_as_condition: Callable[[T, Any, Any, Any], T],
+        compiled_set_as_condition: Callable[[T, Any, Any, Any, bool], T],
     ):
         self.obj_instance = obj_instance
         self.indices = index
@@ -122,7 +124,13 @@ class _Updater(Generic[T]):
     def set(self, values_to_set: Any) -> T:
         return self._set(self.obj_instance, self.indices, values_to_set)
 
-    def set_as_condition(self, condition: jnp.ndarray, value_to_conditionally_set: Any) -> T:
+    def set_as_condition(
+        self,
+        condition: jnp.ndarray,
+        value_to_conditionally_set: Any,
+        *,
+        unique_indices: bool = False,
+    ) -> T:
         """
         Sets parts of the fields of the dataclass instance based on a condition.
         This is an out-of-place update.
@@ -138,6 +146,8 @@ class _Updater(Generic[T]):
                                        - Otherwise (e.g., a scalar or a JAX array), this value is used
                                          for updating all applicable fields (it must be broadcast-compatible
                                          with the slice of each field).
+            unique_indices: True when every selected destination occurs at most once.
+                Masked-out indices may repeat.
         Returns:
             A new instance of the dataclass with updated fields.
         """
@@ -146,6 +156,7 @@ class _Updater(Generic[T]):
             self.indices,
             condition,
             value_to_conditionally_set,
+            unique_indices,
         )
 
 
@@ -156,7 +167,7 @@ class _AtIndexer(Generic[T]):
         self,
         obj_instance: T,
         compiled_set: Callable[[T, Any, Any], T],
-        compiled_set_as_condition: Callable[[T, Any, Any, Any], T],
+        compiled_set_as_condition: Callable[[T, Any, Any, Any, bool], T],
     ):
         self.obj_instance = obj_instance
         self._compiled_set = compiled_set
