@@ -15,6 +15,14 @@ from .hash_utils import get_new_idx_byterized, get_new_idx_byterized_batched
 from .types import BucketIdx, HashIdx, HashTableProbe
 
 
+def _first_matching_slot(matches: jax.Array, offsets: jax.Array) -> tuple[jax.Array, jax.Array]:
+    """Return existence and the first matching slot with a single reduction."""
+    width = matches.shape[-1]
+    first = jnp.min(jnp.where(matches, offsets.astype(SIZE_DTYPE), SIZE_DTYPE(width)), axis=-1)
+    found = first < width
+    return found, jnp.where(found, first, 0).astype(SLOT_IDX_DTYPE)
+
+
 def _hashtable_lookup_internal(
     table: Any,
     input: Xtructurable,
@@ -51,8 +59,7 @@ def _hashtable_lookup_internal(
 
         is_filled = slot_offsets < filled_limit
         fp_matches = jnp.logical_and(is_filled, stored_fps == input_fingerprint)
-        has_fp_match = jnp.any(fp_matches)
-        first_match_slot = jnp.argmax(fp_matches).astype(SLOT_IDX_DTYPE)
+        has_fp_match, first_match_slot = _first_matching_slot(fp_matches, slot_offsets)
         candidate_flat = bucket_idx * bucket_size_u32 + first_match_slot.astype(SIZE_DTYPE)
 
         def _compare_first() -> chex.Array:
@@ -75,9 +82,7 @@ def _hashtable_lookup_internal(
                 )
 
             slot_equals = jax.vmap(_check_slot)(slot_offsets, other_fp_matches)
-            found_in_bucket = jnp.any(slot_equals)
-            match_slot = jnp.argmax(slot_equals).astype(SLOT_IDX_DTYPE)
-            return found_in_bucket, match_slot
+            return _first_matching_slot(jnp.asarray(slot_equals), slot_offsets)
 
         found_fb, match_fb = jax.lax.cond(
             need_fallback,
@@ -179,8 +184,7 @@ def _hashtable_lookup_parallel_internal(
             step_active[:, None],
         )
 
-        has_fp_match_row = jnp.any(fp_matches, axis=1)
-        first_match_slot = jnp.argmax(fp_matches, axis=1).astype(SLOT_IDX_DTYPE)
+        has_fp_match_row, first_match_slot = _first_matching_slot(fp_matches, slot_offsets)
         candidate_flat = bucket_indices * bucket_size_u32 + first_match_slot.astype(SIZE_DTYPE)
 
         def _maybe_compare(has_match: jax.Array, flat: jax.Array, inp: Xtructurable) -> jax.Array:
@@ -210,8 +214,7 @@ def _hashtable_lookup_parallel_internal(
         )
         match_found = jnp.logical_and(value_equals, other_fp_matches)
         match_found = jnp.logical_and(match_found, need_fallback[:, None])
-        found_fb = jnp.any(match_found, axis=1)
-        idx_fb = jnp.argmax(match_found, axis=1).astype(SLOT_IDX_DTYPE)
+        found_fb, idx_fb = _first_matching_slot(match_found, slot_offsets)
 
         new_founds_in_bucket = jnp.logical_or(found_fast, found_fb)
         founds = jnp.logical_or(founds, new_founds_in_bucket)
