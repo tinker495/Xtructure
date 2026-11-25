@@ -100,10 +100,12 @@ def _bgpq_insert_heapify_internal(
     """
     is_full = heap.heap_size >= (heap.branch_size - 1)
 
-    # Worst-leaf argmax is a ~branch_size-element reduce; computing it always
-    # and selecting with where is cheaper than a lax.cond host predicate sync.
-    worst_leaf = jnp.argmax(heap.key_store[:, -1]).astype(SIZE_DTYPE)
-    last_node = jnp.where(is_full, worst_leaf, (heap.heap_size + 1).astype(SIZE_DTYPE))
+    # Only eviction needs to read the last key of every heap row.
+    last_node = jax.lax.cond(
+        is_full,
+        lambda: jnp.argmax(heap.key_store[:, -1]).astype(SIZE_DTYPE),
+        lambda: (heap.heap_size + 1).astype(SIZE_DTYPE),
+    )
 
     def insert_heapify(var):
         """One masked step down the root->last_node path.
