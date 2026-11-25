@@ -12,13 +12,11 @@ from .common import binary_search_partition
 BLOCK_SIZE = 64
 
 
-def _merge_interleaved_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref):
+def _merge_interleaved_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref, block_idx):
     """
     Pallas kernel that merges two sorted arrays in parallel using the
     Merge Path algorithm for block-level partitioning.
     """
-    block_idx = pl.program_id(axis=0)
-
     n, m = ak_ref.shape[0], bk_ref.shape[0]
     total_len = n + m
 
@@ -105,13 +103,42 @@ def _merge_interleaved_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_re
     jax.lax.while_loop(bk_loop_cond, bk_loop_body, initial_bk_loop_state)
 
 
+def _merge_ranked_tile(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref, block_idx):
+    """Each input lane finds its stable output rank in the other sorted run."""
+    n, m = ak_ref.shape[0], bk_ref.shape[0]
+    lane = block_idx * BLOCK_SIZE + jnp.arange(BLOCK_SIZE)
+    from_a = lane < n
+    valid = lane < n + m
+    index = jnp.where(from_a, lane, lane - n)
+    ak = pltriton.load(ak_ref.at[index], mask=from_a, other=0)
+    bk = pltriton.load(bk_ref.at[index], mask=~from_a & valid, other=0)
+    key = jnp.where(from_a, ak, bk)
+    low = jnp.zeros_like(lane)
+    high = jnp.where(from_a, m, n)
+    for _ in range(max(n, m).bit_length()):
+        mid = (low + high) // 2
+        searching = low < high
+        a = pltriton.load(ak_ref.at[mid], mask=~from_a & searching, other=0)
+        b = pltriton.load(bk_ref.at[mid], mask=from_a & searching, other=0)
+        # Equal A keys precede B keys. Within either run the input order survives.
+        advance = jnp.where(from_a, b < key, a <= key)
+        low = jnp.where(searching & advance, mid + 1, low)
+        high = jnp.where(searching & ~advance, mid, high)
+    pos = jnp.where(valid, index + low, n + m + lane)
+    pltriton.store(merged_keys_ref.at[pos], key.astype(merged_keys_ref.dtype), mask=valid)
+    pltriton.store(merged_indices_ref.at[pos], lane, mask=valid)
+
+
 def merge_parallel_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref):
+    block_idx = pl.program_id(0)
     n, m = ak_ref.shape[0], bk_ref.shape[0]
     if not n or not m:
-        return _merge_interleaved_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref)
+        return _merge_interleaved_kernel(
+            ak_ref, bk_ref, merged_keys_ref, merged_indices_ref, block_idx
+        )
 
     def concatenate(b_first):
-        lane = pl.program_id(0) * BLOCK_SIZE + jnp.arange(BLOCK_SIZE)
+        lane = block_idx * BLOCK_SIZE + jnp.arange(BLOCK_SIZE)
         valid = lane < n + m
         a_index = lane - b_first.astype(jnp.int32) * m
         b_index = lane - (~b_first).astype(jnp.int32) * n
@@ -124,7 +151,16 @@ def merge_parallel_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref):
         pltriton.store(merged_indices_ref.at[lane], indices, mask=valid)
 
     def merge(_):
-        _merge_interleaved_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref)
+        refs = (ak_ref, bk_ref, merged_keys_ref, merged_indices_ref, block_idx)
+        if max(n, m) <= 1024:
+            # NaNs sort last in BGPQ's stable input sort. Keep their merge policy.
+            jax.lax.cond(
+                jnp.isnan(ak_ref[n - 1]) | jnp.isnan(bk_ref[m - 1]),
+                lambda: _merge_interleaved_kernel(*refs),
+                lambda: _merge_ranked_tile(*refs),
+            )
+        else:
+            _merge_interleaved_kernel(*refs)
 
     # Only A-first concatenation permits equality, preserving stable ties.
     # These device-local branches avoid a host predicate readback.
