@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, List, TypeVar, Union
+from typing import Any, List, Sequence, SupportsIndex, TypeVar, Union
 
 import jax
 import jax.numpy as jnp
@@ -278,10 +278,8 @@ def take_along_axis(
     return dataclass_instance._map_data(_reorder_leaf)
 
 
-def tile(dataclass_instance: T, reps: Union[int, tuple[int, ...]]) -> T:
+def tile(dataclass_instance: T, reps: SupportsIndex | Sequence[SupportsIndex]) -> T:
     """Tile every field of the dataclass."""
-    if isinstance(reps, int):
-        reps = (reps,)
     return dataclass_instance._map_data(lambda x: jnp.tile(x, reps))
 
 

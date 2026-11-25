@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, TypeVar, Union
+from typing import TypeVar, Union
 
 import jax
 import jax.numpy as jnp
@@ -106,13 +106,13 @@ def where_no_broadcast(
 
 
 def update_on_condition(
-    dataclass_instance: Xtructurable,
+    dataclass_instance: T,
     indices: Union[jnp.ndarray, tuple[jnp.ndarray, ...]],
     condition: jnp.ndarray,
-    values_to_set: Union[Xtructurable, Any],
+    values_to_set: Union[T, ArrayLike],
     *,
     unique_indices: bool = False,
-) -> Xtructurable:
+) -> T:
     """Condtionally update fields with values, ensuring first True wins for duplicates.
 
     ``unique_indices=True`` promises no duplicate selected index and takes the
