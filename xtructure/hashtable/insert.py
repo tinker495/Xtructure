@@ -109,7 +109,6 @@ def _allocate_initial_bucket_slots(
     sorted_buckets, sorted_batch_idx = jax.lax.sort(
         (bucket_keys, batch_idx), dimension=0, is_stable=True
     )
-    valid_sorted = sorted_buckets != sentinel
     group_starts = jnp.concatenate(
         [jnp.array([True]), sorted_buckets[1:] != sorted_buckets[:-1]], axis=0
     )
@@ -118,14 +117,15 @@ def _allocate_initial_bucket_slots(
     group_start_positions = jax.lax.cummax(start_positions, axis=0)
     rank_in_bucket = sorted_positions - group_start_positions
 
-    safe_buckets = jnp.where(valid_sorted, sorted_buckets, jnp.uint32(table._capacity))
-    first_free = table.bucket_fill_levels[safe_buckets].astype(SIZE_DTYPE)
-    ranked_slots = first_free + rank_in_bucket
-    fits_sorted = jnp.logical_or(~valid_sorted, ranked_slots < table.bucket_size)
-    all_fit = jnp.all(fits_sorted)
-
-    slots = jnp.zeros((batch_size,), dtype=SIZE_DTYPE)
-    slots = slots.at[sorted_batch_idx].set(ranked_slots)
+    ranks = jnp.zeros_like(rank_in_bucket).at[sorted_batch_idx].set(rank_in_bucket)
+    # On a miss lookup already returned the first free slot. With a zero probe
+    # budget it never read the bucket, so consult its fill level in that case.
+    first_free = (
+        index.slot_index if table.max_probes != 0 else table.bucket_fill_levels[index.index]
+    )
+    first_free = jnp.where(updatable, first_free, table.bucket_fill_levels[table._capacity])
+    slots = first_free.astype(SIZE_DTYPE) + ranks
+    all_fit = jnp.all(~updatable | (slots < table.bucket_size))
     return slots, all_fit
 
 
