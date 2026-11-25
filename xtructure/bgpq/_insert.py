@@ -38,12 +38,10 @@ def _next(current, target):
     return next_index_1based - 1
 
 
-@jax.jit
-def _bgpq_merge_buffer_jit(heap: Any, blockk: jax.Array, blockv: Xtructurable):
-    n = int(heap.batch_size)
+def _merge_buffer(blockk, blockv, key_buffer, val_buffer, n):
     # Concatenate block and buffer
-    sorted_key, sorted_idx = merge_array_backend(blockk, heap.key_buffer)
-    val = xnp_concatenate([blockv, heap.val_buffer], axis=0)
+    sorted_key, sorted_idx = merge_array_backend(blockk, key_buffer)
+    val = xnp_concatenate([blockv, val_buffer], axis=0)
     val = val[sorted_idx]
 
     # Check for active elements (non-infinity)
@@ -60,8 +58,16 @@ def _bgpq_merge_buffer_jit(heap: Any, blockk: jax.Array, blockv: Xtructurable):
     val_buffer = xnp_where(buffer_overflow, val[n:], val[:-n])
 
     buffer_size = jnp.where(buffer_overflow, n_filled - n, n_filled).astype(SIZE_DTYPE)
+    return key_buffer, val_buffer, buffer_size, blockk, blockv, buffer_overflow
+
+
+@jax.jit
+def _bgpq_merge_buffer_jit(heap: Any, blockk: jax.Array, blockv: Xtructurable):
+    key_buffer, val_buffer, buffer_size, blockk, blockv, overflow = _merge_buffer(
+        blockk, blockv, heap.key_buffer, heap.val_buffer, int(heap.batch_size)
+    )
     heap = heap.replace(key_buffer=key_buffer, val_buffer=val_buffer, buffer_size=buffer_size)
-    return heap, blockk, blockv, buffer_overflow
+    return heap, blockk, blockv, overflow
 
 
 @partial(jax.jit, static_argnums=(2))
@@ -198,23 +204,46 @@ def _insert_rows_wavefront(heap: Any, block_keys: jax.Array, block_vals: Xtructu
     k = block_keys.shape[0]
 
     def root_and_buffer(j, carry):
-        heap, keys, vals, overflow = carry
-        root_key, root_val, key, val = merge_sort_split(
-            heap.key_store[0], heap.val_store[0], block_keys[j], block_vals[j]
+        root_key, root_val, buf_key, buf_val, _, keys, vals, overflow = carry
+        head, head_val, key, val = merge_sort_split(
+            root_key, root_val, block_keys[j], block_vals[j]
         )
-        merged, key, val, buffer_overflow = _bgpq_merge_buffer_jit(heap, key, val)
-        heap = heap.replace(
-            key_store=heap.key_store.at[0].set(root_key),
-            val_store=heap.val_store.at[0].set(root_val),
-            key_buffer=merged.key_buffer,
-            val_buffer=merged.val_buffer,
-            buffer_size=merged.buffer_size,
+        buf_key, buf_val, size, key, val, spilled = _merge_buffer(
+            key, val, buf_key, buf_val, heap.batch_size
         )
-        overflow = overflow.at[j].set(buffer_overflow)
-        return heap, keys.at[j].set(key), vals.at[j].set(val), overflow
+        # Match a store and reload of the root when input rows use wider dtypes.
+        root_key = head.astype(root_key.dtype)
+        root_val = jax.tree.map(lambda new, old: new.astype(old.dtype), head_val, root_val)
+        return (
+            root_key,
+            root_val,
+            buf_key,
+            buf_val,
+            size,
+            keys.at[j].set(key),
+            vals.at[j].set(val),
+            overflow.at[j].set(spilled),
+        )
 
-    heap, keys, vals, active = jax.lax.fori_loop(
-        0, n_rows, root_and_buffer, (heap, block_keys, block_vals, jnp.zeros((k,), jnp.bool_))
+    carry = (
+        heap.key_store[0],
+        heap.val_store[0],
+        heap.key_buffer,
+        heap.val_buffer,
+        heap.buffer_size,
+        block_keys,
+        block_vals,
+        jnp.zeros((k,), jnp.bool_),
+    )
+    root_key, root_val, buf_key, buf_val, size, keys, vals, active = jax.lax.fori_loop(
+        0, n_rows, root_and_buffer, carry
+    )
+    heap = heap.replace(
+        key_store=heap.key_store.at[0].set(root_key),
+        val_store=heap.val_store.at[0].set(root_val),
+        key_buffer=buf_key,
+        val_buffer=buf_val,
+        buffer_size=size,
     )
     rounds = _heapify_rounds(heap.branch_size)
     width = min(k, rounds + 1)
