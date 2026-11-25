@@ -8,7 +8,9 @@ Key features:
 - Maintains sorted order for efficient min/max operations
 """
 
+import dataclasses
 from functools import partial
+from typing import Any, Self
 
 import chex
 import jax
@@ -37,8 +39,8 @@ def _bgpq_build_jit(total_size, batch_size, value_class=Xtructurable, key_dtype=
         total_size // batch_size if total_size % batch_size == 0 else total_size // batch_size + 1
     )
     max_size = branch_size * batch_size
-    heap_size = SIZE_DTYPE(0)
-    buffer_size = SIZE_DTYPE(0)
+    heap_size = jnp.zeros((), dtype=SIZE_DTYPE)
+    buffer_size = jnp.zeros((), dtype=SIZE_DTYPE)
 
     # Initialize storage arrays with infinity for unused slots
     key_store = jnp.full((branch_size, batch_size), jnp.inf, dtype=key_dtype)
@@ -77,14 +79,18 @@ class BGPQ:
     """
 
     max_size: int
-    heap_size: int
-    buffer_size: int
+    heap_size: jax.Array
+    buffer_size: jax.Array
     branch_size: int
     batch_size: int
     key_store: jax.Array  # shape = (total_size, batch_size)
     val_store: Xtructurable  # shape = (total_size, batch_size, ...)
     key_buffer: jax.Array  # shape = (batch_size - 1,)
     val_buffer: Xtructurable  # shape = (batch_size - 1, ...)
+
+    def replace(self, **changes: Any) -> Self:
+        """Return a copy with the given fields replaced (bound by @base_dataclass at runtime)."""
+        return dataclasses.replace(self, **changes)
 
     @staticmethod
     def build(total_size, batch_size, value_class=Xtructurable, key_dtype=jnp.float16) -> "BGPQ":

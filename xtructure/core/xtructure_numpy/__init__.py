@@ -100,7 +100,29 @@ def concatenate(arrays, axis: int | None = 0, dtype: Any | None = None) -> Xtruc
     return jnp.concatenate(arrays_list, axis=axis, dtype=dtype)
 
 
-def pad(array, pad_width, mode: str | Any = "constant", **kwargs):
+@overload
+def pad(
+    array: _XtructureT,
+    pad_width: Any,
+    mode: str | Any = "constant",
+    **kwargs: Any,
+) -> _XtructureT:
+    ...
+
+
+@overload
+def pad(
+    array: ArrayLike,
+    pad_width: Any,
+    mode: str | Any = "constant",
+    **kwargs: Any,
+) -> jax.Array:
+    ...
+
+
+def pad(
+    array: _XtructureT | ArrayLike, pad_width: Any, mode: str | Any = "constant", **kwargs: Any
+) -> _XtructureT | jax.Array:
     if isinstance(array, Xtructurable):
         return _dc.pad(array, pad_width, mode=mode, **kwargs)
     return jnp.pad(array, pad_width, mode=mode, **kwargs)
@@ -345,9 +367,20 @@ def take_along_axis(
     return jnp.take_along_axis(arr, indices, axis=axis, **kwargs)
 
 
-def tile(A, reps):
+@overload
+def tile(A: _XtructureT, reps: int | Sequence[int]) -> _XtructureT:
+    ...
+
+
+@overload
+def tile(A: ArrayLike, reps: int | Sequence[int]) -> jax.Array:
+    ...
+
+
+def tile(A: _XtructureT | ArrayLike, reps: int | Sequence[int]) -> _XtructureT | jax.Array:
     if isinstance(A, Xtructurable):
-        return _dc.tile(A, reps)
+        reps_arg = reps if isinstance(reps, int) else tuple(reps)
+        return _dc.tile(A, reps_arg)
     return jnp.tile(A, reps)
 
 
@@ -383,9 +416,38 @@ def unique_mask(
     )
 
 
+@overload
 def update_on_condition(
-    dataclass_instance, indices, condition, values_to_set, *, unique_indices: bool = False
-):
+    dataclass_instance: _XtructureT,
+    indices: ArrayLike | tuple[ArrayLike, ...],
+    condition: ArrayLike,
+    values_to_set: _XtructureT | Any,
+    *,
+    unique_indices: bool = False,
+) -> _XtructureT:
+    ...
+
+
+@overload
+def update_on_condition(
+    dataclass_instance: ArrayLike,
+    indices: ArrayLike | tuple[ArrayLike, ...],
+    condition: ArrayLike,
+    values_to_set: ArrayLike | Any,
+    *,
+    unique_indices: bool = False,
+) -> jax.Array:
+    ...
+
+
+def update_on_condition(
+    dataclass_instance: _XtructureT | ArrayLike,
+    indices: Any,
+    condition: Any,
+    values_to_set: Any,
+    *,
+    unique_indices: bool = False,
+) -> _XtructureT | jax.Array:
     if isinstance(dataclass_instance, Xtructurable):
         if isinstance(values_to_set, Xtructurable):
             if jax.tree_util.tree_structure(values_to_set) != jax.tree_util.tree_structure(
@@ -404,7 +466,11 @@ def update_on_condition(
     if isinstance(values_to_set, Xtructurable):
         raise TypeError("values_to_set must not be an xtructure dataclass when updating an array.")
     return _update_array_on_condition(
-        dataclass_instance, indices, condition, values_to_set, unique_indices=unique_indices
+        jnp.asarray(dataclass_instance),
+        indices,
+        condition,
+        values_to_set,
+        unique_indices=unique_indices,
     )
 
 
