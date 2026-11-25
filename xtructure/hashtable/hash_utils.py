@@ -108,28 +108,19 @@ def _compute_unique_mask_from_uint32eds(
     if row_hash is None:
         row_hash = hash_fast_uint32ed_batched(uint32eds, _UNIQUE_HASH_SEED)
     row_hash = jnp.asarray(row_hash, dtype=jnp.uint32)
-    unfilled_flag = jnp.where(filled, jnp.uint32(0), jnp.uint32(1))
     indices = jnp.arange(batch_len, dtype=jnp.int32)
+    masked_hash = jnp.where(filled, row_hash, jnp.uint32(0xFFFFFFFF))
+    sorted_hash, sorted_idx = jax.lax.sort_key_val(masked_hash, indices, is_stable=True)
+    sorted_filled = filled[sorted_idx]
+    new_group = jnp.concatenate([jnp.array([True]), sorted_hash[1:] != sorted_hash[:-1]])
+    has_multi_filled_group = jnp.any(~new_group[1:] & (sorted_filled[1:] | sorted_filled[:-1]))
 
-    # Stability preserves ascending input index within each (flag, hash) group.
-    sorted_flag, sorted_hash, sorted_idx = jax.lax.sort(
-        (unfilled_flag, row_hash, indices.astype(jnp.uint32)),
-        dimension=0,
-        num_keys=2,
-        is_stable=True,
-    )
-    new_group = jnp.concatenate(
-        [
-            jnp.array([True]),
-            jnp.logical_or(
-                sorted_flag[1:] != sorted_flag[:-1], sorted_hash[1:] != sorted_hash[:-1]
-            ),
-        ],
-        axis=0,
-    )
-    has_multi_filled_group = jnp.any(
-        jnp.logical_and(jnp.logical_not(new_group[1:]), sorted_flag[1:] == jnp.uint32(0))
-    )
+    def group_ids():
+        # If padding shares UINT32_MAX with a live hash, at least two positions
+        # share a sort key, so all live dense ids are strictly below batch_len-1.
+        dense = jnp.cumsum(new_group.astype(jnp.int32)) - 1
+        gids = jnp.where(sorted_filled, dense, batch_len - 1)
+        return jnp.zeros((batch_len,), dtype=jnp.int32).at[sorted_idx].set(gids)
 
     # Smaller shapes lost the saved scans to branch overhead on the GPU gate.
     use_singleton_shortcut = (
@@ -140,8 +131,7 @@ def _compute_unique_mask_from_uint32eds(
     if use_singleton_shortcut:
 
         def _grouped_result() -> tuple[jax.Array, jax.Array]:
-            gid_sorted = jnp.cumsum(new_group.astype(jnp.int32)) - 1
-            inverse_fast = jnp.zeros((batch_len,), dtype=jnp.int32).at[sorted_idx].set(gid_sorted)
+            inverse_fast = group_ids()
             first_member = (
                 jnp.full((batch_len,), batch_len, dtype=jnp.int32).at[inverse_fast].min(indices)
             )
@@ -161,8 +151,7 @@ def _compute_unique_mask_from_uint32eds(
             lambda: (filled, jnp.where(filled, indices, 0)),
         )
 
-    gid_sorted = jnp.cumsum(new_group.astype(jnp.int32)) - 1
-    inverse_fast = jnp.zeros((batch_len,), dtype=jnp.int32).at[sorted_idx].set(gid_sorted)
+    inverse_fast = group_ids()
 
     def _verified_inverse() -> jax.Array:
         first_member = (
