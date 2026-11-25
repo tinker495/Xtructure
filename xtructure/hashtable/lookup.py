@@ -152,7 +152,8 @@ def _hashtable_lookup_parallel_internal(
     slot_offsets = jnp.arange(bucket_size, dtype=SLOT_IDX_DTYPE)
     slot_offsets_u32 = slot_offsets.astype(SIZE_DTYPE)
 
-    probes = jnp.zeros(inputs.shape, dtype=SIZE_DTYPE)
+    # Every lane still probing has visited the same number of buckets.
+    probes = SIZE_DTYPE(0)
 
     def _cond(val: tuple[BucketIdx, jax.Array, jax.Array, jax.Array]) -> jax.Array:
         _, _, _, active = val
@@ -222,7 +223,7 @@ def _hashtable_lookup_parallel_internal(
 
         out_slot = jnp.where(new_founds_in_bucket, match_slot, filled_limits).astype(SLOT_IDX_DTYPE)
 
-        probes = probes + step_active.astype(SIZE_DTYPE) * bucket_size_u32
+        probes = probes + bucket_size_u32
         under_limit_next = probes < max_probes_u32
 
         continue_mask = jnp.logical_and(
