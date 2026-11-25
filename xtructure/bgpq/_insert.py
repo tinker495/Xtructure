@@ -106,14 +106,7 @@ def _bgpq_insert_heapify_internal(
     last_node = jnp.where(is_full, worst_leaf, (heap.heap_size + 1).astype(SIZE_DTYPE))
 
     def insert_heapify(var):
-        """One masked step down the root->last_node path.
-
-        The path length is data dependent (log2 of the live branch count), but a
-        data-dependent while_loop pays a host predicate readback per level (~100us
-        of idle GPU for ~16us of merge work). The static bound is the deepest
-        possible path for this heap's branch_size; rounds past the real path write
-        every row/carry back to itself, so the result is bit-identical to the loop.
-        """
+        """Merge one interior row on the path to the destination."""
         heap, keys, values, n = var
         active = jnp.logical_and(active_insert, n < last_node)
         row_key = heap.key_store[n]
@@ -128,14 +121,12 @@ def _bgpq_insert_heapify_internal(
         return heap, keys, values, jnp.where(active, _next(n, last_node), n)
 
     active_insert = active
-    # Static trip count: lowers to an XLA while with a known trip count, which the
-    # GPU runtime executes without host predicate readbacks; keeps the HLO small
-    # (a Python unroll of the same rounds compiled ~45% slower at the benchmark
-    # scale for no runtime gain).
+    # Root and destination are handled outside this loop. An inactive row has no path.
+    one_based = last_node + SIZE_DTYPE(1)
+    depth = (jnp.iinfo(SIZE_DTYPE).bits - 1 - jax.lax.clz(one_based)).astype(jnp.int32)
+    rounds = jnp.where(active_insert, jnp.maximum(depth - 1, 0), 0)
     var = (heap, block_key, block_val, _next(SIZE_DTYPE(0), last_node))
-    heap, keys, values, _ = jax.lax.fori_loop(
-        0, _heapify_rounds(heap.branch_size), lambda _, v: insert_heapify(v), var
-    )
+    heap, keys, values, _ = jax.lax.fori_loop(0, rounds, lambda _, v: insert_heapify(v), var)
 
     def _update_node(heap, keys, values):
         # Merge with existing content (handles both Inf for new nodes and values for eviction)
