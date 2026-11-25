@@ -7,6 +7,8 @@ authors:
     given-names: Kyuseok
 abstract: "JAX data structures for batched operations, including a GPU priority queue and a hash table."
 version: "0.1.4"
+doi: "10.5281/zenodo.24535800"
+commit: "dba8b9b6d0103dca9bb274348dd5f195d6571b14"
 date-released: "2026-11-25"
 license: MIT
 repository-code: "https://github.com/tinker495/Xtructure"
