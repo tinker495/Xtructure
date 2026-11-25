@@ -217,9 +217,8 @@ def _unique_mask_uint32_lexsort(
         else:
             valid_key = key
         sort_keys.append(valid_key)
-    else:
-        sort_keys.append(jnp.arange(batch_len, dtype=jnp.int32))
 
+    # Stable lexsort preserves input order for equal hashes and equal optional keys.
     sort_keys.extend(reversed(hashes))
 
     perm = jnp.lexsort(sort_keys)
