@@ -17,6 +17,8 @@ from .lookup import (
     _hashtable_lookup_bucket_jit,
     _hashtable_lookup_jit,
     _hashtable_lookup_parallel_with_probe_jit,
+    _lookup_parallel_dedup_dispatch,
+    _lookup_parallel_dedup_with_probe_dispatch,
     _lookup_parallel_dispatch,
 )
 from .types import BucketIdx, HashIdx, HashTableProbe
@@ -116,6 +118,34 @@ class HashTable:
         redundant hash pass. Table behaviour is identical to :meth:`lookup_parallel`.
         """
         return _hashtable_lookup_parallel_with_probe_jit(self, inputs, filled)
+
+    def lookup_parallel_dedup(
+        self,
+        inputs: Xtructurable,
+        filled: chex.Array | bool | None = True,
+        unique_key: chex.Array | None = None,
+    ) -> tuple[HashIdx, chex.Array, jax.Array]:
+        """Deduplicate a batch and look up each unique representative in one hash pass.
+
+        Selects at most one active representative per distinct state (minimum
+        ``unique_key`` on ties, breaking ties by lowest index) and probes the
+        table only for ``unique_mask`` entries. Returns ``(idxs, found, unique_mask)``.
+        """
+        return _lookup_parallel_dedup_dispatch(self, inputs, filled, unique_key)
+
+    def lookup_parallel_dedup_with_probe(
+        self,
+        inputs: Xtructurable,
+        filled: chex.Array | bool | None = True,
+        unique_key: chex.Array | None = None,
+    ) -> tuple[HashIdx, chex.Array, jax.Array, HashTableProbe]:
+        """Single-pass dedup + parallel lookup that also returns :class:`HashTableProbe`.
+
+        Callers that subsequently call :meth:`parallel_insert` or
+        :meth:`HashTableProbe.unique_mask` can reuse the returned probe without
+        re-encoding or re-hashing ``inputs``. Returns ``(idxs, found, unique_mask, probe)``.
+        """
+        return _lookup_parallel_dedup_with_probe_dispatch(self, inputs, filled, unique_key)
 
     def insert(self, input: Xtructurable) -> tuple["HashTable", jax.Array, HashIdx]:
         return _hashtable_insert_jit(self, input)

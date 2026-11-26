@@ -91,10 +91,15 @@ print(f"HashTable: Single item inserted? {was_inserted}")
 *   **`HashTable.lookup(table, item_to_lookup)`**:
     *   Returns `idx` (a `HashIdx` object with `.index`) and `found` (boolean).
     *   If `found` is true, the item can be retrieved from `table.table[idx.index]`.
-*   **`HashTable.lookup_parallel(table, items_to_lookup)`**:
+*   **`HashTable.lookup_parallel(table, items_to_lookup, filled=True)`**:
     *   Performs parallel lookup for multiple items.
     *   `items_to_lookup`: A batch of items to look up.
     *   Returns `idxs` (a `HashIdx` object with `.index` for each item) and `founds` (boolean array indicating which items were found).
+*   **`HashTable.lookup_parallel_with_probe(table, items_to_lookup, filled=True)`**:
+    *   Same lookup semantics as `lookup_parallel`, and also returns a `HashTableProbe` (`index`, `step`, `uint32ed`, `fingerprint`) that `parallel_insert(..., probe=probe)` can reuse.
+*   **`HashTable.lookup_parallel_dedup(table, items_to_lookup, filled=True, unique_key=None)` / `lookup_parallel_dedup_with_probe(...)`**:
+    *   Combines intra-batch deduplication (preferring minimum `unique_key`, breaking ties by lowest index) with parallel lookup in one `uint32ed` + hash pass.
+    *   Returns `(idxs, founds, unique_mask)` (and `probe` in the `_with_probe` variant). `probe.unique_mask(key=..., filled=...)` reuses the probe's `uint32ed` rows across merged batches without re-encoding.
 *   **`HashTable.insert(table, item_to_insert)`**:
     *   Inserts a single item into the hash table.
     *   `item_to_insert`: The item to insert.

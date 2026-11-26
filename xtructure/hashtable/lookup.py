@@ -10,6 +10,9 @@ import jax.numpy as jnp
 
 from ..core.dtype_facts import SIZE_DTYPE
 from ..core.protocol import Xtructurable
+from ..core.xtructure_numpy.dataclass_ops.unique_ops import (
+    _unique_mask_from_uint32_rows,
+)
 from .constants import SLOT_IDX_DTYPE
 from .hash_utils import get_new_idx_byterized, get_new_idx_byterized_batched
 from .types import BucketIdx, HashIdx, HashTableProbe
@@ -339,6 +342,149 @@ def _hashtable_lookup_parallel_with_probe_jit(
     probe = get_new_idx_byterized_batched(inputs, table._capacity, table.seed)
     idx, found = _lookup_parallel_from_probe(table, inputs, probe, filled)
     return idx, found, probe
+
+
+def _normalize_unique_key(unique_key: chex.Array | None, batch_len: int) -> jax.Array | None:
+    if unique_key is None:
+        return None
+    key_arr = jnp.asarray(unique_key)
+    if key_arr.ndim == 0 or key_arr.shape[0] != batch_len:
+        raise ValueError(
+            f"unique_key length {key_arr.shape[0] if key_arr.ndim > 0 else 0} "
+            f"must match batch_len {batch_len}"
+        )
+    return key_arr
+
+
+def _empty_dedup_lookup_result(
+    batch_shape: tuple[int, ...],
+) -> tuple[HashIdx, chex.Array, jax.Array]:
+    return (
+        HashIdx(index=jnp.zeros(batch_shape, dtype=SIZE_DTYPE)),
+        jnp.zeros(batch_shape, dtype=jnp.bool_),
+        jnp.zeros(batch_shape, dtype=jnp.bool_),
+    )
+
+
+def _lookup_parallel_dedup_from_probe(
+    table: Any,
+    inputs: Xtructurable,
+    probe: HashTableProbe,
+    filled: chex.Array | None,
+    unique_key: chex.Array | None,
+) -> tuple[HashIdx, chex.Array, jax.Array]:
+    batch_shape = inputs.shape
+    batch_len = batch_shape[0]
+    key_arr = _normalize_unique_key(unique_key, batch_len)
+
+    if batch_len == 0:
+        return _empty_dedup_lookup_result(batch_shape)
+
+    def _run(filled_arr: jax.Array | None) -> tuple[HashIdx, chex.Array, jax.Array]:
+        unique_mask = _unique_mask_from_uint32_rows(probe.uint32ed, key_arr, filled_arr, batch_len)[
+            0
+        ]
+        idx, found = _lookup_parallel_from_probe(table, inputs, probe, unique_mask)
+        return idx, found, unique_mask
+
+    if filled is None:
+        return _run(None)
+
+    filled_arr = jnp.asarray(filled, dtype=jnp.bool_)
+    if filled_arr.ndim == 0:
+        return jax.lax.cond(
+            filled_arr,
+            lambda: _run(None),
+            lambda: _empty_dedup_lookup_result(batch_shape),
+        )
+    return _run(filled_arr)
+
+
+@jax.jit
+def _hashtable_lookup_parallel_dedup_all_jit(
+    table: Any, inputs: Xtructurable, unique_key: chex.Array | None = None
+) -> tuple[HashIdx, chex.Array, jax.Array]:
+    probe = get_new_idx_byterized_batched(inputs, table._capacity, table.seed)
+    return _lookup_parallel_dedup_from_probe(table, inputs, probe, None, unique_key)
+
+
+@jax.jit
+def _hashtable_lookup_parallel_dedup_jit(
+    table: Any,
+    inputs: Xtructurable,
+    filled: chex.Array,
+    unique_key: chex.Array | None = None,
+) -> tuple[HashIdx, chex.Array, jax.Array]:
+    probe = get_new_idx_byterized_batched(inputs, table._capacity, table.seed)
+    return _lookup_parallel_dedup_from_probe(table, inputs, probe, filled, unique_key)
+
+
+def _lookup_parallel_dedup_dispatch(
+    table: Any,
+    inputs: Xtructurable,
+    filled: chex.Array | bool | None,
+    unique_key: chex.Array | None = None,
+) -> tuple[HashIdx, chex.Array, jax.Array]:
+    """Deduplicate and look up in one hash pass; mirrors ``_lookup_parallel_dispatch``."""
+    _normalize_unique_key(unique_key, inputs.shape[0])
+    if filled is None:
+        return _hashtable_lookup_parallel_dedup_all_jit(table, inputs, unique_key)
+    if isinstance(filled, bool):
+        if filled:
+            return _hashtable_lookup_parallel_dedup_all_jit(table, inputs, unique_key)
+        return _empty_dedup_lookup_result(inputs.shape)
+    return _hashtable_lookup_parallel_dedup_jit(table, inputs, filled, unique_key)
+
+
+@jax.jit
+def _hashtable_lookup_parallel_dedup_with_probe_all_jit(
+    table: Any, inputs: Xtructurable, unique_key: chex.Array | None = None
+) -> tuple[HashIdx, chex.Array, jax.Array, HashTableProbe]:
+    probe = get_new_idx_byterized_batched(inputs, table._capacity, table.seed)
+    idx, found, unique_mask = _lookup_parallel_dedup_from_probe(
+        table, inputs, probe, None, unique_key
+    )
+    return idx, found, unique_mask, probe
+
+
+@jax.jit
+def _hashtable_lookup_parallel_dedup_with_probe_none_jit(
+    table: Any, inputs: Xtructurable
+) -> tuple[HashIdx, chex.Array, jax.Array, HashTableProbe]:
+    probe = get_new_idx_byterized_batched(inputs, table._capacity, table.seed)
+    idx, found, unique_mask = _empty_dedup_lookup_result(inputs.shape)
+    return idx, found, unique_mask, probe
+
+
+@jax.jit
+def _hashtable_lookup_parallel_dedup_with_probe_jit(
+    table: Any,
+    inputs: Xtructurable,
+    filled: chex.Array,
+    unique_key: chex.Array | None = None,
+) -> tuple[HashIdx, chex.Array, jax.Array, HashTableProbe]:
+    probe = get_new_idx_byterized_batched(inputs, table._capacity, table.seed)
+    idx, found, unique_mask = _lookup_parallel_dedup_from_probe(
+        table, inputs, probe, filled, unique_key
+    )
+    return idx, found, unique_mask, probe
+
+
+def _lookup_parallel_dedup_with_probe_dispatch(
+    table: Any,
+    inputs: Xtructurable,
+    filled: chex.Array | bool | None,
+    unique_key: chex.Array | None = None,
+) -> tuple[HashIdx, chex.Array, jax.Array, HashTableProbe]:
+    """Deduplicate, look up, and return the shared :class:`HashTableProbe`."""
+    _normalize_unique_key(unique_key, inputs.shape[0])
+    if filled is None:
+        return _hashtable_lookup_parallel_dedup_with_probe_all_jit(table, inputs, unique_key)
+    if isinstance(filled, bool):
+        if filled:
+            return _hashtable_lookup_parallel_dedup_with_probe_all_jit(table, inputs, unique_key)
+        return _hashtable_lookup_parallel_dedup_with_probe_none_jit(table, inputs)
+    return _hashtable_lookup_parallel_dedup_with_probe_jit(table, inputs, filled, unique_key)
 
 
 @jax.jit
