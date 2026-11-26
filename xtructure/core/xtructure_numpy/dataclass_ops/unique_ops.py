@@ -208,21 +208,19 @@ def _unique_mask_uint32_lexsort(
             max_val = jnp.array(jnp.iinfo(dtype).max, dtype=dtype)
             hashes[i] = jnp.where(filled, hashes[i], max_val)
 
-    sort_keys = []
-
+    # lax.sort compares keys most-significant first. Return the sorted hash
+    # columns with the permutation so group boundaries can read them directly.
+    sort_keys = list(hashes)
     if key is not None:
-        if filled is not None:
-            inf_fill = jnp.array(jnp.inf, dtype=key.dtype)
-            valid_key = jnp.where(filled, key, inf_fill)
-        else:
-            valid_key = key
-        sort_keys.append(valid_key)
-
-    # Stable lexsort preserves input order for equal hashes and equal optional keys.
-    sort_keys.extend(reversed(hashes))
-
-    perm = jnp.lexsort(sort_keys)
-    sorted_hashes = [h[perm] for h in hashes]
+        priority = (
+            jnp.where(filled, key, jnp.array(jnp.inf, key.dtype)) if filled is not None else key
+        )
+        sort_keys.append(priority)
+    sorted_columns = jax.lax.sort(
+        (*sort_keys, jnp.arange(batch_len)), dimension=0, num_keys=len(sort_keys), is_stable=True
+    )
+    sorted_hashes = sorted_columns[: len(hashes)]
+    perm = sorted_columns[-1]
 
     diffs = [h[1:] != h[:-1] for h in sorted_hashes]
     is_diff = diffs[0]
