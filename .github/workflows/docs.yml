@@ -3,22 +3,17 @@ name: Deploy Sphinx documentation to Pages
 on:
   push:
     branches:
-      - main  # 또는 master, 기본 브랜치 이름에 맞게 수정하세요
-
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+      - main
 
 concurrency:
   group: "pages"
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  build:
+    permissions:
+      contents: read
+      pages: read
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -46,6 +41,16 @@ jobs:
         with:
           path: 'docs/_build/html'
 
+  deploy:
+    needs: build
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
