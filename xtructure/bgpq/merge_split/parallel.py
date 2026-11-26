@@ -10,9 +10,10 @@ from xtructure.core.xtructure_numpy.array_ops import _where_no_broadcast
 from .common import binary_search_partition
 
 BLOCK_SIZE = 64
+RANKED_MERGE_MAX_ROW = 1024
 
 
-def _merge_interleaved_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref, block_idx):
+def _merge_interleaved_kernel(ak_ref, bk_ref, write, block_idx):
     """
     Pallas kernel that merges two sorted arrays in parallel using the
     Merge Path algorithm for block-level partitioning.
@@ -50,9 +51,7 @@ def _merge_interleaved_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_re
         idx_false = jnp.asarray(n + idx_b, dtype=idx_dtype)
         idx_to_store = _where_no_broadcast(cond, idx_true, idx_false)
 
-        key_casted = key_to_store.astype(merged_keys_ref.dtype)
-        merged_keys_ref[out_ptr] = key_casted
-        merged_indices_ref[out_ptr] = idx_to_store
+        write(out_ptr, key_to_store, idx_to_store, jnp.bool_(True))
 
         next_idx_a = _where_no_broadcast(
             cond,
@@ -79,9 +78,7 @@ def _merge_interleaved_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_re
     def ak_loop_body(state):
         current_idx_a, current_out_ptr = state
         val_to_store = ak_ref[current_idx_a]
-        val_casted = val_to_store.astype(merged_keys_ref.dtype)
-        merged_keys_ref[current_out_ptr] = val_casted
-        merged_indices_ref[current_out_ptr] = current_idx_a
+        write(current_out_ptr, val_to_store, current_idx_a, jnp.bool_(True))
         return current_idx_a + 1, current_out_ptr + 1
 
     idx_a, out_ptr = jax.lax.while_loop(ak_loop_cond, ak_loop_body, initial_ak_loop_state)
@@ -95,15 +92,13 @@ def _merge_interleaved_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_re
     def bk_loop_body(state):
         current_idx_b, current_out_ptr = state
         val_to_store = bk_ref[current_idx_b]
-        val_casted = val_to_store.astype(merged_keys_ref.dtype)
-        merged_keys_ref[current_out_ptr] = val_casted
-        merged_indices_ref[current_out_ptr] = n + current_idx_b
+        write(current_out_ptr, val_to_store, n + current_idx_b, jnp.bool_(True))
         return current_idx_b + 1, current_out_ptr + 1
 
     jax.lax.while_loop(bk_loop_cond, bk_loop_body, initial_bk_loop_state)
 
 
-def _merge_ranked_tile(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref, block_idx):
+def _merge_ranked_tile(ak_ref, bk_ref, write, block_idx):
     """Each input lane finds its stable output rank in the other sorted run."""
     n, m = ak_ref.shape[0], bk_ref.shape[0]
     lane = block_idx * BLOCK_SIZE + jnp.arange(BLOCK_SIZE)
@@ -125,17 +120,14 @@ def _merge_ranked_tile(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref, bloc
         low = jnp.where(searching & advance, mid + 1, low)
         high = jnp.where(searching & ~advance, mid, high)
     pos = jnp.where(valid, index + low, n + m + lane)
-    pltriton.store(merged_keys_ref.at[pos], key.astype(merged_keys_ref.dtype), mask=valid)
-    pltriton.store(merged_indices_ref.at[pos], lane, mask=valid)
+    write(pos, key, lane, valid)
 
 
-def merge_parallel_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref):
+def _merge_tile(ak_ref, bk_ref, write):
     block_idx = pl.program_id(0)
     n, m = ak_ref.shape[0], bk_ref.shape[0]
     if not n or not m:
-        return _merge_interleaved_kernel(
-            ak_ref, bk_ref, merged_keys_ref, merged_indices_ref, block_idx
-        )
+        return _merge_interleaved_kernel(ak_ref, bk_ref, write, block_idx)
 
     def concatenate(b_first):
         lane = block_idx * BLOCK_SIZE + jnp.arange(BLOCK_SIZE)
@@ -145,14 +137,13 @@ def merge_parallel_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref):
         from_a = jnp.where(b_first, lane >= m, lane < n)
         a_value = pltriton.load(ak_ref.at[a_index], mask=valid & from_a, other=0)
         b_value = pltriton.load(bk_ref.at[b_index], mask=valid & ~from_a, other=0)
-        keys = jnp.where(from_a, a_value, b_value).astype(merged_keys_ref.dtype)
+        keys = jnp.where(from_a, a_value, b_value)
         indices = jnp.where(from_a, a_index, n + b_index).astype(jnp.int32)
-        pltriton.store(merged_keys_ref.at[lane], keys, mask=valid)
-        pltriton.store(merged_indices_ref.at[lane], indices, mask=valid)
+        write(lane, keys, indices, valid)
 
     def merge(_):
-        refs = (ak_ref, bk_ref, merged_keys_ref, merged_indices_ref, block_idx)
-        if max(n, m) <= 1024:
+        refs = (ak_ref, bk_ref, write, block_idx)
+        if max(n, m) <= RANKED_MERGE_MAX_ROW:
             # NaNs sort last in BGPQ's stable input sort. Keep their merge policy.
             jax.lax.cond(
                 jnp.isnan(ak_ref[n - 1]) | jnp.isnan(bk_ref[m - 1]),
@@ -167,6 +158,56 @@ def merge_parallel_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref):
     a_first = ak_ref[n - 1] <= bk_ref[0]
     b_first = bk_ref[m - 1] < ak_ref[0]
     jax.lax.cond(a_first | b_first, concatenate, merge, operand=b_first)
+
+
+def merge_parallel_kernel(ak_ref, bk_ref, merged_keys_ref, merged_indices_ref):
+    def write(dest, key, source, valid):
+        pltriton.store(merged_keys_ref.at[dest], key.astype(merged_keys_ref.dtype), mask=valid)
+        pltriton.store(merged_indices_ref.at[dest], source, mask=valid)
+
+    _merge_tile(ak_ref, bk_ref, write)
+
+
+def merge_payload_kernel(
+    ak_ref, av_refs, bk_ref, bv_refs, head_keys, head_values, tail_keys, tail_values
+):
+    """Write each stable merge result straight to its half of the queue."""
+    n, m = ak_ref.shape[0], bk_ref.shape[0]
+
+    def write(dest, key, source, valid):
+        in_head = dest < n
+        # Keep masked-out writes outside the destination row, including under vmap.
+        tail_dest = jnp.where(in_head, m + dest, dest - n)
+
+        def store_pair(head, tail, value):
+            pltriton.store(head.at[dest], value, mask=valid & in_head)
+            pltriton.store(tail.at[tail_dest], value, mask=valid & ~in_head)
+
+        store_pair(head_keys, tail_keys, key.astype(head_keys.dtype))
+        from_a = source < n
+        for a, b, head, tail in zip(av_refs, bv_refs, head_values, tail_values):
+            a_value = pltriton.load(
+                a.at[jnp.where(from_a, source, 0)], mask=valid & from_a, other=0
+            )
+            b_value = pltriton.load(
+                b.at[jnp.where(from_a, 0, source - n)], mask=valid & ~from_a, other=0
+            )
+            store_pair(head, tail, jnp.where(from_a, a_value, b_value))
+
+    _merge_tile(ak_ref, bk_ref, write)
+
+
+def merge_scalar_payloads(ak, av, bk, bv):
+    a_leaves, tree = jax.tree.flatten(av)
+    b_leaves = jax.tree.leaves(bv)
+    head_key, tail_key = (jax.ShapeDtypeStruct(k.shape, k.dtype) for k in (ak, bk))
+    head = tuple(jax.ShapeDtypeStruct(v.shape, v.dtype) for v in a_leaves)
+    tail = tuple(jax.ShapeDtypeStruct(v.shape, v.dtype) for v in b_leaves)
+    grid = (pl.cdiv(ak.shape[0] + bk.shape[0], BLOCK_SIZE),)
+    head_key, head, tail_key, tail = pl.pallas_call(
+        merge_payload_kernel, grid=grid, out_shape=(head_key, head, tail_key, tail)
+    )(ak, tuple(a_leaves), bk, tuple(b_leaves))
+    return head_key, jax.tree.unflatten(tree, head), tail_key, jax.tree.unflatten(tree, tail)
 
 
 @jax.jit
