@@ -19,6 +19,7 @@ forbidden so hash semantics stay ``cls``-agnostic.
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import jax
@@ -148,14 +149,16 @@ def _scalar_pack(staged: jnp.ndarray, mode: str) -> jnp.ndarray:
 
 def _row_pack(staged: jnp.ndarray, mode: str, batch_len: int) -> jnp.ndarray:
     """Pack a staged batched array into a ``(batch_len, lanes)`` ``uint32`` array."""
+    cols = math.prod(staged.shape[1:])
+    flat = staged.reshape(batch_len, cols)
     if mode == "passthrough":
-        return staged.reshape(batch_len, -1)
+        return flat
     if mode == "byte_pack":
-        return pack_uint8_rows_to_uint32(staged.reshape(batch_len, -1))
+        return pack_uint8_rows_to_uint32(flat)
     if mode == "u16_pack":
-        return pack_uint16_rows_to_uint32(staged.reshape(batch_len, -1))
+        return pack_uint16_rows_to_uint32(flat)
     # u64_split
-    return split_uint64_rows_to_uint32(staged.reshape(batch_len, -1))
+    return split_uint64_rows_to_uint32(flat)
 
 
 def leaf_to_uint32(leaf: Any) -> jnp.ndarray:
@@ -185,8 +188,9 @@ def pack_uint8_rows_to_uint32(rows: Any) -> jnp.ndarray:
         rows = jnp.pad(rows, ((0, 0), (0, pad_len)), mode="constant", constant_values=0)
     if rows.shape[1] == 0:
         return jnp.zeros((batch_len, 0), dtype=jnp.uint32)
-    chunks = rows.reshape(batch_len, -1, 4)
-    return jax.lax.bitcast_convert_type(chunks, jnp.uint32).reshape(batch_len, -1)
+    lanes = rows.shape[1] // 4
+    chunks = rows.reshape(batch_len, lanes, 4)
+    return jax.lax.bitcast_convert_type(chunks, jnp.uint32).reshape(batch_len, lanes)
 
 
 def pack_uint16_rows_to_uint32(rows: Any) -> jnp.ndarray:
@@ -198,7 +202,7 @@ def pack_uint16_rows_to_uint32(rows: Any) -> jnp.ndarray:
         rows = jnp.pad(rows, ((0, 0), (0, pad_len)), mode="constant", constant_values=0)
     if rows.shape[1] == 0:
         return jnp.zeros((batch_len, 0), dtype=jnp.uint32)
-    pairs = rows.reshape(batch_len, -1, 2)
+    pairs = rows.reshape(batch_len, rows.shape[1] // 2, 2)
     lo = pairs[:, :, 0].astype(jnp.uint32)
     hi = pairs[:, :, 1].astype(jnp.uint32)
     return lo | (hi << jnp.uint32(16))
@@ -209,7 +213,7 @@ def split_uint64_rows_to_uint32(rows: Any) -> jnp.ndarray:
     rows = jnp.asarray(rows, dtype=jnp.uint64)
     lo = (rows & jnp.uint64(0xFFFFFFFF)).astype(jnp.uint32)
     hi = (rows >> jnp.uint64(32)).astype(jnp.uint32)
-    return jnp.stack((lo, hi), axis=-1).reshape(rows.shape[0], -1)
+    return jnp.stack((lo, hi), axis=-1).reshape(rows.shape[0], rows.shape[1] * 2)
 
 
 def batched_leaf_to_uint32_rows(leaf: Any, batch_len: int) -> jnp.ndarray:

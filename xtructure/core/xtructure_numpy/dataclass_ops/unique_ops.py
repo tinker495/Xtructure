@@ -186,34 +186,33 @@ def _unique_mask_exact(
     return returns
 
 
-def _unique_mask_uint32_lexsort(
+def _unique_mask_from_uint32_rows(
     keys_flat: jnp.ndarray,
     key: jnp.ndarray | None,
     filled: jnp.ndarray | None,
     batch_len: int,
-    return_index: bool,
-    return_inverse: bool,
-) -> Union[jnp.ndarray, tuple]:
-    """Uint32 Value Encoding path backed by lexsort.
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Core uint32 lexsort dedup returning ``(final_mask, perm, mask_sorted)``."""
+    if batch_len == 0:
+        empty_bool = jnp.zeros((0,), dtype=jnp.bool_)
+        empty_idx = jnp.zeros((0,), dtype=jnp.int32)
+        return empty_bool, empty_idx, empty_bool
 
-    This is the common default-key implementation. It keeps narrow and wide
-    uint32 encodings on one path, avoiding narrow ``jnp.unique`` lowering
-    variance while still hashing wider rows down to a fixed-width sort key.
-    """
     hashes = _hash_to_wide(keys_flat)
+    filled_mask = None if filled is None else jnp.asarray(filled, dtype=jnp.bool_)
 
-    if filled is not None:
+    if filled_mask is not None:
         for i in range(len(hashes)):
             dtype = hashes[i].dtype
             max_val = jnp.array(jnp.iinfo(dtype).max, dtype=dtype)
-            hashes[i] = jnp.where(filled, hashes[i], max_val)
+            hashes[i] = jnp.where(filled_mask, hashes[i], max_val)
 
     sort_keys = []
 
     if key is not None:
-        if filled is not None:
+        if filled_mask is not None:
             inf_fill = jnp.array(jnp.inf, dtype=key.dtype)
-            valid_key = jnp.where(filled, key, inf_fill)
+            valid_key = jnp.where(filled_mask, key, inf_fill)
         else:
             valid_key = key
         sort_keys.append(valid_key)
@@ -229,13 +228,49 @@ def _unique_mask_uint32_lexsort(
     for d in diffs[1:]:
         is_diff = jnp.logical_or(is_diff, d)
 
-    mask_sorted = jnp.concatenate([jnp.array([True]), is_diff])
+    run_start = jnp.concatenate([jnp.array([True]), is_diff])
 
-    if filled is not None:
-        is_valid_sorted = filled[perm]
-        mask_sorted = jnp.logical_and(mask_sorted, is_valid_sorted)
+    if filled_mask is not None:
+        # Inactive rows map to the maximum unsigned hash tuple and sort into the
+        # final hash run; selecting first_valid_last keeps them from suppressing
+        # a live all-ones hash group with +inf or NaN key.
+        is_valid_sorted = filled_mask[perm]
+        iota = jnp.arange(batch_len, dtype=jnp.int32)
+        last_run_start = jnp.max(jnp.where(run_start, iota, 0))
+        in_last_run = iota >= last_run_start
+        first_valid_last = jnp.min(jnp.where(in_last_run & is_valid_sorted, iota, batch_len))
+        mask_sorted = jnp.where(
+            in_last_run,
+            iota == first_valid_last,
+            jnp.logical_and(run_start, is_valid_sorted),
+        )
+    else:
+        mask_sorted = run_start
 
     final_mask = jnp.zeros(batch_len, dtype=jnp.bool_).at[perm].set(mask_sorted)
+    return final_mask, perm, mask_sorted
+
+
+def _unique_mask_uint32_lexsort(
+    keys_flat: jnp.ndarray,
+    key: jnp.ndarray | None,
+    filled: jnp.ndarray | None,
+    batch_len: int,
+    return_index: bool,
+    return_inverse: bool,
+) -> Union[jnp.ndarray, tuple]:
+    """Uint32 Value Encoding path backed by lexsort.
+
+    This is the common default-key implementation. It keeps narrow and wide
+    uint32 encodings on one path, avoiding narrow ``jnp.unique`` lowering
+    variance while still hashing wider rows down to a fixed-width sort key.
+    """
+    final_mask, perm, mask_sorted = _unique_mask_from_uint32_rows(
+        keys_flat=keys_flat,
+        key=key,
+        filled=filled,
+        batch_len=batch_len,
+    )
 
     if not return_index and not return_inverse:
         return final_mask

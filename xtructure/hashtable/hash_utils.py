@@ -54,7 +54,9 @@ def _unique_mask_from_group_ids(
         min_keys = (
             jnp.full((batch_len,), jnp.inf, dtype=masked_key.dtype).at[inverse].min(masked_key)
         )
-        candidate_indices = jnp.where(masked_key == min_keys[inverse], indices, batch_len)
+        candidate_indices = jnp.where(
+            jnp.logical_and(filled, masked_key == min_keys[inverse]), indices, batch_len
+        )
     else:
         candidate_indices = jnp.where(filled, indices, batch_len)
 
