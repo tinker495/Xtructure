@@ -35,3 +35,12 @@ repos:
       - id: isort
         name: Format imports
         args: [--profile=black]
+
+  - repo: local
+    hooks:
+      - id: uv-lock-check
+        name: Verify uv.lock matches pyproject.toml
+        entry: uv lock --check
+        language: system
+        pass_filenames: false
+        files: ^(pyproject\.toml|uv\.lock)$

@@ -15,9 +15,9 @@ The following data structures are benchmarked:
 Ensure you have the necessary libraries installed with uv:
 
 ```bash
-uv add "xtructure[benchmark] @ git+https://github.com/tinker495/xtructure.git" "jax[gpu]"
+uv add "xtructure @ git+https://github.com/tinker495/Xtructure.git@main"
 ```
-*Note: Please follow the official JAX documentation for detailed instructions on installing for your specific CUDA version.*
+Linux installations automatically pull `jax[cuda]`, `tyro`, and `matplotlib` by default.
 
 ## Usage
 
