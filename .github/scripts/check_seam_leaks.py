@@ -86,10 +86,32 @@ def _has_private_segment(dotted_name: str) -> bool:
     return any(_is_private_name(part) for part in dotted_name.split(".") if part)
 
 
+def _display_path(root: Path, path: Path) -> str:
+    try:
+        return path.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def _infer_source_top(root: Path, path: Path) -> str:
+    try:
+        rel = path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return "xtructure_benchmarks"
+    if rel.parts and rel.parts[0] in SOURCE_ROOTS:
+        return rel.parts[0]
+    return "xtructure_benchmarks"
+
+
+def _is_submodule(root: Path, dotted_name: str) -> bool:
+    target = root.joinpath(*dotted_name.split("."))
+    return target.is_dir() or target.with_suffix(".py").is_file()
+
+
 def check_file_for_leaks(root: Path, path: Path, source_top: str) -> list[SeamViolation]:
     source = path.read_text(encoding="utf-8")
     tree = ast.parse(source, filename=str(path))
-    rel_path = path.relative_to(root).as_posix()
+    rel_path = _display_path(root, path)
     violations: list[SeamViolation] = []
 
     for node in ast.walk(tree):
@@ -168,10 +190,30 @@ def check_file_for_leaks(root: Path, path: Path, source_top: str) -> list[SeamVi
                     )
                 )
                 continue
-            imports_internal_child = mod == "xtructure" and any(
-                alias.name in UNAPPROVED_XTRUCTURE_CHILDREN for alias in node.names
-            )
-            if mod not in SANCTIONED_XTRUCTURE_SEAMS or imports_internal_child:
+            invalid_targets: list[str] = []
+            for alias in node.names:
+                if alias.name == "*":
+                    if mod not in SANCTIONED_XTRUCTURE_SEAMS and mod not in invalid_targets:
+                        invalid_targets.append(mod)
+                    continue
+                candidate = f"{mod}.{alias.name}"
+                is_unapproved_child = (
+                    mod == "xtructure" and alias.name in UNAPPROVED_XTRUCTURE_CHILDREN
+                )
+                if is_unapproved_child:
+                    if candidate not in invalid_targets:
+                        invalid_targets.append(candidate)
+                    continue
+                if candidate in SANCTIONED_XTRUCTURE_SEAMS:
+                    continue
+                if _is_submodule(root, candidate):
+                    if candidate not in invalid_targets:
+                        invalid_targets.append(candidate)
+                    continue
+                if mod not in SANCTIONED_XTRUCTURE_SEAMS and mod not in invalid_targets:
+                    invalid_targets.append(mod)
+
+            for invalid_target in invalid_targets:
                 violations.append(
                     SeamViolation(
                         path=rel_path,
@@ -179,8 +221,8 @@ def check_file_for_leaks(root: Path, path: Path, source_top: str) -> list[SeamVi
                         kind="internal-cross-package-seam",
                         raw_import=raw,
                         reason=(
-                            f"Unsanctioned internal seam `{mod}` imported from `xtructure`; "
-                            "expose it on the public `xtructure` seam instead."
+                            f"Unsanctioned internal seam `{invalid_target}` imported from "
+                            "`xtructure`; expose it on the public `xtructure` seam instead."
                         ),
                     )
                 )
@@ -190,21 +232,40 @@ def check_file_for_leaks(root: Path, path: Path, source_top: str) -> list[SeamVi
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", default=".", help="Repository root (default: current directory)")
+    parser.add_argument(
+        "--check-file",
+        type=Path,
+        default=None,
+        help="Check a single Python file path instead of scanning the repository",
+    )
+    parser.add_argument(
+        "--source-top",
+        choices=SOURCE_ROOTS,
+        default=None,
+        help="Caller top-level package for --check-file (default: inferred from file path)",
+    )
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
     args = parser.parse_args()
 
     root = Path(args.root).resolve()
-    files = iter_source_files(root)
     violations: list[SeamViolation] = []
-    for source_top, path in files:
-        violations.extend(check_file_for_leaks(root, path, source_top))
+    if args.check_file is not None:
+        target_file = args.check_file.resolve()
+        files_checked = 1
+        source_top = args.source_top or _infer_source_top(root, target_file)
+        violations.extend(check_file_for_leaks(root, target_file, source_top))
+    else:
+        files = iter_source_files(root)
+        files_checked = len(files)
+        for source_top, path in files:
+            violations.extend(check_file_for_leaks(root, path, source_top))
 
     if args.json:
         print(
             json.dumps(
                 {
                     "failed": bool(violations),
-                    "files_checked": len(files),
+                    "files_checked": files_checked,
                     "violation_count": len(violations),
                     "violations": [v.to_dict() for v in violations],
                 },
@@ -212,7 +273,7 @@ def main() -> int:
             )
         )
     else:
-        print(f"Files checked: {len(files)}, Seam violations: {len(violations)}")
+        print(f"Files checked: {files_checked}, Seam violations: {len(violations)}")
         for v in violations:
             print(f"  {v.path}:{v.lineno} [{v.kind}] {v.raw_import}\n    -> {v.reason}")
     return 1 if violations else 0
