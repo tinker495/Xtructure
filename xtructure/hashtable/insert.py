@@ -17,46 +17,12 @@ from ..core.xtructure_numpy.array_ops import (
 )
 from .constants import SLOT_IDX_DTYPE
 from .hash_utils import (
+    _check_probe_matches_inputs,
     _compute_unique_mask_from_uint32eds,
     get_new_idx_byterized_batched,
 )
 from .lookup import _hashtable_lookup_bucket_jit, _hashtable_lookup_parallel_internal
 from .types import BucketIdx, HashIdx, HashTableProbe
-
-
-def _check_probe_matches_inputs(probe: HashTableProbe, inputs: Xtructurable) -> None:
-    """Fail fast when a supplied probe does not match the insert batch.
-
-    The probe must be exactly what :func:`get_new_idx_byterized_batched` would
-    have produced for ``inputs``; a mismatch means the caller threaded intermediates
-    from a different batch / table, which would silently corrupt the table. We
-    reject it at trace time rather than recomputing behind the caller's back.
-    """
-    batch_shape = inputs.shape
-    expected = {
-        "index": (batch_shape, SIZE_DTYPE),
-        "step": (batch_shape, SIZE_DTYPE),
-        "fingerprint": (batch_shape, jnp.uint32),
-    }
-    for name, (shape, dtype) in expected.items():
-        arr = getattr(probe, name)
-        if arr.shape != shape:
-            raise ValueError(
-                f"HashTableProbe.{name} shape {arr.shape} does not match insert batch {shape}"
-            )
-        if arr.dtype != dtype:
-            raise ValueError(
-                f"HashTableProbe.{name} dtype {arr.dtype} does not match expected {dtype}"
-            )
-    if probe.uint32ed.ndim != 2 or probe.uint32ed.shape[:1] != batch_shape:
-        raise ValueError(
-            f"HashTableProbe.uint32ed shape {probe.uint32ed.shape} is not "
-            f"{batch_shape + ('lanes',)} for the insert batch"
-        )
-    if probe.uint32ed.dtype != jnp.uint32:
-        raise ValueError(
-            f"HashTableProbe.uint32ed dtype {probe.uint32ed.dtype} does not match expected uint32"
-        )
 
 
 def _resolve_slot_conflicts(flat_indices: chex.Array, active: chex.Array) -> chex.Array:

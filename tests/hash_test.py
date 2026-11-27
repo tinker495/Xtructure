@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import pytest
 
 from tests.testdata import HashValueAB, OddBytesValue47
-from xtructure import FieldDescriptor, HashTable, Xtructurable
+from xtructure import FieldDescriptor, HashTable, HashTableProbe, Xtructurable
 from xtructure.core import hash as hash_adapter
 from xtructure.hashtable.hash_utils import (
     _compute_unique_mask_from_uint32eds,
@@ -328,3 +328,112 @@ def test_parallel_insert_assume_unique_is_bit_identical():
     assert bool(jnp.all(unique_regular == unique_fast))
     assert bool(jnp.all(idx_regular.index == idx_fast.index))
     _assert_tables_bit_identical(regular, fast)
+
+
+def test_lookup_parallel_deduplicates_and_restores_duplicates():
+    # Author: tinker495. Parallel lookup must deduplicate active duplicates
+    # internally while restoring accurate (HashIdx, found) answers to every
+    # active row and returning zeroed results for inactive or empty batches.
+    distinct = HashValueAB.default((3,))
+    distinct = distinct.replace(
+        a=jnp.array([10, 20, 30], dtype=jnp.uint8),
+        b=jnp.array([[[1, 2]], [[3, 4]], [[5, 6]]], dtype=jnp.uint32),
+    )
+
+    table: HashTable = HashTable.build(HashValueAB, 7, 128)
+    table, inserted, _, inserted_idxs = table.parallel_insert(distinct[:2])
+    assert bool(jnp.all(inserted))
+
+    # Layout:
+    # 0: s0 (inactive)
+    # 1..3: s0 (active duplicates, present in table)
+    # 4..5: s2 (active duplicates, missing from table)
+    # 6: s1 (active singleton, present in table)
+    # 7: s1 (inactive)
+    order = jnp.array([0, 0, 0, 0, 2, 2, 1, 1], dtype=jnp.int32)
+    batch = distinct[order]
+    filled = jnp.array([False, True, True, True, True, True, True, False])
+
+    idx, found = table.lookup_parallel(batch, filled)
+    assert jnp.array_equal(
+        found,
+        jnp.array([False, True, True, True, False, False, True, False]),
+    )
+    assert int(idx.index[1]) == int(inserted_idxs.index[0])
+    assert int(idx.index[2]) == int(inserted_idxs.index[0])
+    assert int(idx.index[3]) == int(inserted_idxs.index[0])
+    assert int(idx.index[4]) == int(idx.index[5])
+    assert int(idx.index[6]) == int(inserted_idxs.index[1])
+    assert int(idx.index[0]) == 0
+    assert int(idx.index[7]) == 0
+
+    for disabled in (False, jnp.bool_(False), jnp.zeros_like(filled)):
+        empty_idx, empty_found = table.lookup_parallel(batch, disabled)
+        assert jnp.array_equal(empty_idx.index, jnp.zeros((8,), dtype=empty_idx.index.dtype))
+        assert not bool(jnp.any(empty_found))
+
+    empty_batch = HashValueAB.default((0,))
+    empty_idx, empty_found, empty_probe = table.lookup_parallel_with_probe(empty_batch)
+    assert empty_idx.shape == (0,)
+    assert empty_found.shape == (0,)
+    assert empty_probe.index.shape == (0,)
+
+
+def test_lookup_parallel_probe_reuse_and_assume_unique_are_bit_identical():
+    # Author: tinker495. Search loops thread HashTableProbe from
+    # lookup_parallel_with_probe into subsequent lookups and parallel_insert, and
+    # set assume_unique=True after upstream xnp.unique_mask deduplication; all
+    # paths must stay bit-identical while rejecting mismatched probes at trace time.
+    batch = 512
+    samples = HashValueAB.random((batch,), key=jax.random.PRNGKey(321))
+    samples = samples.at[batch // 2 :].set(samples[: batch // 2])
+    filled = jax.random.bernoulli(jax.random.PRNGKey(322), p=0.8, shape=(batch,))
+
+    seed_table: HashTable = HashTable.build(HashValueAB, 17, int(1e4))
+    seed_table, _, _, _ = seed_table.parallel_insert(samples[: batch // 4])
+
+    idx_plain, found_plain = seed_table.lookup_parallel(samples, filled)
+    idx_probe, found_probe, probe = seed_table.lookup_parallel_with_probe(samples, filled)
+    assert isinstance(probe, HashTableProbe)
+    assert jnp.array_equal(idx_plain.index, idx_probe.index)
+    assert jnp.array_equal(found_plain, found_probe)
+
+    idx_reused, found_reused = seed_table.lookup_parallel(samples, filled, probe=probe)
+    assert jnp.array_equal(idx_plain.index, idx_reused.index)
+    assert jnp.array_equal(found_plain, found_reused)
+
+    unique, _ = _compute_unique_mask_from_uint32eds(
+        probe.uint32ed,
+        filled,
+        None,
+        row_hash=probe.fingerprint,
+    )
+    idx_dedup_regular, found_dedup_regular = seed_table.lookup_parallel(
+        samples,
+        unique,
+        probe=probe,
+    )
+    idx_dedup_fast, found_dedup_fast, probe_fast = seed_table.lookup_parallel_with_probe(
+        samples,
+        unique,
+        probe=probe,
+        assume_unique=True,
+    )
+    assert jnp.array_equal(idx_dedup_regular.index, idx_dedup_fast.index)
+    assert jnp.array_equal(found_dedup_regular, found_dedup_fast)
+    assert jnp.array_equal(probe.uint32ed, probe_fast.uint32ed)
+
+    table_a, ins_a, uniq_a, out_idx_a = seed_table.parallel_insert(samples, filled)
+    table_b, ins_b, uniq_b, out_idx_b = seed_table.parallel_insert(
+        samples,
+        filled,
+        probe=probe,
+    )
+    assert jnp.array_equal(ins_a, ins_b)
+    assert jnp.array_equal(uniq_a, uniq_b)
+    assert jnp.array_equal(out_idx_a.index, out_idx_b.index)
+    _assert_tables_bit_identical(table_a, table_b)
+
+    wrong_probe = probe._replace(index=probe.index[:10])
+    with pytest.raises(ValueError, match="HashTableProbe.index shape"):
+        seed_table.lookup_parallel(samples, False, probe=wrong_probe)

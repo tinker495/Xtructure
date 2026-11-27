@@ -16,8 +16,8 @@ from .lookup import (
     _hashtable_getitem_jit,
     _hashtable_lookup_bucket_jit,
     _hashtable_lookup_jit,
-    _hashtable_lookup_parallel_with_probe_jit,
     _lookup_parallel_dispatch,
+    _lookup_parallel_with_probe_dispatch,
 )
 from .types import BucketIdx, HashIdx, HashTableProbe
 
@@ -101,13 +101,39 @@ class HashTable:
         return _hashtable_lookup_jit(self, input)
 
     def lookup_parallel(
-        self, inputs: Xtructurable, filled: chex.Array | bool = True
-    ) -> tuple[HashIdx, chex.Array]:
-        return _lookup_parallel_dispatch(self, inputs, filled)
+        self,
+        inputs: Xtructurable,
+        filled: chex.Array | bool | None = True,
+        probe: HashTableProbe | None = None,
+        *,
+        assume_unique: bool = False,
+    ) -> tuple[HashIdx, jax.Array]:
+        """Look up a batch of states in parallel with internal deduplication.
+
+        By default (``assume_unique=False``), duplicate active states within
+        ``inputs`` are deduplicated in the same uint32 hash pass so the table is
+        probed at most once per distinct state, and the representative's
+        ``(HashIdx, found)`` result is restored to every active duplicate row.
+
+        Set ``assume_unique=True`` only when active entries in ``inputs`` are
+        already unique to skip redundant intra-batch deduplication.
+        """
+        return _lookup_parallel_dispatch(
+            self,
+            inputs,
+            filled,
+            probe,
+            assume_unique=assume_unique,
+        )
 
     def lookup_parallel_with_probe(
-        self, inputs: Xtructurable, filled: chex.Array | bool = True
-    ) -> tuple[HashIdx, chex.Array, HashTableProbe]:
+        self,
+        inputs: Xtructurable,
+        filled: chex.Array | bool | None = True,
+        probe: HashTableProbe | None = None,
+        *,
+        assume_unique: bool = False,
+    ) -> tuple[HashIdx, jax.Array, HashTableProbe]:
         """Parallel lookup that also returns the shared :class:`HashTableProbe`.
 
         The probe carries the products of the single uint32 hash pass this lookup
@@ -115,7 +141,13 @@ class HashTable:
         pass it back to :meth:`parallel_insert` (``probe=...``) to skip the second,
         redundant hash pass. Table behaviour is identical to :meth:`lookup_parallel`.
         """
-        return _hashtable_lookup_parallel_with_probe_jit(self, inputs, filled)
+        return _lookup_parallel_with_probe_dispatch(
+            self,
+            inputs,
+            filled,
+            probe,
+            assume_unique=assume_unique,
+        )
 
     def insert(self, input: Xtructurable) -> tuple["HashTable", jax.Array, HashIdx]:
         return _hashtable_insert_jit(self, input)

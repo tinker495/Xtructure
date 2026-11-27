@@ -230,3 +230,37 @@ def get_new_idx_byterized_batched(
     length = jnp.uint32(uint32ed.shape[1])  # scalar (per-row lane count)
     fingerprint = _mix_fingerprint(hash_value, secondary_hash, length)  # (n,)
     return HashTableProbe(index=idx, step=step, uint32ed=uint32ed, fingerprint=fingerprint)
+
+
+def _check_probe_matches_inputs(probe: HashTableProbe, inputs: Xtructurable) -> None:
+    """Fail fast when a supplied probe does not match the input batch.
+
+    The probe must be exactly what :func:`get_new_idx_byterized_batched` would
+    have produced for ``inputs``; a mismatch means the caller threaded intermediates
+    from a different batch or table, which would silently corrupt results. Reject
+    it at trace time rather than recomputing behind the caller's back.
+    """
+    batch_shape = inputs.shape
+    checks = (
+        ("index", probe.index, batch_shape, SIZE_DTYPE),
+        ("step", probe.step, batch_shape, SIZE_DTYPE),
+        ("fingerprint", probe.fingerprint, batch_shape, jnp.uint32),
+    )
+    for name, arr, shape, dtype in checks:
+        if arr.shape != shape:
+            raise ValueError(
+                f"HashTableProbe.{name} shape {arr.shape} does not match batch {shape}"
+            )
+        if arr.dtype != dtype:
+            raise ValueError(
+                f"HashTableProbe.{name} dtype {arr.dtype} does not match expected {dtype}"
+            )
+    if probe.uint32ed.ndim != 2 or probe.uint32ed.shape[:1] != batch_shape:
+        raise ValueError(
+            f"HashTableProbe.uint32ed shape {probe.uint32ed.shape} is not "
+            f"{batch_shape + ('lanes',)} for the batch"
+        )
+    if probe.uint32ed.dtype != jnp.uint32:
+        raise ValueError(
+            f"HashTableProbe.uint32ed dtype {probe.uint32ed.dtype} does not match expected uint32"
+        )
