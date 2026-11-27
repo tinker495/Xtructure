@@ -58,9 +58,11 @@ new tests only after the user authorizes their scope and expected behavior.
 
 ## Repository Independence and Validation
 
-This repository owns its dependency updates and CI configuration. Related
-repositories' latest versions mean their main branches; explicitly select a
-branch or commit when needed. A sibling editable checkout is not required.
+This repository owns its dependency updates and CI configuration. Git
+dependencies on related repositories always track `@main`; `uv.lock` records
+the resolved commits and `.github/scripts/check_runtime_contracts.py` verifies
+default Linux CUDA packaging, export resolution, and lockfile contracts in CI.
+A sibling editable checkout is not required.
 
 Run the existing lint/format hooks, Pyrefly new-diagnostics comparison, and CPU
 tests on each PR's latest commit as merge-required checks. Compare types against

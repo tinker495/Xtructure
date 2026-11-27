@@ -25,12 +25,10 @@ full rationale, breakdown of supporting utilities, and a worked example.
 ## Installation
 
 ```bash
-uv add "xtructure @ git+https://github.com/tinker495/xtructure.git" # recommended
+uv add "xtructure @ git+https://github.com/tinker495/Xtructure.git@main" # recommended
 ```
 
-Currently under active development, with frequent updates and potential bug fixes. For the most up-to-date version, it is recommended to install directly from the Git repository.
-
-For local development, run `uv sync --group dev`, then use `uv run pytest`.
+Linux installations include `jax[cuda]` and benchmark visualization dependencies by default (`jax[tpu]` remains available via `xtructure[tpu]`). For local development, run `uv sync --group dev`, then use `uv run pytest`.
 
 ## Documentation
 
