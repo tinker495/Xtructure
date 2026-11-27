@@ -26,6 +26,7 @@ dependencies = [
     "jaxtyping>=0.2.36",
     "matplotlib",
     "numpy>=2.2.0",
+    "rich",
     "typing-extensions",
     "tyro>=1.0.16,<2",
 ]
