@@ -3,6 +3,7 @@
 from . import io, numpy
 from .bgpq.bgpq import BGPQ
 from .core.dataclass import base_dataclass
+from .core.display import BatchDisplayOptions
 from .core.field_descriptor_utils import clone_field_descriptor
 from .core.field_descriptors import FieldDescriptor
 from .core.protocol import Xtructurable
@@ -14,6 +15,7 @@ from .stack.stack import Stack
 
 __all__ = [
     "BGPQ",
+    "BatchDisplayOptions",
     "HashTable",
     "HashIdx",
     "HashTableProbe",
