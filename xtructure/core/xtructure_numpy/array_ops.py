@@ -1,6 +1,5 @@
 from typing import Any, Union
 
-import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -66,14 +65,13 @@ def _update_array_on_condition(
     ):
         # A stable key/lane sort uses batch-sized storage. Keep the dense
         # scatter-min path when its destination map is smaller than the sort buffers.
-        sorted_keys, lanes = jax.lax.sort_key_val(
-            keys, jnp.arange(num_updates, dtype=jnp.int32), is_stable=True
-        )
+        lanes = jnp.argsort(keys, stable=True)
+        sorted_keys = keys[lanes]
         first = jnp.concatenate(
             (jnp.ones((1,), dtype=jnp.bool_), sorted_keys[1:] != sorted_keys[:-1])
         )
-        winners = jnp.where(first & (sorted_keys < invalid_index), sorted_keys, invalid_index)
-        safe_indices = jnp.empty_like(keys).at[lanes].set(winners, unique_indices=True)
+        first_in_batch = jnp.zeros_like(condition).at[lanes].set(first)
+        safe_indices = _where_no_broadcast(condition & first_in_batch, indices_array, invalid_fill)
     else:
         update_order = jnp.arange(num_updates, dtype=index_dtype)
         true_positions = _where_no_broadcast(
