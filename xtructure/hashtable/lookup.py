@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from functools import partial
 from typing import Any
 
 import chex
@@ -11,7 +12,13 @@ import jax.numpy as jnp
 from ..core.dtype_facts import SIZE_DTYPE
 from ..core.protocol import Xtructurable
 from .constants import SLOT_IDX_DTYPE
-from .hash_utils import get_new_idx_byterized, get_new_idx_byterized_batched
+from .hash_utils import (
+    _check_probe_matches_inputs,
+    _unique_groups_exact,
+    _unique_mask_from_group_ids,
+    get_new_idx_byterized,
+    get_new_idx_byterized_batched,
+)
 from .types import BucketIdx, HashIdx, HashTableProbe
 
 
@@ -254,91 +261,255 @@ def _hashtable_lookup_parallel_internal(
     return idxs, founds
 
 
+def _empty_lookup_result(
+    batch_shape: tuple[int, ...],
+) -> tuple[HashIdx, jax.Array]:
+    return (
+        HashIdx(index=jnp.zeros(batch_shape, dtype=SIZE_DTYPE)),
+        jnp.zeros(batch_shape, dtype=jnp.bool_),
+    )
+
+
+def _validate_batch_and_probe(
+    inputs: Xtructurable,
+    probe: HashTableProbe | None,
+) -> tuple[tuple[int, ...], int]:
+    batch_shape = inputs.shape
+    if len(batch_shape) != 1:
+        raise ValueError(f"lookup_parallel expects a 1D batch, got shape {batch_shape}")
+    if probe is not None:
+        _check_probe_matches_inputs(probe, inputs)
+    return batch_shape, batch_shape[0]
+
+
+def _resolve_probe(
+    table: Any,
+    inputs: Xtructurable,
+    probe: HashTableProbe | None,
+) -> HashTableProbe:
+    if probe is not None:
+        _check_probe_matches_inputs(probe, inputs)
+        return probe
+    return get_new_idx_byterized_batched(inputs, table._capacity, table.seed)
+
+
 def _lookup_parallel_from_probe(
     table: Any,
     inputs: Xtructurable,
     probe: HashTableProbe,
-    filled: chex.Array | bool,
-) -> tuple[HashIdx, chex.Array]:
-    """Run the parallel probe scan from an already-computed :class:`HashTableProbe`.
+    filled: chex.Array | None,
+    *,
+    assume_unique: bool = False,
+) -> tuple[HashIdx, jax.Array]:
+    """Run deduplicated parallel lookup from a precomputed :class:`HashTableProbe`.
 
-    Shared by the plain lookup and the probe-returning sibling so both consume
-    the identical scan; the only difference is whether the caller keeps the
-    probe afterwards.
+    Probes the table at most once per distinct active state and gathers the
+    representative ``(HashIdx, found)`` back to every active duplicate row.
     """
-    filled = jnp.asarray(filled)
-    batch_size = inputs.shape
+    batch_shape, batch_len = _validate_batch_and_probe(inputs, None)
+    if batch_len == 0:
+        if filled is not None:
+            filled_arr = jnp.asarray(filled, dtype=jnp.bool_)
+            if filled_arr.ndim not in (0, 1) or (
+                filled_arr.ndim == 1 and filled_arr.shape != batch_shape
+            ):
+                raise ValueError(
+                    f"filled shape {filled_arr.shape} does not match batch shape {batch_shape}"
+                )
+        return _empty_lookup_result(batch_shape)
 
-    def _process_batch(filled_mask):
-        idxs = BucketIdx(index=probe.index, slot_index=jnp.zeros(batch_size, dtype=SLOT_IDX_DTYPE))
-        founds = jnp.zeros(batch_size, dtype=jnp.bool_)
+    bucket_size_u32 = SIZE_DTYPE(table.bucket_size)
 
-        idx, found = _hashtable_lookup_parallel_internal(
-            table, inputs, idxs, probe.step, probe.fingerprint, founds, filled_mask
+    def _process_batch(
+        filled_mask: jax.Array | None,
+    ) -> tuple[HashIdx, jax.Array]:
+        active_mask = jnp.ones(batch_shape, dtype=jnp.bool_) if filled_mask is None else filled_mask
+        representative_indices = None
+        if not assume_unique:
+            active_mask, representative_indices = _unique_mask_from_group_ids(
+                _unique_groups_exact(probe.uint32ed, active_mask), active_mask, unique_key=None
+            )
+
+        idxs = BucketIdx(
+            index=probe.index,
+            slot_index=jnp.zeros(batch_shape, dtype=SLOT_IDX_DTYPE),
         )
-        bucket_size_u32 = SIZE_DTYPE(table.bucket_size)
-        return HashIdx(index=idx.index * bucket_size_u32 + idx.slot_index), found
-
-    def _empty_result(_):
-        return (
-            HashIdx(index=jnp.zeros(batch_size, dtype=SIZE_DTYPE)),
-            jnp.zeros(batch_size, dtype=jnp.bool_),
+        founds = jnp.zeros(batch_shape, dtype=jnp.bool_)
+        probed_idx, probed_found = _hashtable_lookup_parallel_internal(
+            table,
+            inputs,
+            idxs,
+            probe.step,
+            probe.fingerprint,
+            founds,
+            active_mask,
         )
+        flat_idx = probed_idx.index * bucket_size_u32 + probed_idx.slot_index
 
-    if filled.ndim == 0:
+        if representative_indices is not None:
+            flat_idx = flat_idx[representative_indices]
+            probed_found = probed_found[representative_indices]
+
+        if filled_mask is not None:
+            flat_idx = jnp.where(filled_mask, flat_idx, SIZE_DTYPE(0))
+            probed_found = jnp.logical_and(probed_found, filled_mask)
+
+        return HashIdx(index=flat_idx), probed_found
+
+    if filled is None:
+        return _process_batch(None)
+
+    filled_arr = jnp.asarray(filled, dtype=jnp.bool_)
+    if filled_arr.ndim == 0:
         return jax.lax.cond(
-            filled,
-            lambda: _process_batch(jnp.ones(batch_size, dtype=jnp.bool_)),
-            lambda: _empty_result(None),
+            filled_arr,
+            lambda: _process_batch(None),
+            lambda: _empty_lookup_result(batch_shape),
         )
-    return _process_batch(filled)
+    if filled_arr.ndim != 1 or filled_arr.shape != batch_shape:
+        raise ValueError(
+            f"filled shape {filled_arr.shape} does not match batch shape {batch_shape}"
+        )
+    return _process_batch(filled_arr)
 
 
-@jax.jit
-def _hashtable_lookup_parallel_jit(
-    table: Any, inputs: Xtructurable, filled: chex.Array | bool = True
-) -> tuple[HashIdx, chex.Array]:
-    probe = get_new_idx_byterized_batched(inputs, table._capacity, table.seed)
-    return _lookup_parallel_from_probe(table, inputs, probe, filled)
-
-
-@jax.jit
+@partial(jax.jit, static_argnames=("assume_unique",))
 def _hashtable_lookup_parallel_all_jit(
-    table: Any, inputs: Xtructurable
-) -> tuple[HashIdx, chex.Array]:
-    probe = get_new_idx_byterized_batched(inputs, table._capacity, table.seed)
-    mask = jnp.ones(inputs.shape, dtype=jnp.bool_)
-    return _lookup_parallel_from_probe(table, inputs, probe, mask)
+    table: Any,
+    inputs: Xtructurable,
+    probe: HashTableProbe | None = None,
+    assume_unique: bool = False,
+) -> tuple[HashIdx, jax.Array]:
+    local_probe = _resolve_probe(table, inputs, probe)
+    return _lookup_parallel_from_probe(
+        table,
+        inputs,
+        local_probe,
+        None,
+        assume_unique=assume_unique,
+    )
+
+
+@partial(jax.jit, static_argnames=("assume_unique",))
+def _hashtable_lookup_parallel_jit(
+    table: Any,
+    inputs: Xtructurable,
+    filled: chex.Array,
+    probe: HashTableProbe | None = None,
+    assume_unique: bool = False,
+) -> tuple[HashIdx, jax.Array]:
+    local_probe = _resolve_probe(table, inputs, probe)
+    return _lookup_parallel_from_probe(
+        table,
+        inputs,
+        local_probe,
+        filled,
+        assume_unique=assume_unique,
+    )
 
 
 def _lookup_parallel_dispatch(
-    table: Any, inputs: Xtructurable, filled: chex.Array | bool
-) -> tuple[HashIdx, chex.Array]:
-    """Route Python-bool ``filled`` to a jit with no scalar operand.
+    table: Any,
+    inputs: Xtructurable,
+    filled: chex.Array | bool | None = True,
+    probe: HashTableProbe | None = None,
+    *,
+    assume_unique: bool = False,
+) -> tuple[HashIdx, jax.Array]:
+    """Route Python-bool/None ``filled`` to a JIT with no scalar mask operand."""
+    if filled is None or isinstance(filled, bool):
+        if filled is None or filled:
+            return _hashtable_lookup_parallel_all_jit(
+                table,
+                inputs,
+                probe,
+                assume_unique=assume_unique,
+            )
+        batch_shape, _ = _validate_batch_and_probe(inputs, probe)
+        return _empty_lookup_result(batch_shape)
+    return _hashtable_lookup_parallel_jit(
+        table,
+        inputs,
+        filled,
+        probe,
+        assume_unique=assume_unique,
+    )
 
-    A literal ``filled`` bool otherwise becomes a per-call device scalar:
-    one H2D upload plus a conditional-thunk D2H readback of the same value
-    on every lookup. Dispatching at trace time bakes the mask in as a
-    constant; array masks keep the dynamic path unchanged.
-    """
-    if isinstance(filled, bool):
-        if filled:
-            return _hashtable_lookup_parallel_all_jit(table, inputs)
-        batch_size = inputs.shape
-        return (
-            HashIdx(index=jnp.zeros(batch_size, dtype=SIZE_DTYPE)),
-            jnp.zeros(batch_size, dtype=jnp.bool_),
-        )
-    return _hashtable_lookup_parallel_jit(table, inputs, filled)
+
+@partial(jax.jit, static_argnames=("assume_unique",))
+def _hashtable_lookup_parallel_with_probe_all_jit(
+    table: Any,
+    inputs: Xtructurable,
+    probe: HashTableProbe | None = None,
+    assume_unique: bool = False,
+) -> tuple[HashIdx, jax.Array, HashTableProbe]:
+    local_probe = _resolve_probe(table, inputs, probe)
+    idx, found = _lookup_parallel_from_probe(
+        table,
+        inputs,
+        local_probe,
+        None,
+        assume_unique=assume_unique,
+    )
+    return idx, found, local_probe
 
 
 @jax.jit
+def _hashtable_lookup_parallel_with_probe_none_jit(
+    table: Any,
+    inputs: Xtructurable,
+    probe: HashTableProbe | None = None,
+) -> tuple[HashIdx, jax.Array, HashTableProbe]:
+    local_probe = _resolve_probe(table, inputs, probe)
+    idx, found = _empty_lookup_result(inputs.shape)
+    return idx, found, local_probe
+
+
+@partial(jax.jit, static_argnames=("assume_unique",))
 def _hashtable_lookup_parallel_with_probe_jit(
-    table: Any, inputs: Xtructurable, filled: chex.Array | bool = True
-) -> tuple[HashIdx, chex.Array, HashTableProbe]:
-    probe = get_new_idx_byterized_batched(inputs, table._capacity, table.seed)
-    idx, found = _lookup_parallel_from_probe(table, inputs, probe, filled)
-    return idx, found, probe
+    table: Any,
+    inputs: Xtructurable,
+    filled: chex.Array,
+    probe: HashTableProbe | None = None,
+    assume_unique: bool = False,
+) -> tuple[HashIdx, jax.Array, HashTableProbe]:
+    local_probe = _resolve_probe(table, inputs, probe)
+    idx, found = _lookup_parallel_from_probe(
+        table,
+        inputs,
+        local_probe,
+        filled,
+        assume_unique=assume_unique,
+    )
+    return idx, found, local_probe
+
+
+def _lookup_parallel_with_probe_dispatch(
+    table: Any,
+    inputs: Xtructurable,
+    filled: chex.Array | bool | None = True,
+    probe: HashTableProbe | None = None,
+    *,
+    assume_unique: bool = False,
+) -> tuple[HashIdx, jax.Array, HashTableProbe]:
+    """Route Python-bool/None ``filled`` to a JIT with no scalar mask operand."""
+    if filled is None or isinstance(filled, bool):
+        if filled is None or filled:
+            return _hashtable_lookup_parallel_with_probe_all_jit(
+                table,
+                inputs,
+                probe,
+                assume_unique=assume_unique,
+            )
+        _validate_batch_and_probe(inputs, probe)
+        return _hashtable_lookup_parallel_with_probe_none_jit(table, inputs, probe)
+    return _hashtable_lookup_parallel_with_probe_jit(
+        table,
+        inputs,
+        filled,
+        probe,
+        assume_unique=assume_unique,
+    )
 
 
 @jax.jit

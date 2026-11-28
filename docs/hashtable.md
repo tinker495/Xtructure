@@ -91,10 +91,12 @@ print(f"HashTable: Single item inserted? {was_inserted}")
 *   **`HashTable.lookup(table, item_to_lookup)`**:
     *   Returns `idx` (a `HashIdx` object with `.index`) and `found` (boolean).
     *   If `found` is true, the item can be retrieved from `table.table[idx.index]`.
-*   **`HashTable.lookup_parallel(table, items_to_lookup)`**:
-    *   Performs parallel lookup for multiple items.
-    *   `items_to_lookup`: A batch of items to look up.
+*   **`HashTable.lookup_parallel(table, inputs, filled=True, probe=None, *, assume_unique=False)`**:
+    *   Deduplicates active duplicates in `inputs` within the same uint32 hash pass by default (`assume_unique=False`), probes the table at most once per distinct state, and restores the representative `(idxs, founds)` result to every active duplicate row.
+    *   Set `assume_unique=True` when active entries in `inputs` have already been deduplicated upstream (e.g. via `xnp.unique_mask`).
     *   Returns `idxs` (a `HashIdx` object with `.index` for each item) and `founds` (boolean array indicating which items were found).
+*   **`HashTable.lookup_parallel_with_probe(table, inputs, filled=True, probe=None, *, assume_unique=False)`**:
+    *   Identical to `lookup_parallel`, and additionally returns `probe` (`HashTableProbe`) as `(idxs, founds, probe)` so a subsequent `parallel_insert` on the same batch can reuse the hash pass.
 *   **`HashTable.insert(table, item_to_insert)`**:
     *   Inserts a single item into the hash table.
     *   `item_to_insert`: The item to insert.
