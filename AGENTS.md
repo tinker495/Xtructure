@@ -6,18 +6,14 @@ Write repository documentation in English, including nested AGENTS.md files.
 Use Korean for conversation, review comments, PR bodies, and local reports;
 keep code, comments, identifiers, and commit messages in English.
 
-CI owns formatting and linting; omit those findings from code review. Review
-structural problems beyond the edited lines: duplicated ownership, shotgun
-surgery, delegation-only wrappers, and eroded stage boundaries. Propose moving,
-merging, or deleting modules when evidence supports it. Prefer deep modules with
-narrow interfaces and fewer concepts. Flag single-implementation interfaces,
-unused configuration, and standard-library replacements as deletion candidates.
-Present evidence and consequences in severity order. Re-review code added after
-the reviewed commit before merging. Flag seam leakage—private or internal
-cross-package imports, caller-side workarounds that mirror upstream sentinel or
-layout internals, and multi-pass container choreography—and move the invariant
-or deepened interface into the owning module or upstream repository. Review
-suggestions do not authorize changes to tests or acceptance assets.
+Read [CODING_STANDARDS.md](CODING_STANDARDS.md) for documentation and code review.
+Review findings are subject to the test ownership rules below.
+
+Before changing a call across repositories, including a helper built from existing
+public calls, identify the owner of the invariant and inspect its public API.
+Run `python .github/scripts/check_seam_leaks.py` in the affected checkout before
+benchmarking or submitting the change. Before sign-off, apply the
+[ownership review](CODING_STANDARDS.md#cross-repository-ownership) to the final diff.
 
 ## Test Ownership and Change Permissions
 
