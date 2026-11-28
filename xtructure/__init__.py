@@ -9,7 +9,7 @@ from .core.field_descriptors import FieldDescriptor
 from .core.protocol import Xtructurable
 from .core.structuredtype import StructuredType
 from .hashtable.table import HashTable
-from .hashtable.types import HashIdx, HashTableProbe
+from .hashtable.types import HashIdx, HashTableProbe, ResolvedHashSlots
 from .queue.queue import Queue
 from .stack.stack import Stack
 
@@ -19,6 +19,7 @@ __all__ = [
     "HashTable",
     "HashIdx",
     "HashTableProbe",
+    "ResolvedHashSlots",
     "Queue",
     "Stack",
     "Xtructurable",

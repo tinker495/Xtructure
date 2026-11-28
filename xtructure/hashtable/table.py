@@ -11,15 +11,20 @@ import jax.numpy as jnp
 from ..core.dataclass import base_dataclass
 from ..core.dtype_facts import SIZE_DTYPE
 from ..core.protocol import Xtructurable
-from .insert import _hashtable_insert_jit, _hashtable_parallel_insert_jit
+from .insert import (
+    _hashtable_insert_jit,
+    _hashtable_parallel_insert_jit,
+    _parallel_insert_resolved_jit,
+)
 from .lookup import (
     _hashtable_getitem_jit,
     _hashtable_lookup_bucket_jit,
     _hashtable_lookup_jit,
     _lookup_parallel_dispatch,
     _lookup_parallel_with_probe_dispatch,
+    _resolve_parallel_jit,
 )
-from .types import BucketIdx, HashIdx, HashTableProbe
+from .types import BucketIdx, HashIdx, HashTableProbe, ResolvedHashSlots
 
 
 @partial(jax.jit, static_argnums=(0, 1, 2, 3, 4, 5))
@@ -148,6 +153,28 @@ class HashTable:
             probe,
             assume_unique=assume_unique,
         )
+
+    def resolve_parallel(
+        self, inputs: Xtructurable, filled: jax.Array
+    ) -> tuple[HashIdx, jax.Array, ResolvedHashSlots]:
+        """Look up active rows and retain the resolved slots for a later insertion.
+
+        Both inputs and their boolean mask have one batch axis. The first two
+        results match lookup_parallel(..., assume_unique=True).
+        """
+        return _resolve_parallel_jit(self, inputs, filled)
+
+    def parallel_insert_resolved(
+        self, inputs: Xtructurable, slots: ResolvedHashSlots, filled: jax.Array
+    ) -> tuple["HashTable", jax.Array, jax.Array, HashIdx]:
+        """Insert unique selected rows using slots from resolve_parallel on this snapshot.
+
+        Rows may be reordered, sliced, or combined from lookups on the same
+        unchanged table. Move all slot leaves together with their input rows.
+        Every selected row must have been active when resolved. The result
+        follows parallel_insert(..., assume_unique=True), including masked lanes.
+        """
+        return _parallel_insert_resolved_jit(self, inputs, slots, filled)
 
     def insert(self, input: Xtructurable) -> tuple["HashTable", jax.Array, HashIdx]:
         return _hashtable_insert_jit(self, input)

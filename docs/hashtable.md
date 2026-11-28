@@ -85,7 +85,7 @@ print(f"HashTable: Single item inserted? {was_inserted}")
     *   `filled_mask`: A boolean JAX array indicating which entries in `inputs` are valid. If `None`, all inputs are considered valid.
     *   Returns a tuple of:
         *   `updated_table`: The updated HashTable instance
-        *   `inserted_mask`: Boolean array for successful insertions for each input
+        *   `inserted_mask`: Active unique misses submitted to the allocator. Under capacity or probe exhaustion, placement can fail for a submitted miss.
         *   `unique_mask`: Boolean array, true if the item was new and not a duplicate
         *   `idxs`: A `HashIdx` object containing `.index` for where items were stored
 *   **`HashTable.lookup(table, item_to_lookup)`**:
@@ -104,3 +104,17 @@ print(f"HashTable: Single item inserted? {was_inserted}")
         *   `updated_table`: The updated HashTable instance
         *   `was_inserted`: Boolean indicating if the item was actually inserted (not already present)
         *   `idx`: A `HashIdx` object with `.index` for where the item was stored
+
+### Reusing resolved slots
+
+For a lookup followed by insertion on the same table snapshot, retain the
+resolved slots to avoid a second probe walk. Choose a boolean vector of unique
+rows from those active at lookup. If you reorder or slice the states, apply the
+same operation to every leaf of the slots with `jax.tree.map`. Resolve again
+after modifying the table.
+
+```python
+# active selects unique rows; keep is a further application-level filter.
+idxs, found, slots = table.resolve_parallel(states, active)
+updated, misses, selected, idxs = table.parallel_insert_resolved(states, slots, active & keep)
+```
