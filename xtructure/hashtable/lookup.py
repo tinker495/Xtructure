@@ -19,7 +19,7 @@ from .hash_utils import (
     get_new_idx_byterized,
     get_new_idx_byterized_batched,
 )
-from .types import BucketIdx, HashIdx, HashTableProbe
+from .types import BucketIdx, HashIdx, HashTableProbe, ResolvedHashSlots
 
 
 def _hashtable_lookup_internal(
@@ -46,7 +46,7 @@ def _hashtable_lookup_internal(
         return jnp.logical_and(~found, probes < max_probes_u32)
 
     def _body(
-        val: tuple[BucketIdx, jax.Array, jax.Array]
+        val: tuple[BucketIdx, jax.Array, jax.Array],
     ) -> tuple[BucketIdx, jax.Array, jax.Array]:
         idx, found, probes = val
         bucket_idx = jnp.asarray(idx.index, dtype=SIZE_DTYPE)
@@ -293,6 +293,38 @@ def _resolve_probe(
     return get_new_idx_byterized_batched(inputs, table._capacity, table.seed)
 
 
+def _resolve_slots(
+    table: Any, inputs: Xtructurable, probe: HashTableProbe, active: jax.Array
+) -> ResolvedHashSlots:
+    # Keep the bucket and slot separate: an exhausted miss can have slot == bucket_size.
+    bucket, found = _hashtable_lookup_parallel_internal(
+        table,
+        inputs,
+        BucketIdx(index=probe.index, slot_index=jnp.zeros_like(probe.index, dtype=SLOT_IDX_DTYPE)),
+        probe.step,
+        probe.fingerprint,
+        jnp.zeros_like(active),
+        active,
+    )
+    return ResolvedHashSlots(probe.index, probe.step, probe.fingerprint, bucket, found)
+
+
+@jax.jit
+def _resolve_parallel_jit(
+    table: Any, inputs: Xtructurable, filled: jax.Array
+) -> tuple[HashIdx, jax.Array, ResolvedHashSlots]:
+    shape, size = _validate_batch_and_probe(inputs, None)
+    if filled.shape != shape or filled.dtype != jnp.bool_:
+        raise ValueError("filled must be a boolean vector aligned with inputs")
+    if size == 0:
+        idx, found = _empty_lookup_result(shape)
+        bucket = BucketIdx(index=idx.index, slot_index=jnp.zeros(shape, dtype=SLOT_IDX_DTYPE))
+        return idx, found, ResolvedHashSlots(idx.index, idx.index, idx.index, bucket, found)
+    slots = _resolve_slots(table, inputs, _resolve_probe(table, inputs, None), filled)
+    flat = slots.bucket.index * SIZE_DTYPE(table.bucket_size) + slots.bucket.slot_index
+    return HashIdx(index=jnp.where(filled, flat, SIZE_DTYPE(0))), slots.found, slots
+
+
 def _lookup_parallel_from_probe(
     table: Any,
     inputs: Xtructurable,
@@ -330,20 +362,8 @@ def _lookup_parallel_from_probe(
                 _unique_groups_exact(probe.uint32ed, active_mask), active_mask, unique_key=None
             )
 
-        idxs = BucketIdx(
-            index=probe.index,
-            slot_index=jnp.zeros(batch_shape, dtype=SLOT_IDX_DTYPE),
-        )
-        founds = jnp.zeros(batch_shape, dtype=jnp.bool_)
-        probed_idx, probed_found = _hashtable_lookup_parallel_internal(
-            table,
-            inputs,
-            idxs,
-            probe.step,
-            probe.fingerprint,
-            founds,
-            active_mask,
-        )
+        slots = _resolve_slots(table, inputs, probe, active_mask)
+        probed_idx, probed_found = slots.bucket, slots.found
         flat_idx = probed_idx.index * bucket_size_u32 + probed_idx.slot_index
 
         if representative_indices is not None:

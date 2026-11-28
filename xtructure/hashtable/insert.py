@@ -22,7 +22,7 @@ from .hash_utils import (
     get_new_idx_byterized_batched,
 )
 from .lookup import _hashtable_lookup_bucket_jit, _hashtable_lookup_parallel_internal
-from .types import BucketIdx, HashIdx, HashTableProbe
+from .types import BucketIdx, HashIdx, HashTableProbe, ResolvedHashSlots
 
 
 def _resolve_slot_conflicts(flat_indices: chex.Array, active: chex.Array) -> chex.Array:
@@ -280,6 +280,67 @@ def _hashtable_parallel_insert_internal(
     return table, index
 
 
+def _commit_resolved_slots(
+    table: Any,
+    inputs: Xtructurable,
+    idx: BucketIdx,
+    found: jax.Array,
+    unique_filled: jax.Array,
+    steps: jax.Array,
+    fingerprints: jax.Array,
+) -> tuple[Any, jax.Array, BucketIdx]:
+    updatable = jnp.logical_and(~found, unique_filled)
+
+    updated_table, inserted_idx = _hashtable_parallel_insert_internal(
+        table, inputs, steps, idx, updatable, fingerprints
+    )
+
+    cond_found = jnp.asarray(found, dtype=jnp.bool_)
+
+    inserted_index = jnp.asarray(inserted_idx.index, dtype=idx.index.dtype)
+    inserted_slot_index = jnp.asarray(inserted_idx.slot_index, dtype=idx.slot_index.dtype)
+    current_index = jnp.asarray(idx.index)
+    current_slot_index = jnp.asarray(idx.slot_index)
+
+    provisional_index = _where_no_broadcast(
+        cond_found,
+        current_index,
+        inserted_index,
+    )
+    provisional_slot_index = _where_no_broadcast(
+        cond_found,
+        current_slot_index,
+        inserted_slot_index,
+    )
+    return (
+        updated_table,
+        updatable,
+        BucketIdx(index=provisional_index, slot_index=provisional_slot_index),
+    )
+
+
+@jax.jit
+def _parallel_insert_resolved_jit(
+    table: Any, inputs: Xtructurable, slots: ResolvedHashSlots, filled: jax.Array
+) -> tuple[Any, jax.Array, jax.Array, HashIdx]:
+    if len(inputs.shape) != 1 or filled.shape != inputs.shape or filled.dtype != jnp.bool_:
+        raise ValueError("filled must be a boolean vector aligned with a 1D input batch")
+    if any(leaf.shape != inputs.shape for leaf in jax.tree.leaves(slots)):
+        raise ValueError("resolved slots must be row-aligned with inputs")
+    if inputs.shape[0] == 0:
+        return table, filled, filled, HashIdx(index=jnp.zeros(inputs.shape, dtype=SIZE_DTYPE))
+    idx = BucketIdx(
+        index=jnp.where(filled, slots.bucket.index, slots.initial_bucket),
+        slot_index=jnp.where(filled, slots.bucket.slot_index, SLOT_IDX_DTYPE(0)),
+    )
+    updated, inserted, placed = _commit_resolved_slots(
+        table, inputs, idx, slots.found | ~filled, filled, slots.step, slots.fingerprint
+    )
+    flat = placed.index * SIZE_DTYPE(table.bucket_size) + placed.slot_index
+    # The unique insertion contract maps masked lanes to the first representative.
+    return updated, inserted, filled, HashIdx(index=jnp.where(filled, flat, flat[:1]))
+
+
 @partial(jax.jit, static_argnames=("assume_unique",))
 def _hashtable_parallel_insert_jit(
     table: Any,
@@ -294,8 +355,6 @@ def _hashtable_parallel_insert_jit(
 
     filled = jnp.asarray(filled)
     batch_len = inputs.shape
-    bucket_size_u32 = SIZE_DTYPE(table.bucket_size)
-
     if probe is not None:
         _check_probe_matches_inputs(probe, inputs)
 
@@ -342,43 +401,12 @@ def _hashtable_parallel_insert_jit(
             ),
         )
 
-        updatable = jnp.logical_and(~found, unique_filled)
-
-        updated_table, inserted_idx = _hashtable_parallel_insert_internal(
-            table, inputs, steps, idx, updatable, fingerprints
+        updated_table, updatable, placed = _commit_resolved_slots(
+            table, inputs, idx, found, unique_filled, steps, fingerprints
         )
-
-        cond_found = jnp.asarray(found, dtype=jnp.bool_)
-
-        inserted_index = jnp.asarray(inserted_idx.index, dtype=idx.index.dtype)
-        inserted_slot_index = jnp.asarray(inserted_idx.slot_index, dtype=idx.slot_index.dtype)
-        current_index = jnp.asarray(idx.index)
-        current_slot_index = jnp.asarray(idx.slot_index)
-
-        provisional_index = _where_no_broadcast(
-            cond_found,
-            current_index,
-            inserted_index,
-        )
-        provisional_slot_index = _where_no_broadcast(
-            cond_found,
-            current_slot_index,
-            inserted_slot_index,
-        )
-        provisional_idx = BucketIdx(index=provisional_index, slot_index=provisional_slot_index)
-
-        representative_indices = jnp.asarray(representative_indices, dtype=jnp.int32)
-        final_idx = BucketIdx(
-            index=provisional_idx.index[representative_indices],
-            slot_index=provisional_idx.slot_index[representative_indices],
-        )
-
-        return (
-            updated_table,
-            updatable,
-            unique_filled,
-            HashIdx(index=final_idx.index * bucket_size_u32 + final_idx.slot_index),
-        )
+        indices = placed.index[representative_indices] * SIZE_DTYPE(table.bucket_size)
+        indices += placed.slot_index[representative_indices]
+        return updated_table, updatable, unique_filled, HashIdx(index=indices)
 
     def _empty_insert(_):
         return (

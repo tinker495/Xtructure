@@ -37,3 +37,17 @@ class HashTableProbe(NamedTuple):
     step: jax.Array
     uint32ed: jax.Array
     fingerprint: jax.Array
+
+
+class ResolvedHashSlots(NamedTuple):
+    """Row-aligned lookup results for one immutable table snapshot.
+
+    Apply the same row selection and permutation to all leaves and their states.
+    Only previously active rows may be selected for insertion.
+    """
+
+    initial_bucket: jax.Array
+    step: jax.Array
+    fingerprint: jax.Array
+    bucket: BucketIdx
+    found: jax.Array
