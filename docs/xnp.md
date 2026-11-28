@@ -373,7 +373,7 @@ updated_data = xnp.update_on_condition(data, indices, condition, new_values)
 
 **Implementation Details**:
 - `unique_mask` uses hash-based grouping with segmented operations for efficient duplicate detection.
-- `update_on_condition` uses `segment_max` with timestamps for "first True wins" duplicate resolution.
+- `update_on_condition` resolves duplicate writes in input order. For sparse unsigned row indices it stably sorts the update batch, keeping temporary storage proportional to the number of updates.
 - `pad` automatically chooses the optimal padding strategy based on input parameters.
 - `where` automatically detects dataclass vs scalar arguments for appropriate field-wise operations.
 

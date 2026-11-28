@@ -25,29 +25,6 @@ from .lookup import _hashtable_lookup_bucket_jit, _hashtable_lookup_parallel_int
 from .types import BucketIdx, HashIdx, HashTableProbe, ResolvedHashSlots
 
 
-def _resolve_slot_conflicts(flat_indices: chex.Array, active: chex.Array) -> chex.Array:
-    active = jnp.asarray(active, dtype=jnp.bool_)
-    batch_size = flat_indices.shape[0]
-    flat_indices = jnp.asarray(flat_indices, dtype=jnp.uint32)
-
-    batch_idx = jnp.arange(batch_size, dtype=jnp.uint32)
-    sentinel = jnp.uint32(0xFFFFFFFF)
-    keys = jnp.where(active, flat_indices, sentinel)
-
-    sorted_keys, sorted_batch_idx = jax.lax.sort((keys, batch_idx), dimension=0, is_stable=True)
-
-    is_first = jnp.concatenate(
-        [jnp.array([True]), sorted_keys[1:] != sorted_keys[:-1]],
-        axis=0,
-    )
-    is_valid = sorted_keys != sentinel
-    winners_in_sorted = jnp.logical_and(is_first, is_valid)
-
-    winners = jnp.zeros((batch_size,), dtype=jnp.bool_)
-    winners = winners.at[sorted_batch_idx].set(winners_in_sorted)
-    return winners
-
-
 def _allocate_initial_bucket_slots(
     table: Any,
     index: BucketIdx,
