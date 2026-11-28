@@ -73,7 +73,7 @@ def _queue_clear_jit(queue):
 
 
 @jax.jit
-def _queue_getitem_jit(queue, idx: SIZE_DTYPE) -> Xtructurable:
+def _queue_getitem_jit(queue, idx: int | jax.Array) -> Xtructurable:
     storage_idx = (queue.head + idx).astype(jnp.int32)
     rows = jax.lax.dynamic_slice(
         queue.val_store, (storage_idx, jnp.int32(0)), (1, queue.val_store.shape[1])
@@ -98,8 +98,8 @@ class Queue:
     max_size: int
     value_class: Xtructurable
     val_store: jnp.ndarray
-    head: SIZE_DTYPE
-    tail: SIZE_DTYPE
+    head: jax.Array
+    tail: jax.Array
 
     @property
     def size(self):
@@ -136,7 +136,7 @@ class Queue:
         """
         return _queue_clear_jit(self)
 
-    def __getitem__(self, idx: SIZE_DTYPE) -> Xtructurable:
+    def __getitem__(self, idx: int | jax.Array) -> Xtructurable:
         """
         Returns the item at the logical queue index (0-based, relative to head).
         """

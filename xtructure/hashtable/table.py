@@ -77,7 +77,7 @@ class HashTable:
     capacity: int
     _capacity: int
     bucket_size: int
-    size: int
+    size: jax.Array
     table: Xtructurable
     bucket_fill_levels: chex.Array
     fingerprints: chex.Array

@@ -59,7 +59,7 @@ def _stack_pop_jit(stack, num_items: int = 1):
 
 
 @jax.jit
-def _stack_getitem_jit(stack, idx: SIZE_DTYPE) -> Xtructurable:
+def _stack_getitem_jit(stack, idx: int | jax.Array) -> Xtructurable:
     rows = stack.val_store[jnp.asarray(idx)[None]]
     return jax.tree_util.tree_map(lambda x: x[0], unpack_rows(stack.value_class, rows))
 
@@ -79,7 +79,7 @@ class Stack:
 
     max_size: int
     value_class: type[Xtructurable]
-    size: SIZE_DTYPE
+    size: jax.Array
     val_store: jnp.ndarray
 
     @staticmethod
@@ -136,7 +136,7 @@ class Stack:
         """
         return _stack_read_jit(self, num_items)
 
-    def __getitem__(self, idx: SIZE_DTYPE) -> Xtructurable:
+    def __getitem__(self, idx: int | jax.Array) -> Xtructurable:
         """
         Returns the item at the logical stack index (0-based, relative to bottom).
         """

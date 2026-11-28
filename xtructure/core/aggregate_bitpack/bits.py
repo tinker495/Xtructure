@@ -7,7 +7,7 @@ import jax.numpy as jnp
 from jax import lax
 
 
-def _mask_u32(bits: int) -> jnp.uint32:
+def _mask_u32(bits: int) -> jax.Array:
     return jnp.uint32(0xFFFFFFFF) if bits == 32 else jnp.uint32((1 << bits) - 1)
 
 
