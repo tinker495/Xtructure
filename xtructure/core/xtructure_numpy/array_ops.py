@@ -1,5 +1,6 @@
 from typing import Any, Union
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -20,9 +21,8 @@ def _update_array_on_condition(
 
     ``unique_indices=True`` is the caller's promise that no index is selected
     twice by ``condition``; the update is then a single masked scatter and skips
-    the first-true-wins resolution, which materialises a
-    ``(len(original_array) + 1,)`` index array per call (80 MB per update on a
-    20M-entry table).
+    the first-true-wins resolution. Sparse unsigned row updates elect the first
+    active writer in batch-sized storage.
     """
     # For advanced indexing, reshape the array to flatten the batch dimensions
     # and compute on the flattened version, then reshape back.
@@ -57,25 +57,33 @@ def _update_array_on_condition(
     sentinel_value = jnp.array(num_updates, dtype=index_dtype)
 
     invalid_fill = jnp.full_like(indices_array, invalid_index)
+    keys = _where_no_broadcast(condition, indices_array, invalid_fill)
     if unique_indices:
-        safe_indices = _where_no_broadcast(condition, indices_array, invalid_fill)
-        value_array = jnp.asarray(values_to_set, dtype=original_array.dtype)
-        return original_array.at[safe_indices].set(value_array, mode="drop")
-
-    update_order = jnp.arange(num_updates, dtype=index_dtype)
-    true_indices = _where_no_broadcast(condition, indices_array, invalid_fill)
-
-    sentinel_fill = jnp.full_like(update_order, sentinel_value)
-    true_positions = _where_no_broadcast(condition, update_order, sentinel_fill)
-
-    first_true_pos = jnp.full((original_array.shape[0] + 1,), sentinel_value, dtype=index_dtype)
-    first_true_pos = first_true_pos.at[true_indices].min(true_positions, mode="drop")
-
-    first_true_for_updates = jnp.take(first_true_pos, indices_array, mode="clip")
-    apply_mask = condition & (first_true_for_updates == update_order)
-
-    apply_mask = jnp.asarray(apply_mask, dtype=jnp.bool_)
-    safe_indices = _where_no_broadcast(apply_mask, indices_array, invalid_fill)
+        safe_indices = keys
+    elif (
+        jnp.issubdtype(index_dtype, jnp.unsignedinteger)
+        and original_array.shape[0] >= 4 * num_updates
+    ):
+        # A stable key/lane sort uses batch-sized storage. Keep the dense
+        # scatter-min path when its destination map is smaller than the sort buffers.
+        sorted_keys, lanes = jax.lax.sort_key_val(
+            keys, jnp.arange(num_updates, dtype=jnp.int32), is_stable=True
+        )
+        first = jnp.concatenate(
+            (jnp.ones((1,), dtype=jnp.bool_), sorted_keys[1:] != sorted_keys[:-1])
+        )
+        winners = jnp.where(first & (sorted_keys < invalid_index), sorted_keys, invalid_index)
+        safe_indices = jnp.empty_like(keys).at[lanes].set(winners, unique_indices=True)
+    else:
+        update_order = jnp.arange(num_updates, dtype=index_dtype)
+        true_positions = _where_no_broadcast(
+            condition, update_order, jnp.full_like(update_order, sentinel_value)
+        )
+        first_true_pos = jnp.full((original_array.shape[0] + 1,), sentinel_value, dtype=index_dtype)
+        first_true_pos = first_true_pos.at[keys].min(true_positions, mode="drop")
+        first_true_for_updates = jnp.take(first_true_pos, indices_array, mode="clip")
+        apply_mask = condition & (first_true_for_updates == update_order)
+        safe_indices = _where_no_broadcast(apply_mask, indices_array, invalid_fill)
 
     value_array = jnp.asarray(values_to_set, dtype=original_array.dtype)
 
