@@ -54,6 +54,10 @@ def _update_array_on_condition(
     index_dtype = indices_array.dtype
     invalid_index = jnp.array(original_array.shape[0], dtype=index_dtype)
     sentinel_value = jnp.array(num_updates, dtype=index_dtype)
+    if index_dtype == jnp.uint64:
+        # JAX can narrow scatter indices for small tables. Drop wide invalid
+        # keys before their low bits can alias a writable row.
+        indices_array = jnp.minimum(indices_array, invalid_index)
 
     invalid_fill = jnp.full_like(indices_array, invalid_index)
     keys = _where_no_broadcast(condition, indices_array, invalid_fill)
