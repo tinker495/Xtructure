@@ -11,12 +11,11 @@ import jax.numpy as jnp
 
 from ..core.dtype_facts import SIZE_DTYPE
 from ..core.protocol import Xtructurable
-from ..core.xtructure_numpy.dataclass_ops.unique_ops import (
-    _unique_mask_from_uint32_rows,
-)
 from .constants import SLOT_IDX_DTYPE
 from .hash_utils import (
     _check_probe_matches_inputs,
+    _unique_groups_exact,
+    _unique_mask_from_group_ids,
     get_new_idx_byterized,
     get_new_idx_byterized_batched,
 )
@@ -294,27 +293,6 @@ def _resolve_probe(
     return get_new_idx_byterized_batched(inputs, table._capacity, table.seed)
 
 
-def _dedup_uint32_rows(
-    uint32ed: jax.Array,
-    filled_mask: jax.Array | None,
-    batch_len: int,
-) -> tuple[jax.Array, jax.Array]:
-    """Return ``(unique_mask, representative_indices)`` without device-to-host syncs."""
-    unique_mask, perm, mask_sorted = _unique_mask_from_uint32_rows(
-        keys_flat=uint32ed,
-        key=None,
-        filled=filled_mask,
-        batch_len=batch_len,
-    )
-    iota = jnp.arange(batch_len, dtype=jnp.int32)
-    winner_sorted_pos = jax.lax.cummax(jnp.where(mask_sorted, iota, 0), axis=0)
-    rep_sorted = perm[winner_sorted_pos].astype(jnp.int32)
-    if filled_mask is not None:
-        rep_sorted = jnp.where(filled_mask[perm], rep_sorted, jnp.int32(0))
-    representative_indices = jnp.zeros((batch_len,), dtype=jnp.int32).at[perm].set(rep_sorted)
-    return unique_mask, representative_indices
-
-
 def _lookup_parallel_from_probe(
     table: Any,
     inputs: Xtructurable,
@@ -345,16 +323,11 @@ def _lookup_parallel_from_probe(
     def _process_batch(
         filled_mask: jax.Array | None,
     ) -> tuple[HashIdx, jax.Array]:
-        if assume_unique:
-            active_mask = (
-                jnp.ones(batch_shape, dtype=jnp.bool_) if filled_mask is None else filled_mask
-            )
-            representative_indices = None
-        else:
-            active_mask, representative_indices = _dedup_uint32_rows(
-                probe.uint32ed,
-                filled_mask,
-                batch_len,
+        active_mask = jnp.ones(batch_shape, dtype=jnp.bool_) if filled_mask is None else filled_mask
+        representative_indices = None
+        if not assume_unique:
+            active_mask, representative_indices = _unique_mask_from_group_ids(
+                _unique_groups_exact(probe.uint32ed, active_mask), active_mask, unique_key=None
             )
 
         idxs = BucketIdx(
